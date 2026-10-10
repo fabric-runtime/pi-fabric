@@ -29,6 +29,9 @@ const writeStatus = (
   fs.writeFileSync(path.join(directory, "status.json"), JSON.stringify(record));
 };
 
+const sweepAt = (tempRoot: string, now: number) =>
+  sweepTempRunRoots({ tempRoot, now, orphanedTempRunRetentionMs: 6 * HOUR, oneShotRunRetentionMs: DAY });
+
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
@@ -220,6 +223,59 @@ describe("temporal retention", () => {
     expect(fs.existsSync(expired)).toBe(false);
     expect(fs.existsSync(actorTemp)).toBe(false);
     expect(fs.existsSync(fresh)).toBe(true);
+  });
+
+  it("reclaims pi-durable journals with their run, but keeps unknown or linked journal contents (#229)", () => {
+    const tempRoot = temporaryDirectory();
+    const journal = (run: string, key = "initial") => {
+      const store = path.join(run, "durable", key, "store");
+      fs.mkdirSync(store, { recursive: true });
+      fs.writeFileSync(path.join(store, "..", "lease.sqlite"), "");
+      for (const name of ["main.jsonl", "doc-0.jsonl", "task-12.jsonl", "doc-3.jsonl.reclaim"]) fs.writeFileSync(path.join(store, name), "{}\n");
+      return store;
+    };
+    const runRoot = path.join(tempRoot, FABRIC_RUN_ROOT_PREFIX + "durable");
+    markRunRootActive(runRoot, 1);
+    const plain = path.join(runRoot, "plain");
+    writeStatus(plain, { status: "completed", finishedAt: DAY });
+    journal(plain);
+    journal(plain, "a".repeat(64));
+    const nested = path.join(runRoot, "parent");
+    writeStatus(nested, { status: "completed", finishedAt: DAY });
+    journal(nested);
+    writeStatus(path.join(nested, "nested", "child"), { status: "completed", finishedAt: DAY });
+    journal(path.join(nested, "nested", "child"));
+    const unknown = path.join(runRoot, "unknown");
+    writeStatus(unknown, { status: "completed", finishedAt: DAY });
+    fs.writeFileSync(path.join(journal(unknown), "notes.txt"), "not Fabric's");
+    const badKey = path.join(runRoot, "bad-key");
+    writeStatus(badKey, { status: "completed", finishedAt: DAY });
+    journal(badKey, "other");
+    const outside = path.join(temporaryDirectory(), "outside.jsonl");
+    fs.writeFileSync(outside, "keep");
+    const linked = path.join(runRoot, "linked");
+    writeStatus(linked, { status: "completed", finishedAt: DAY });
+    fs.symlinkSync(outside, path.join(journal(linked), "doc-1.jsonl"));
+    markRunRootClosed(runRoot, DAY, true);
+
+    const result = sweepAt(tempRoot, 2 * DAY + 1);
+    expect(result.removedRuns.sort()).toEqual([nested, plain].sort());
+    for (const kept of [unknown, badKey, linked]) expect(fs.existsSync(kept)).toBe(true);
+    expect(fs.readFileSync(outside, "utf8")).toBe("keep");
+  });
+
+  it("removes a dead owner's root holding pi-durable journals after the orphan grace (#229)", () => {
+    const tempRoot = temporaryDirectory();
+    const runRoot = path.join(tempRoot, FABRIC_RUN_ROOT_PREFIX + "durable-orphan");
+    fs.mkdirSync(runRoot);
+    fs.writeFileSync(path.join(runRoot, ".fabric-owner.json"), JSON.stringify({ pid: 2_147_483_647, startedAt: 1, heartbeatAt: 1 }));
+    const run = path.join(runRoot, "run");
+    writeStatus(run, { status: "completed", finishedAt: 1 });
+    fs.mkdirSync(path.join(run, "durable", "initial", "store"), { recursive: true });
+    fs.writeFileSync(path.join(run, "durable", "initial", "lease.sqlite"), "");
+    fs.writeFileSync(path.join(run, "durable", "initial", "store", "main.jsonl"), "{}\n");
+    expect(sweepAt(tempRoot, 2).removedRoots).toEqual([]);
+    expect(sweepAt(tempRoot, 6 * HOUR + 2).removedRoots).toEqual([runRoot]);
   });
 
   it("expires actor archives after seven days while preserving the latest run", () => {

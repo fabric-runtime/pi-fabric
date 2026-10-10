@@ -48,6 +48,18 @@ describe("AgentManager close storage", () => {
     expect(fs.existsSync(root)).toBe(false);
   });
 
+  it("removes a managed root holding a finished run's pi-durable journal (#229)", async () => {
+    const { manager, root } = setup(false);
+    const result = await manager.run({ task: "hello", runner: "pi", extensions: false });
+    // The pi-durable runner journals beside status.json in the run directory.
+    const store = path.join(root, result.id, "durable", "initial", "store");
+    fs.mkdirSync(store, { recursive: true });
+    fs.writeFileSync(path.join(store, "..", "lease.sqlite"), "");
+    fs.writeFileSync(path.join(store, "main.jsonl"), "{}\n");
+    await manager.close();
+    expect(fs.existsSync(root)).toBe(false);
+  });
+
   it("retains closed managed run artifacts by default", async () => {
     const { manager, root } = setup(true);
     await manager.run({ task: "hello", runner: "pi", extensions: false });

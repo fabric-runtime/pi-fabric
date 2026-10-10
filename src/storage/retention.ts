@@ -92,6 +92,25 @@ const childAlive = (owner: RunRootOwner | undefined, pid: number): boolean => {
 const recordAgeReference = (record: RunRecordSummary, fallback: number): number =>
   time(record.finishedAt) ? record.finishedAt : time(record.updatedAt) ? record.updatedAt : fallback;
 const runFiles = new Set(["task.txt", "status.json", "events.jsonl", "lifecycle.jsonl", "steer.jsonl", "schema.json", "images.json"]);
+const DURABLE_KEY = /^(?:initial|[0-9a-f]{64})$/;
+const DURABLE_LEASE_FILES = new Set(["lease.sqlite", "lease.sqlite-journal"]);
+const DURABLE_STORE_FILE = /^(?:main|(?:doc|task)-(?:0|[1-9]\d*))\.jsonl(?:\.reclaim)?$/;
+const onlyOwnedFiles = (directory: string, allowed: (name: string) => boolean): boolean =>
+  fs.readdirSync(directory).every((name) => allowed(name) && ownedStat(path.join(directory, name))?.isFile() === true);
+/**
+ * The pi-durable runner's journal: `durable/<initial|sha256>/{lease.sqlite,store/*.jsonl}`,
+ * exactly as src/durable/storage.ts creates it. The run's status and child liveness
+ * still decide removal; this only stops Fabric's own journal from vetoing it.
+ */
+const safeDurableTree = (directory: string): boolean => fs.readdirSync(directory).every((key) => {
+  const conversation = path.join(directory, key);
+  if (!DURABLE_KEY.test(key) || !ownedStat(conversation)?.isDirectory()) return false;
+  return fs.readdirSync(conversation).every((name) => {
+    const file = path.join(conversation, name);
+    if (name === "store") return ownedStat(file)?.isDirectory() === true && onlyOwnedFiles(file, (child) => DURABLE_STORE_FILE.test(child));
+    return DURABLE_LEASE_FILES.has(name) && ownedStat(file)?.isFile() === true;
+  });
+});
 /** Unknown transports/contents and live descendants veto removal, even under a dead host. */
 const safeRunTree = (root: string, childrenStopped: boolean, owner?: RunRootOwner, depth = 0): boolean => {
   if (depth > 32 || !ownedStat(root)?.isDirectory()) return false;
@@ -112,6 +131,10 @@ const safeRunTree = (root: string, childrenStopped: boolean, owner?: RunRootOwne
       if (stat.isDirectory() && name === "handoff-session") {
         // This directory is exclusively populated by Fabric's session fork writer.
         if (fs.readdirSync(file).some((child) => !child.endsWith(".jsonl") || !ownedStat(path.join(file, child))?.isFile())) return false;
+        continue;
+      }
+      if (stat.isDirectory() && name === "durable") {
+        if (!safeDurableTree(file)) return false;
         continue;
       }
       if (stat.isDirectory() && name === "nested") {

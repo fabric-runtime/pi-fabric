@@ -13,6 +13,13 @@ const EVENT = "fabric.agent.event.v1";
 const HISTORY = "fabric.agent.history.v1";
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const wire = (value: unknown): JsonValue => copy(value) as JsonValue;
+// Streaming updates are presentation only: recovery never replays them (open()
+// reads HISTORY plus agent_start/message_end), and each provider partial or tool
+// partialResult repeats everything streamed before it. Persisting those payloads
+// grows a run's journal quadratically. Commit a slim, ordered marker instead and
+// rehydrate the payload in memory when that commit is delivered.
+type TransientEvent = Extract<AgentEvent, { type: "message_update" | "tool_execution_update" }>;
+const TRANSIENT = "fabricTransient";
 const Ledger = defineDoc<{
   runId: string; requests: Record<string, number>; active: number;
   controls?: Record<string, boolean>;
@@ -62,6 +69,8 @@ export class DurableAgent extends Agent {
   private restored = false;
   private resetPending = false;
   private queuePreview: { mode: "steering" | "followup"; message: AgentMessage }[] = [];
+  private readonly transient = new Map<number, TransientEvent>();
+  private transientSequence = 0;
   // Harness keeps its scheduler alive between requests. Never inherit the
   // scheduler's first-request permission/extension scope for later work.
   private requestScope = AsyncLocalStorage.snapshot();
@@ -98,8 +107,7 @@ export class DurableAgent extends Agent {
             tools: context.tools ?? [], assistantMessage: message, context, signal: runtime.signal,
             ...(this.beforeToolCall ? { beforeToolCall: this.beforeToolCall } : {}), ...(this.afterToolCall ? { afterToolCall: this.afterToolCall } : {}),
             onUpdate: async result => {
-              await runtime.commit(async tx => { await this.event(tx, { type: "tool_execution_update", toolCallId: call.id, toolName: call.name, args: call.arguments, partialResult: result }); }, ctx);
-              await this.delivery;
+              await this.transientEvent(change => runtime.commit(change, ctx), { type: "tool_execution_update", toolCallId: call.id, toolName: call.name, args: call.arguments, partialResult: result });
             },
           });
         const result: ToolResultMessage = { role: "toolResult", toolCallId: call.id, toolName: call.name,
@@ -193,12 +201,12 @@ export class DurableAgent extends Agent {
           let started = false;
           for await (const event of stream) {
             if (event.type === "done" || event.type === "error") continue;
-            await runtime.commit(async tx => {
-              if (!started) await this.event(tx, { type: "message_start", message: event.partial });
-              if (event.type !== "start") await this.event(tx, { type: "message_update", message: event.partial, assistantMessageEvent: event });
-            }, ctx);
+            if (!started) {
+              await runtime.commit(async tx => { await this.event(tx, { type: "message_start", message: event.partial }); }, ctx);
+              await this.delivery;
+            }
             started = true;
-            await this.delivery;
+            if (event.type !== "start") await this.transientEvent(change => runtime.commit(change, ctx), { type: "message_update", message: event.partial, assistantMessageEvent: event });
           }
           const message = copy({ ...await stream.result(), thinkingLevel: cp.thinking });
           await runtime.commit(async tx => {
@@ -349,6 +357,32 @@ export class DurableAgent extends Agent {
       ledger.context?.messages.push(wire(event.message));
     }
   }
+  /** Commit an ordered, slim marker for a streaming update; its payload stays in memory until delivery. */
+  private async transientEvent(commit: (change: (tx: Tx) => Promise<undefined>) => Promise<unknown>, event: TransientEvent) {
+    const sequence = ++this.transientSequence;
+    // Copy synchronously: providers and tools keep mutating their partials.
+    this.transient.set(sequence, copy(event));
+    let marker: Record<string, unknown>;
+    if (event.type === "message_update") {
+      const { partial: _partial, ...delta } = event.assistantMessageEvent as typeof event.assistantMessageEvent & { partial?: unknown };
+      marker = { type: event.type, assistantMessageEvent: delta };
+    } else marker = { type: event.type, toolCallId: event.toolCallId, toolName: event.toolName };
+    try {
+      await commit(async tx => { await tx.appendEntry(this.root!.id, { kind: EVENT, data: wire({ ...marker, [TRANSIENT]: sequence }) }); return undefined; });
+    } catch (error) {
+      this.transient.delete(sequence);
+      throw error;
+    }
+    await this.delivery;
+  }
+  /** Restore a committed streaming marker to the full event; undefined when its payload is not in this process. */
+  private rehydrate(data: Record<string, unknown>): AgentEvent | undefined {
+    const sequence = data[TRANSIENT];
+    if (typeof sequence !== "number") return data as unknown as AgentEvent;
+    const event = this.transient.get(sequence);
+    this.transient.delete(sequence);
+    return event;
+  }
   private async message(tx: Tx, message: AgentMessage) {
     await this.event(tx, { type: "message_start", message });
     await this.event(tx, { type: "message_end", message });
@@ -404,7 +438,9 @@ export class DurableAgent extends Agent {
       harness.subscribeCommits(publication => {
         for (const change of publication.changes) {
           if (change.type !== "entry" || change.value.conversationId !== this.root!.id || change.value.kind !== EVENT) continue;
-          const event = copy(change.value.data) as unknown as AgentEvent;
+          // A marker whose payload is not in memory came from another process; it is never replayed.
+          const event = this.rehydrate(copy(change.value.data) as Record<string, unknown>);
+          if (!event) continue;
           this.delivery = this.delivery.then(() => this.requestScope(() => this.expose(event)));
           // Keep failures observable at every execution boundary, without an unhandled rejection.
           void this.delivery.catch(() => {});

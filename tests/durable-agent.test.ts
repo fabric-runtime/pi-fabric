@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -16,14 +16,19 @@ const agents: DurableAgent[] = [];
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(agents.splice(0).map(a => a.close().catch(() => {}))); await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; }
-function setup(storage: Storage = new MemoryStorage(), tools: AgentTool[] = []) {
-  const faux = fauxProvider({ tokensPerSecond: Infinity });
+function setup(storage: Storage = new MemoryStorage(), tools: AgentTool[] = [], tokenSize?: { min: number; max: number }) {
+  const faux = fauxProvider({ tokensPerSecond: Infinity, ...(tokenSize ? { tokenSize } : {}) });
   const models = createModels(); models.setProvider(faux.provider);
   const agent = new DurableAgent({ models, storage, runId: "run-one", streamFn: models.streamSimple.bind(models), initialState: { model: faux.getModel(), tools, systemPrompt: "Be helpful" } });
   agents.push(agent);
   return { agent, faux, models };
 }
 const tool = (execute: AgentTool["execute"]): AgentTool => ({ name: "effect", label: "Effect", description: "effect", parameters: Type.Object({}), execute });
+const journalBytes = async (dir: string) => {
+  let total = 0;
+  for (const name of await readdir(dir)) total += (await stat(join(dir, name))).size;
+  return total;
+};
 
 describe("DurableAgent", () => {
   it("gates recovered tasks until asynchronous host reconciliation and subscription finish", async () => {
@@ -264,6 +269,43 @@ describe("DurableAgent", () => {
     expect(second.agent.state.messages.filter(m => m.role === "user")).toHaveLength(1);
     expect(second.agent.state.messages.some(m => m.role === "toolResult" && m.isError)).toBe(true);
     await second.agent.close();
+  });
+
+  it("journals streaming updates linearly while delivering every full partial (#229)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "durable-agent-")); dirs.push(dir);
+    const text = "streamed output ".repeat(1_000);
+    const chunks = Array.from({ length: 300 }, (_, index) => `line ${index} `.padEnd(64, "."));
+    const effect = tool(async (_id, _args, _signal, onUpdate) => {
+      let output = "";
+      for (const chunk of chunks) { output += chunk; onUpdate?.({ content: [{ type: "text", text: output }], details: {} }); }
+      return { content: [{ type: "text", text: output }], details: {} };
+    });
+    const { agent, faux } = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect], { min: 4, max: 4 });
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("effect", {}), { stopReason: "toolUse" }), fauxAssistantMessage(text)]);
+    const events: AgentEvent[] = [];
+    agent.subscribe(event => { events.push(event); });
+    await agent.prompt("stream");
+    const updates = events.filter((event): event is Extract<AgentEvent, { type: "message_update" }> => event.type === "message_update");
+    const deltas = updates.flatMap(event => event.assistantMessageEvent.type === "text_delta" ? [event.assistantMessageEvent.delta] : []);
+    expect(deltas.length).toBeGreaterThanOrEqual(1_000);
+    expect(deltas.join("")).toBe(text);
+    // Observers still receive the complete partial on both fields.
+    const last = updates.filter(event => event.assistantMessageEvent.type === "text_delta").at(-1)!;
+    expect(last.assistantMessageEvent).toHaveProperty("partial", last.message);
+    expect(last.message).toMatchObject({ role: "assistant", content: [{ type: "text", text }] });
+    const toolUpdates = events.filter((event): event is Extract<AgentEvent, { type: "tool_execution_update" }> => event.type === "tool_execution_update");
+    expect(toolUpdates).toHaveLength(chunks.length);
+    expect(toolUpdates.at(-1)).toMatchObject({ toolName: "effect", args: {}, partialResult: { content: [{ type: "text", text: chunks.join("") }] } });
+    expect(agent.state.messages.at(-1)).toMatchObject({ role: "assistant", content: [{ type: "text", text }] });
+    await agent.close();
+    // Re-sending every growing partial would journal well over 20 MB here.
+    expect(await journalBytes(dir)).toBeLessThan(2_000_000);
+    // Recovery reads committed history, not streaming payloads.
+    const reopened = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT));
+    reopened.faux.setResponses([fauxAssistantMessage("next")]);
+    reopened.agent.setRequestId("later"); await reopened.agent.prompt("again");
+    expect(JSON.stringify(reopened.agent.state.messages)).toContain(text);
+    expect(reopened.faux.state.callCount).toBe(1);
   });
 
   it("aborts an executing tool and settles waitForIdle", async () => {

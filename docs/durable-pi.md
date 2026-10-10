@@ -45,6 +45,13 @@ Reopening the same run uses its initial run ID for idempotent submission and
 resumes checkpoints. Completed work is not repeated. An interrupted unsafe tool
 fails closed, including `fabric_exec`, writes, and shell commands.
 
+A worker's store lives in its run directory under `durable/`. Recovery never
+replays streaming updates, so each provider delta and tool progress update commits
+only an ordered marker; the full partial message or partial result reaches
+observers from memory after that commit. The journal grows with the transcript,
+not with the square of each streamed message. Run retention removes `durable/`
+with its run, and unknown or linked files inside it still preserve the run.
+
 Durability **does not restore arbitrary JavaScript continuations**, promise
 general exactly-once external effects, or restart failed workers indefinitely.
 The standard process/actor lifecycle controls stop/retry/retention. A new run is
