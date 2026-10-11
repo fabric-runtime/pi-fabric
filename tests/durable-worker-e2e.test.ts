@@ -19,7 +19,7 @@ beforeAll(async () => {
   fs.symlinkSync(path.resolve("node_modules"), path.join(root, "node_modules"), "junction");
   fs.writeFileSync(path.join(root, "package.json"), '{"type":"module"}');
   await build({
-    entryPoints: ["src/worker.ts", "src/durable/worker.ts", "src/agents/write-guard.ts",
+    entryPoints: ["src/worker.ts", "src/durable/worker.ts", "src/agents/write-guard.ts", "src/agents/provider-bridge.ts",
       "src/agents/compact-control.ts", "src/agents/claude-cli.ts", "src/agents/veda-cli.ts",
       ...fs.readdirSync("src/worker").filter(name => name.endsWith(".ts")).map(name => `src/worker/${name}`)],
     outdir: path.join(root, "build"), outbase: "src", bundle: true, packages: "external",
@@ -187,6 +187,46 @@ describe("AgentManager real durable parent worker", () => {
     expect(log.some(event => event.type === "response" && event.command === "get_messages" && event.id === `fabric-recorded-result:${first.id}`)).toBe(true);
     expect(events(path.join(directory, "replay-lifecycle.jsonl")).some(event => event.event === "tokens.usage")).toBe(false);
   }, 60000);
+
+  it("resolves an extension-registered provider for extensions: false without loading that extension's tools", async () => {
+    const { manager, cwd } = setup();
+    const effect = path.join(cwd, "effect.txt");
+    vi.stubEnv("DURABLE_TEST_EFFECT", effect);
+    // With the fixture extension loaded, hold_effect would run and block.
+    const result = await manager.run({
+      task: "hold effect", tools: ["hold_effect"], extensions: false, model: "durable-offline/test",
+    });
+    expect(result.status, result.error).toBe("completed");
+    expect(result.requestedModel).toBe("durable-offline/test");
+    expect(result.model).toBe("durable-offline/test");
+    expect(result.text).toMatch(/^result:.*hold_effect/s);
+    expect(fs.existsSync(effect)).toBe(false);
+  }, 30000);
+
+  it("resolves the same provider through the legacy Pi CLI runner with --no-extensions", async () => {
+    const { cwd } = setup();
+    const effect = path.join(cwd, "effect.txt");
+    vi.stubEnv("DURABLE_TEST_EFFECT", effect);
+    const manager = new AgentManager(cwd, {
+      ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi", transport: "process", timeoutMs: 20000, maxConcurrent: 1,
+    }, { workerPath, runRoot: path.join(cwd, "runs"), fullCodeMode: false,
+      piBinary: path.resolve("node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js") });
+    managers.push(manager);
+    const result = await manager.run({
+      task: "hold effect", tools: ["hold_effect"], extensions: false, model: "durable-offline/test",
+    });
+    expect(result.status, result.error).toBe("completed");
+    expect(result.model).toBe("durable-offline/test");
+    expect(result.text).toMatch(/^result:.*hold_effect/s);
+    expect(fs.existsSync(effect)).toBe(false);
+  }, 30000);
+
+  it("fails an extensions: false child closed when no installed extension registers the provider", async () => {
+    const { manager } = setup();
+    const result = await manager.run({ task: "never sent", extensions: false, model: "absent-provider/model" });
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/task was not sent[\s\S]*needs provider \\*"absent-provider\\*"[\s\S]*extensions: true/);
+  }, 30000);
 
   it("enforces write confinement through the real parent and durable host", async () => {
     const { manager, cwd } = setup();

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { ActorManager } from "../src/actors/manager.js";
 import type { GlobalActorRegistry } from "../src/actors/global-registry.js";
@@ -36,6 +36,7 @@ afterEach(async () => {
   if (savedLineage === undefined) delete process.env.PI_FABRIC_LINEAGE;
   else process.env.PI_FABRIC_LINEAGE = savedLineage;
   delete process.env.FAKE_PI_BEHAVIOR;
+  vi.unstubAllEnvs();
 });
 
 const tempRoot = (prefix: string): string => {
@@ -447,6 +448,8 @@ describe("worker child environment contract", () => {
     .filter(([worker]) => worker!.startsWith("src/") || fs.existsSync(path.resolve(worker!)));
   it.each(workers)("exports lineage and write policy and loads the write guard with --no-extensions (%s)", async (worker, guardPath) => {
     process.env.FAKE_PI_BEHAVIOR = "child-contract";
+    // No model means no provider bridge, and an inherited bridge target is dropped.
+    vi.stubEnv("PI_FABRIC_EXTENSION_MODEL", "stale/model");
     const root = tempRoot("pi-fabric-wp7-worker-");
     const manager = new AgentManager(root, { ...DEFAULT_FABRIC_CONFIG.agents, timeoutMs: 20_000 }, {
       workerPath: path.resolve(worker!),
@@ -458,7 +461,9 @@ describe("worker child environment contract", () => {
     managers.push(manager);
     const result = await manager.run({ task: "report", runner: "pi", transport: "process", extensions: false, writableRoots: ["."] });
     expect(result.status).toBe("completed");
-    const report = JSON.parse(result.text) as { lineage: string; writePolicy: string; args: string[] };
+    const report = JSON.parse(result.text) as { lineage: string; writePolicy: string; extensionModel: string | null; args: string[] };
+    expect(report.extensionModel).toBeNull();
+    expect(report.args.some((arg) => arg.includes("provider-bridge"))).toBe(false);
     expect(readAgentLineage(report.lineage)).toMatchObject({ rootSessionId: "root-session", runId: result.id, depth: 1 });
     expect(JSON.parse(report.writePolicy)).toEqual({ readOnly: false, writableRoots: [root], shell: "deny" });
     expect(report.args).toContain("--no-extensions");

@@ -311,6 +311,13 @@ const main = async (): Promise<void> => {
   if (options.sessionFile) piArguments.push("--session", options.sessionFile);
   else piArguments.push("--no-session");
   if (!options.extensions) piArguments.push("--no-extensions");
+  // Extension-registered model providers still resolve without the rest of
+  // their extensions: the bridge registers only the requested provider.
+  const providerBridge = isPi && !options.extensions && Boolean(options.model?.includes("/"));
+  if (providerBridge) {
+    const bridge = import.meta.url.endsWith(".ts") ? "./agents/provider-bridge.ts" : "./agents/provider-bridge.js";
+    piArguments.push("-e", fileURLToPath(new URL(bridge, import.meta.url)));
+  }
   if (options.fabricExtensionPath) piArguments.push("-e", options.fabricExtensionPath);
   if (options.writePolicy) {
     // The guard loads even with --no-extensions; other runners cannot enforce it.
@@ -421,6 +428,8 @@ const main = async (): Promise<void> => {
       // Exactly the manager's derived scope; undefined drops an inherited value.
       PI_FABRIC_SCOPE: options.scope,
       PI_FABRIC_SCOPE_FILE: undefined,
+      // Read by the provider bridge; undefined drops an inherited value.
+      PI_FABRIC_EXTENSION_MODEL: providerBridge ? options.model : undefined,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });

@@ -237,6 +237,7 @@ switch (behavior) {
           writePolicy: process.env.PI_FABRIC_WRITE_POLICY ?? null,
           scope: process.env.PI_FABRIC_SCOPE ?? null,
           scopeFile: process.env.PI_FABRIC_SCOPE_FILE ?? null,
+          extensionModel: process.env.PI_FABRIC_EXTENSION_MODEL ?? null,
           args: process.argv.slice(2),
         }),
       },
