@@ -425,4 +425,34 @@ describe("registered extension tool capture", () => {
       await rm(hostDir, { recursive: true, force: true });
     }
   });
+
+  it("captures the runner a host advertises for its private SDK copy (pi-durable worker)", async () => {
+    // The durable worker runs sessions on the aliased pi-fabric-worker-sdk. In
+    // hoisted layouts that is a distinct class from the peer copy the entry
+    // realm finds, so only the host's advertisement reaches the live runner.
+    class PrivateSdkRunner {
+      extensions: Array<{ tools: Map<string, RegisteredTool> }> = [];
+      getAllRegisteredTools(): RegisteredTool[] {
+        return this.extensions.flatMap((extension) => [...extension.tools.values()]);
+      }
+    }
+    const key = Symbol.for("pi-fabric.host-extension-runners.v1");
+    const holder = globalThis as typeof globalThis & { [key: symbol]: Set<unknown> | undefined };
+    const saved = holder[key];
+    holder[key] = new Set([PrivateSdkRunner]);
+    try {
+      const fabricTool = tool("fabric_exec");
+      const catalog = new CapturedToolCatalog();
+      controllers.push(await installRegisteredToolCapture({ anchorDefinition: fabricTool, catalog }));
+      const runner = new PrivateSdkRunner();
+      runner.extensions = [{ tools: new Map([
+        ["fabric_exec", registered(fabricTool, "/extensions/pi-fabric/index.ts")],
+      ]) }];
+      expect(catalog.runner).toBeUndefined();
+      runner.getAllRegisteredTools();
+      expect(catalog.runner).toBe(runner);
+    } finally {
+      holder[key] = saved;
+    }
+  });
 });

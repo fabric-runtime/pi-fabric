@@ -3,7 +3,7 @@ import path from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
   AgentSessionRuntime, createAgentSessionServices, createCodemodeExtension,
-  createMcpExtension, createToolSearchExtension, getAgentDir,
+  createMcpExtension, createToolSearchExtension, ExtensionRunner, getAgentDir,
   hasTrustRequiringProjectResources, ProjectTrustStore, resolveCliModel,
   runRpcMode, SessionManager, SettingsManager,
   type CreateAgentSessionRuntimeFactory, type LoadExtensionsResult,
@@ -41,8 +41,20 @@ export async function resolveDurableProjectTrust(options: {
   return store.get(options.cwd) ?? options.defaultProjectTrust === "always";
 }
 
+// Sessions here run on the pinned worker SDK, a class identity Fabric's tool
+// capture cannot locate by itself (see HOST_RUNNERS_SYMBOL in
+// src/capture/interceptor.ts). Advertise it before extensions load. A global
+// stays process-local, unlike an environment variable; it is inline so the
+// extension's startup graph gains no chunk shared with this worker module.
+const advertiseHostExtensionRunner = (): void => {
+  const key = Symbol.for("pi-fabric.host-extension-runners.v1");
+  const holder = globalThis as typeof globalThis & { [key: symbol]: Set<unknown> | undefined };
+  (holder[key] ??= new Set()).add(ExtensionRunner);
+};
+
 /** A full native Pi runtime host whose Agent scheduling is owned by pi-durable. */
 export async function createDurableWorkerRuntime(options: DurableWorkerOptions): Promise<AgentSessionRuntime> {
+  advertiseHostExtensionRunner();
   const cwd = process.cwd();
   const agentDir = getAgentDir();
   const manager = options.sessionFile ? SessionManager.open(options.sessionFile, undefined, cwd) : SessionManager.inMemory(cwd);

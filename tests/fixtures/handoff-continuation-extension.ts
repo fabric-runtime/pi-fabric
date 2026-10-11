@@ -3,6 +3,14 @@ import { createAssistantMessageEventStream, type AssistantMessage } from "@earen
 
 // Deterministic offline model: delegate once, then implement only when the
 // executor-local continuation arrives through the real Pi follow-up loop.
+// Claim success only from a successful tool result: the assistant's own
+// tool-call code also contains the verification string.
+const verified = (messages: readonly unknown[]): boolean => messages.some(message => {
+  const entry = message as { role?: unknown; isError?: unknown; content?: unknown };
+  return entry.role === "toolResult" && entry.isError !== true &&
+    JSON.stringify(entry.content).includes("verified direct continuation");
+});
+
 export default function (pi: ExtensionAPI) {
   let calls = 0;
   pi.registerProvider("handoff-probe", {
@@ -34,7 +42,7 @@ export default function (pi: ExtensionAPI) {
         role: "assistant", api: model.api, provider: model.provider, model: model.id,
         content: code
           ? [{ type: "toolCall", id: `probe-${calls}`, name: "fabric_exec", arguments: { code } }]
-          : [{ type: "text", text: text.includes("verified direct continuation")
+          : [{ type: "text", text: verified(context.messages)
               ? "Finished original assignment directly after the failed handoff; verification passed."
               : "The handoff failed; stopping instead of finishing the assignment." }],
         stopReason: code ? "toolUse" : "stop", timestamp: Date.now(),

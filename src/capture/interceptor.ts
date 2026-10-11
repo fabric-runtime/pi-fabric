@@ -39,6 +39,14 @@ export interface RegisteredToolCaptureOptions {
 }
 
 const HUB_SYMBOL = Symbol.for("pi-fabric.registered-tool-capture.v1");
+// A process that hosts Pi sessions on a private SDK copy (the pi-durable worker
+// resolves the pinned `pi-fabric-worker-sdk` alias) advertises that copy's
+// ExtensionRunner under this process-local key; see src/durable/worker-host.ts.
+// PI_PACKAGE_DIR, argv[1], and the entry realm cannot locate an aliased
+// dependency, and in hoisted or npm layouts the peer copy they do find is a
+// distinct class identity: patching only that dead class leaves the catalog
+// runner unset, so nested mutating pi.* calls fail closed.
+const HOST_RUNNERS_SYMBOL = Symbol.for("pi-fabric.host-extension-runners.v1");
 const ANCHOR_SYMBOL = Symbol.for("pi-fabric.registered-tool-anchor.v1");
 
 const definitionDelegatesTo = (
@@ -216,6 +224,10 @@ const extensionRunnerConstructors = async (): Promise<ExtensionRunnerConstructor
     )) {
       constructors.add(Runner);
     }
+  }
+  const advertised = (globalThis as Record<PropertyKey, unknown>)[HOST_RUNNERS_SYMBOL];
+  for (const Runner of advertised instanceof Set ? advertised : []) {
+    if (isExtensionRunnerConstructor(Runner)) constructors.add(Runner);
   }
   if (constructors.size === 0) {
     // The host does not advertise its package directory (tests, embeds,
