@@ -318,6 +318,18 @@ describe("foreground extension wiring", () => {
   };
   const agentStart = { type: "before_agent_start", prompt: "hi", systemPrompt: "s", systemPromptOptions: {} };
 
+  it("applies the approval policy to direct native tools before Fabric's lazy runtime activates (#216)", async () => {
+    const host = await boot({ fullCodeMode: false, approvals: { execute: "deny" } });
+    const call = (toolName: string) => host.run("tool_call", { type: "tool_call", toolCallId: `call-${toolName}`, toolName, input: {} });
+    // No fabric_exec has run, so the runtime is still inactive: the policy must hold anyway.
+    await expect(call("bash")).rejects.toThrow("pi.bash is denied by the Fabric execute policy");
+    await host.shutdown();
+    const allowed = await boot({ fullCodeMode: false });
+    await expect(allowed.run("tool_call", { type: "tool_call", toolCallId: "call-bash", toolName: "bash", input: {} }))
+      .resolves.toSatisfy((results: unknown[]) => results.every((result) => result === undefined));
+    await allowed.shutdown();
+  });
+
   it("declares foreground tools to the model and reports placement", async () => {
     const host = await boot({ fullCodeMode: true, foreground: { tools: [entry("ask_user")] } });
     expect(await host.declared()).toEqual(["fabric_exec", "ask_user"]);

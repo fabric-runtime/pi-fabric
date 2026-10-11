@@ -353,7 +353,10 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   const fabricToolLifecycle = new FabricToolLifecycle(
     () => ownsFabricToolSource(pi.getAllTools(), FABRIC_EXTENSION_ENTRY_PATH),
     () => state.initialized ? state.execution.authorizer : undefined,
-    () => state.initialized ? directToolApproval : undefined,
+    // Approval needs only bootstrapped config and session grants, not the lazy
+    // runtime: gating on activation let direct calls skip policy until the
+    // first fabric_exec, then deny the same call afterwards.
+    () => state.bootstrapped ? directToolApproval : undefined,
   );
 
   const inactiveCapturePolicy = {
