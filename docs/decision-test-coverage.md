@@ -13,7 +13,7 @@ The immediately following `providerOptions.toEqual({ sort: "latency" })` checks
 the same sent request more strongly: it also rejects retention of the profile's
 `allow_fallbacks` option. No input scenario or boundary check is removed.
 
-Validation: `bunx vitest run tests/jev-decisions.test.ts` — **25 passed**.
+Validation: `bunx vitest run tests/jev-decisions.test.ts`: **25 passed**.
 Reduction: **1 assertion, 0 test cases** (25 → 25 in the modified suite).
 The other reviewed suites were unchanged and were not rerun for this review.
 Build/artifact checks and native bridge smoke tests remain separate release gates.
@@ -44,7 +44,7 @@ policy. See [the decision contract](jev-decisions.md) and
 
 | Witness | Obligation retained |
 | --- | --- |
-| `jev-decision-profiles.test.ts`: cloning/selectors, names, forbidden options, bounds | Clone rather than alias; reject unknown/nonstring selectors, unsafe/reserved names, secrets/evidence in nested options, wrong version, inherited defaults, >128 profiles, >64 KiB UTF-8 documents and unknown target fields. |
+| `jev-decision-profiles.test.ts`: cloning/selectors, names, forbidden options, bounds | Clone, never alias; reject unknown/nonstring selectors, unsafe/reserved names, secrets/evidence in nested options, wrong version, inherited defaults, >128 profiles, >64 KiB UTF-8 documents and unknown target fields. |
 | Same suite: portable API/model/temperature/endpoint constraints | Validate even unused profiles; API whitelist; 256 Unicode-scalar model boundary and lone-surrogate refusal; finite [0,2] temperature; raw URL userinfo/query/fragment/backslash/non-ASCII refusal and exact loopback shapes. Structural loopback acceptance is not native permission to use it. |
 | Same suite: strict JSON copying | Do not execute getters or `toJSON`; reject cycles, non-JSON values, sparse/extra array properties, symbol/nonenumerable fields; preserve nested values without aliasing. |
 | Same suite: layered configuration | Replace entire profile documents across global/project layers; project `null` resets the inherited selector without retaining stale route fields. |

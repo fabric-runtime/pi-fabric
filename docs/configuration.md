@@ -246,7 +246,7 @@ Host ceilings include `maxDurationMs`, `maxEvaluations`, `maxToolCalls`, `maxTok
 ## Lossless decision profiles
 
 `jev.decisionProfiles` is a portable `{version:1, defaultProfile?, profiles}`
-document; global/project precedence replaces it atomically rather than merging
+document; global/project precedence replaces it atomically and never merges
 fields from different providers. `jev.decisionProfile` optionally selects one
 of its names. `null` restores the document default and can clear an inherited
 global selector; an empty or unknown name is invalid.

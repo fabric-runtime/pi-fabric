@@ -107,7 +107,7 @@ the last user message in the first request (normally the initiating prompt),
 after the existing history. That boundary and the view are frozen for the run:
 tool steps and mid-turn steering cannot move the advisory. If the boundary or
 its preceding messages are removed or rewritten, injection stops until the next
-preparation rather than falling back to the conversation head or tail.
+preparation and never falls back to the conversation head or tail.
 
 The content is JSON-quoted, explicitly **untrusted historical evidence**, not
 system instructions. Extraction never changes `systemPrompt`,
