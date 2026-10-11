@@ -330,6 +330,47 @@ Each in-place handoff captures Main's active model at the boundary and restores 
 }
 ```
 
+## Third-party model providers
+
+Fabric selects every model through Pi's model registry and ships no provider list of its own. The same `provider/id` keys work in `agents.model`, `models.aliases` (including fallback chains), `prewalk.model`, `approvals.model`, the `model` argument of `agents.run`, `agents.spawn`, `agents.create`, and `agents.handoff`, and the `/fabric settings` model pickers. Any provider that a Pi extension registers with `pi.registerProvider()`, or that Pi's `models.json` defines, works in all of these places once Pi lists it.
+
+Credentials stay with Pi. Fabric hands a child agent only the model key, and the child resolves the credential through Pi as usual: a stored entry in `auth.json` (for example from `/login`), the environment variable the provider names, or the credential store. Fabric never puts keys on a child's command line or in its logs.
+
+With `extensions: false` (per call, or as `agents.extensions`), a Pi child loads none of the user's extensions, so it gets the native tool surface without their tools, commands, or hooks. A model that comes from an extension still resolves. A small Fabric bridge loads the extension that registers the requested provider in an isolated runtime, keeps only that provider registration, and discards every tool, command, flag, renderer, and event handler the extension registered. Fabric first tries extensions whose path names the provider, then the other installed extensions; each tried extension's registration function runs once, and its event handlers never run. Project-local extensions count only in a project that Pi already trusts. Models built into Pi or defined in `models.json` skip the bridge entirely. When no installed extension registers the provider, the child fails before the task is sent, with an error that names the provider and suggests `extensions: true`. Strict model admission is unchanged. This covers both Pi runners (`pi-durable` and `pi`). Provider code that depends on its extension's session hooks, and virtual models routed with `pi.registerVirtualModel()`, still need `extensions: true`. Claude, Veda, and custom runners use their own model catalogs and are unaffected.
+
+### Example: Coral Bricks
+
+Coral Bricks models come from the separate `pi-coralbricks-provider` extension. It is one example; every provider extension works the same way.
+
+```sh
+pi install npm:pi-coralbricks-provider
+export CORALBRICKS_API_KEY=...   # or run /login coralbricks once in Pi
+```
+
+The extension registers keys such as `coralbricks/glm-5.3-fast` and `coralbricks/deepseek-v4.1-flash-fast`. Use them wherever Fabric takes a model, for example in aliases that mix providers:
+
+```json
+{
+  "models": {
+    "aliases": {
+      "fast": ["coralbricks/deepseek-v4.1-flash-fast", "google/gemini-2.5-flash"],
+      "deep": { "model": "coralbricks/glm-5.3-fast", "thinking": "high" }
+    }
+  }
+}
+```
+
+Alias resolution uses the first target with a credential, so `fast` falls back to Gemini on a machine without a Coral Bricks key. A program can also run the same task on two providers side by side:
+
+```ts
+const task = "Summarize the error handling in src/worker.ts in five bullets.";
+const [coral, gemini] = await Promise.all([
+  agents.run({ model: "coralbricks/deepseek-v4.1-flash-fast", task, extensions: false }),
+  agents.run({ model: "google/gemini-2.5-flash", task, extensions: false }),
+]);
+return { coral: coral.text, gemini: gemini.text };
+```
+
 ## Result formatting
 
 `executor.resultFormat` sets the default for `fabric_exec` return values. Find it under `/fabric settings` → **Executor**. `"auto"` keeps strings as text and renders structured values as syntax-highlighted YAML. `"yaml"`, `"json"`, and `"text"` each force their named behavior. A call-level `resultFormat` parameter overrides the configured default.
@@ -560,7 +601,7 @@ Other agent settings:
 - `maxPerExecution`: hard cap on children per `fabric_exec` invocation.
 - `maxDepth`: nesting bound for child agent calls, including `rlm.query()`. It accepts any non-negative safe integer. A value of `0` disables child spawning. `/fabric settings` provides free-form numeric entry.
 - `timeoutMs`: default wall-clock budget per child and the floor for per-call overrides (24 hours by default, which is also the policy ceiling). Fabric ignores lower per-call values. The default matches the ceiling on purpose: an orchestration program inherits this value as its own whole-program deadline floor, so a lower default would cut a long participant short well inside the allowed maximum. Lower it to bound a class of runs, and raise a single run with a per-call value.
-- `extensions`: whether Claude children keep their normal Claude Code customizations.
+- `extensions`: whether children load the user's normal extensions (Pi) or Claude Code customizations (Claude). Pi children with `false` keep extension-registered model providers; see [third-party model providers](#third-party-model-providers).
 - `defaultTools`: the default tool allowlist for children.
 - `budgetUsd`: shared append-only cost ledger across a recursion tree (0 disables).
 - `maxTokensPerChild`: cumulative token bound per child (0 disables).
