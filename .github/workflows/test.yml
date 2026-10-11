@@ -2,9 +2,7 @@ name: Test
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: ['ci-debug/**']
 
 jobs:
   check:
@@ -16,71 +14,28 @@ jobs:
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
-        with:
-          # The affected-test selection diffs the push range or the pull-request
-          # base, so that base commit has to be present in history.
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: package.json
       - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - name: Install runtime prerequisites
-        # pi's grep tool downloads rg on first use when it is absent; on shared
-        # runners that ad-hoc GitHub Releases download is rate-limited, so
-        # provision rg on PATH up front to keep nested-grep tests hermetic.
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            # Non-login Git Bash children warn on stderr when its /tmp is absent.
-            # Keep command output deterministic without stripping real warnings.
-            mkdir -p /tmp
-            choco install ripgrep -y --no-progress
-          else
-            sudo apt-get update
-            sudo apt-get install -y ripgrep bubblewrap python3
-          fi
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Install pinned Bend proof compiler
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/bend.tar.gz" https://github.com/bendlang/bend/releases/download/v2.0.36/bend-2.0.36-linux-x64.tar.gz
-          echo "02089dc0eed0fd5fd6d73c74cc9cffcb2c6638dd3b02ae83f7b8cc57fbe381ba  $RUNNER_TEMP/bend.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/bend.tar.gz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/bend/bin" >> "$GITHUB_PATH"
-      - name: Check proofs, reproduce executable kernels, and reject invalid mutations
-        if: runner.os == 'Linux'
-        env:
-          BEND_NO_TELEMETRY: '1'
-        run: bun run proof:check
-      - name: Type check
-        run: bun run typecheck
-      # Some integration tests execute the published worker entrypoints in dist.
       - name: Build
         run: bun run build
-      - name: Check CI workflow runtime configuration
-        run: bunx vitest run tests/ci-workflows.test.ts
-      - name: Check Python kernel diagnostics
-        run: bunx vitest run tests/kernel-errors.test.ts
-      - name: Test verified-kernel ABI and provider dispatch on both platforms
-        run: bunx vitest run tests/verified-kernels.test.ts tests/verified-resources.test.ts tests/verified-providers.test.ts tests/verified-authority.test.ts tests/verified-lifecycle.test.ts tests/verified-storage.test.ts tests/verified-artifact.test.ts
-      - name: Check bundled verified-kernel behavior
-        run: bun run proof:dist
-      - name: Test Windows type-checker regression
-        if: runner.os == 'Windows'
-        run: bunx vitest run tests/type-checker.test.ts
-      - name: Affected tests
-        env:
-          # Pull requests compare against the target branch; pushes compare
-          # against the tip they replaced. An unusable base selects nothing.
-          PI_TEST_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bun run test:affected
-      - name: Platform smoke floor
-        # Curated cross-platform surface (path and executable resolution, native
-        # binaries, spawn, process and watcher fallbacks) so a Linux or Windows
-        # break surfaces even when the affected selection is empty.
-        run: bun run test:smoke
+      - name: Probe bridge exit (direct spawn)
+        shell: bash
+        continue-on-error: true
+        run: |
+          export TRACE_FILE="$RUNNER_TEMP/trace-probe.txt"
+          export NODE_OPTIONS="--import=$(node -e 'console.log(require("url").pathToFileURL(process.argv[1]).href)' ci-debug/trace.mjs)"
+          for i in 1 2; do echo "== bridge run $i"; node ci-debug/probe.mjs . bridge; done
+          echo "== no bridge (-e absent)"; node ci-debug/probe.mjs . none
+          cat "$TRACE_FILE"
+      - name: Failing test with trace
+        shell: bash
+        continue-on-error: true
+        run: |
+          export TRACE_FILE="$RUNNER_TEMP/trace-test.txt"
+          export NODE_OPTIONS="--import=$(node -e 'console.log(require("url").pathToFileURL(process.argv[1]).href)' ci-debug/trace.mjs)"
+          bunx vitest run tests/durable-worker-e2e.test.ts -t "legacy Pi CLI" || true
+          cat "$TRACE_FILE"

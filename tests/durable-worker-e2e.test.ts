@@ -215,6 +215,8 @@ describe("AgentManager real durable parent worker", () => {
     const result = await manager.run({
       task: "hold effect", tools: ["hold_effect"], extensions: false, model: "durable-offline/test",
     });
+    console.log("CI-DEBUG legacy result", JSON.stringify({ status: result.status, error: result.error, stderr: result.stderr, startedAt: result.startedAt, finishedAt: result.finishedAt }));
+    try { console.log("CI-DEBUG events\n" + fs.readFileSync(path.join(cwd, "runs", result.id, "events.jsonl"), "utf8").slice(-6000)); } catch (e) { console.log("no events", e); }
     expect(result.status, result.error).toBe("completed");
     expect(result.model).toBe("durable-offline/test");
     expect(result.text).toMatch(/^result:.*hold_effect/s);
