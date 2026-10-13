@@ -29,11 +29,13 @@ import { formatForeground } from "../core/foreground-tools.js";
 import fs from "node:fs";
 import path from "node:path";
 
-const TUNER_KEYS = ["enabled", "capture", "autoAccept", "proposerModel"] as const;
-const TUNER_KEY_HELP: Record<(typeof TUNER_KEYS)[number], string> = {
-  enabled: "add learned.md to the system prompt",
-  capture: "suggest rules from tool failures and your corrections",
-  autoAccept: "write each suggestion with no review",
+// `on` and `off` are the one switch (tuner.enabled); the keys are its options.
+const TUNER_KEYS = ["capture", "autoAccept", "proposerModel"] as const;
+const TUNER_HELP: Record<"on" | "off" | (typeof TUNER_KEYS)[number], string> = {
+  on: "use the learned rules and learn new rules from your sessions",
+  off: "no learned rules in the prompt and no capture",
+  capture: "learn from tool failures and your corrections",
+  autoAccept: "write each new rule with no review",
   proposerModel: "the model that writes the rule edits",
 };
 
@@ -381,7 +383,10 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
         const space = idPrefix.indexOf(" ");
         const key = space < 0 ? undefined : idPrefix.slice(0, space);
         const values = key === undefined
-          ? TUNER_KEYS.map((name) => ({ value: name, description: `${name === "proposerModel" ? tuner.proposerModel || "inherit" : tuner[name] ? "on" : "off"} · ${TUNER_KEY_HELP[name]}` }))
+          ? [
+              ...(["on", "off"] as const).map((name) => ({ value: name, description: `${(name === "on") === tuner.enabled ? "current · " : ""}${TUNER_HELP[name]}` })),
+              ...TUNER_KEYS.map((name) => ({ value: name, description: `${name === "proposerModel" ? tuner.proposerModel || "inherit" : tuner[name] ? "on" : "off"} · ${TUNER_HELP[name]}` })),
+            ]
           : key === "proposerModel"
             ? [...new Set(["inherit", tuner.proposerModel].filter(Boolean))].map((value) => ({ value: `${key} ${value}`, description: "provider/model from pi --list-models" }))
             : (TUNER_KEYS as readonly string[]).includes(key) ? ["on", "off"].map((value) => ({ value: `${key} ${value}`, description: "" })) : [];
@@ -549,17 +554,19 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
           let rules = 0;
           try { rules = fs.readFileSync(learnedRulesPath(), "utf8").split("\n").filter((line) => line.startsWith("- ")).length; } catch { /* no learned rules yet */ }
           context.ui.notify(
-            `Fabric tuner: enabled ${tuner.enabled ? "on" : "off"} · capture ${tuner.capture ? "on" : "off"} · autoAccept ${tuner.autoAccept ? "on" : "off"} · proposerModel ${tuner.proposerModel || "inherit"} · ${rules} learned rule${rules === 1 ? "" : "s"}${suggestionWaits() ? ' · a suggestion waits: run "pi-fabric tune review"' : ""}`,
+            `Fabric tuner: ${tuner.enabled ? "on" : "off"} · capture ${tuner.capture ? "on" : "off"} · autoAccept ${tuner.autoAccept ? "on" : "off"} · proposerModel ${tuner.proposerModel || "inherit"} · ${rules} learned rule${rules === 1 ? "" : "s"}${suggestionWaits() ? ' · a suggestion waits: run "pi-fabric tune review"' : ""}`,
             "info",
           );
           return;
         }
         const flag = value === "on" || value === "true" ? true : value === "off" || value === "false" ? false : undefined;
-        const partial = key === "proposerModel"
-          ? value === "inherit" ? { proposerModel: "" } : value?.includes("/") ? { proposerModel: value } : undefined
-          : (TUNER_KEYS as readonly string[]).includes(key) && flag !== undefined ? { [key]: flag } : undefined;
+        const partial = key === "on" || key === "off"
+          ? { enabled: key === "on" }
+          : key === "proposerModel"
+            ? value === "inherit" ? { proposerModel: "" } : value?.includes("/") ? { proposerModel: value } : undefined
+            : (TUNER_KEYS as readonly string[]).includes(key) && flag !== undefined ? { [key]: flag } : undefined;
         if (!partial) {
-          context.ui.notify("Usage: /fabric tuner [enabled|capture|autoAccept on|off] or /fabric tuner proposerModel <provider/model>|inherit", "warning");
+          context.ui.notify("Usage: /fabric tuner [on|off] or /fabric tuner capture|autoAccept on|off or /fabric tuner proposerModel <provider/model>|inherit", "warning");
           return;
         }
         try {
@@ -570,7 +577,7 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
             { tuner: partial },
           );
           state.reloadConfig(context);
-          context.ui.notify(`Fabric tuner ${key} set to ${value} (${saved.scope}: ${saved.path})`, "info");
+          context.ui.notify(`Fabric tuner ${value === undefined ? key : `${key} set to ${value}`} (${saved.scope}: ${saved.path})`, "info");
         } catch (error) {
           context.ui.notify(`Failed to update the Fabric tuner setting: ${error instanceof Error ? error.message : String(error)}`, "error");
         }
@@ -1256,7 +1263,7 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
       }
       if (command !== "status") {
         context.ui.notify(
-          "Usage: /fabric [status|dashboard|chat [id-or-name]|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]|tuner [enabled|capture|autoAccept on|off]]",
+          "Usage: /fabric [status|dashboard|chat [id-or-name]|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]|tuner [on|off]]",
           "warning",
         );
         return;

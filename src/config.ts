@@ -417,13 +417,13 @@ export interface FabricThinkingConfig {
 }
 
 export interface FabricTunerConfig {
-  /** Add the tuner's learned rules (`<agentDir>/fabric/tuner/learned.md`) to the system prompt. */
+  /** The one switch: add the learned rules (`<agentDir>/fabric/tuner/learned.md`) to the system prompt, and with the two defaults below also learn from sessions. */
   enabled: boolean;
   /** Pi `provider/model` that proposes edits in `pi-fabric tune`; empty uses the solver model. */
   proposerModel: string;
-  /** Record repeated tool failures of real sessions and propose rules from them (`pi-fabric tune review`). */
+  /** While enabled: record repeated tool failures and user corrections, and propose rules from them. Default true. */
   capture: boolean;
-  /** Write each suggestion to learned.md with no review (`pi-fabric tune undo` removes the last one). */
+  /** While enabled: write each suggestion to learned.md with no review (`pi-fabric tune undo` removes the last one). Default true; false keeps suggestions for `pi-fabric tune review`. */
   autoAccept: boolean;
 }
 
@@ -656,7 +656,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     mcpAllowlist: [],
   },
   thinking: { bounds: {} },
-  tuner: { enabled: false, proposerModel: "", capture: false, autoAccept: false },
+  tuner: { enabled: false, proposerModel: "", capture: true, autoAccept: true },
   foreground: { tools: [], maxTools: 4 },
   codePreview: defaultCodePreviewSettings(),
 };

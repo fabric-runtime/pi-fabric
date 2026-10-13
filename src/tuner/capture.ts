@@ -47,14 +47,31 @@ export const looksFailed = (text: string, isError = false): boolean =>
 
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, " ").trim().slice(0, max);
 
-export const stepOf = (session: string, toolName: string, input: Record<string, unknown>, text: string, isError = false): CapturedStep => {
-  const call = oneLine(typeof input.code === "string" ? input.code : JSON.stringify(input), 400);
+// The calls inside each open fabric_exec that succeeded, with their exact arguments. Fabric reports no nested failure.
+// ponytail: a fabric_exec that gives no result keeps its entry; clear on session end if that grows.
+const nested = new Map<string, CapturedStep[]>();
+
+/** Keep a nested call that succeeded until the result of its fabric_exec comes. */
+export const holdNested = (parent: string, step: CapturedStep): void => {
+  nested.set(parent, [...(nested.get(parent) ?? []), step].slice(-20));
+};
+
+export const takeNested = (toolCallId: string): CapturedStep[] => {
+  const steps = nested.get(toolCallId) ?? [];
+  nested.delete(toolCallId);
+  return steps;
+};
+
+/** `passed` holds the targets that succeeded inside this call, so a failure goes to the first target that did not. */
+export const stepOf = (session: string, toolName: string, input: Record<string, unknown>, text: string, isError = false, passed: readonly string[] = []): CapturedStep => {
+  const code = typeof input.code === "string" ? input.code : JSON.stringify(input);
+  const refs = [...code.matchAll(/\b(mcp\.\w+\.\w+|pi\.\w+)\b/g)].map((match) => match[1]!);
   const result = oneLine(text, 320);
   return {
     ts: Date.now(),
     session,
-    target: /\b(mcp\.\w+\.\w+|pi\.\w+)\b/.exec(call)?.[1] ?? toolName,
-    call,
+    target: refs.find((ref) => !passed.includes(ref)) ?? refs[0] ?? toolName,
+    call: oneLine(code, 400),
     result,
     // Agents often catch an error and return it in an object, so its text is not at the start.
     failed: looksFailed(text, isError) || /\bError: /.test(result),
@@ -93,7 +110,7 @@ export const dueTargets = (rows: CapturedStep[], need: Map<string, number>, min 
 };
 
 /** The proposer's report: for each target, its different failures and a call that succeeded afterward. */
-export const buildEvidence = (rows: CapturedStep[], targets: string[]): string => {
+export const buildEvidence = (rows: CapturedStep[], targets: string[], repeated: ReadonlySet<string> = new Set()): string => {
   const sections = targets.map((target) => {
     const failures = rows.filter((row) => row.failed && row.target === target);
     const examples = [...new Map(failures.map((row) => [row.result.replace(/\d+/g, "N").slice(0, 80), row])).values()].slice(-5);
@@ -112,6 +129,11 @@ export const buildEvidence = (rows: CapturedStep[], targets: string[]): string =
       ...examples.flatMap((row) => [`CALL ${row.call}`, `ERROR: ${row.result}`]),
       "```",
       ...(fix ? ["A later call in the same session that succeeded:", "```", `CALL ${fix.call}`, `RESULT: ${fix.result}`, "```"] : []),
+      // A tool can change, and a rule can be wrong from the start. With no call that succeeded, a new format
+      // is a guess: the agent finds the format faster with no rule than with a wrong one.
+      ...(repeated.has(target) ? [`These failures occurred with the current learned.md in the prompt, so a rule for this target is wrong or old. ${fix
+        ? "Correct that rule so that it agrees with the call that succeeded. Copy the form of its arguments and keep no part of the old form. Do not add a second rule that disagrees with it."
+        : "No call succeeded, so the correct form is not known. Remove the rules for this target that the errors contradict. Do not write a format that no call confirmed, and do not join the old form with the words of an error."}`] : []),
     ].join("\n");
   });
   return `# Execution report: real sessions\n\n${sections.join("\n\n")}`.slice(0, 16_000);

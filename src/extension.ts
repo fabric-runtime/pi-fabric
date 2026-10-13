@@ -793,18 +793,29 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     return changed ? { content } : undefined;
   });
 
-  // Opt-in capture for `pi-fabric tune suggest`. Nested calls are part of
-  // their outer result, so only top-level results count.
+  // Opt-in capture for `pi-fabric tune suggest`. A top-level result is a step.
+  // A nested call that succeeded gives the exact arguments of the correct call.
   // A message in which the user corrects the agent is a step too.
-  const captureForTuner = async (context: ExtensionContext, event: { toolName: string; input: Record<string, unknown>; text: string; isError: boolean } | { correction: string }): Promise<void> => {
-    if (!state.bootstrapped || !state.config.tuner.capture) return;
+  const captureForTuner = async (context: ExtensionContext, event: { toolName: string; toolCallId: string; parentToolCallId?: string; input: Record<string, unknown>; text: string; isError: boolean } | { correction: string }): Promise<void> => {
+    if (!state.bootstrapped || !state.config.tuner.enabled || !state.config.tuner.capture) return;
     try {
       const capture = await import("./tuner/capture.js");
       const session = context.sessionManager.getSessionId();
-      const step = "correction" in event ? capture.correctionOf(session, event.correction) : capture.stepOf(session, event.toolName, event.input, event.text, event.isError);
       // The detached CLI reads only the global fabric.json, so it gets the effective values as flags.
       const { autoAccept, proposerModel } = state.config.tuner;
-      if (step) capture.captureStep(step, [...(autoAccept ? ["--auto"] : []), ...(proposerModel ? ["--proposer", proposerModel] : [])]);
+      const record = (step: ReturnType<typeof capture.correctionOf>): void => {
+        if (step) capture.captureStep(step, [autoAccept ? "--auto" : "--no-auto", ...(proposerModel ? ["--proposer", proposerModel] : [])]);
+      };
+      if ("correction" in event) record(capture.correctionOf(session, event.correction));
+      else if (event.parentToolCallId) {
+        // A nested call has the exact arguments. It waits for its fabric_exec, whose result tells if a failure came first.
+        const step = { ...capture.stepOf(session, event.toolName, event.input, event.text, event.isError), target: event.toolName };
+        if (!step.failed) capture.holdNested(event.parentToolCallId, step);
+      } else {
+        const passed = capture.takeNested(event.toolCallId);
+        record(capture.stepOf(session, event.toolName, event.input, event.text, event.isError, passed.map((step) => step.target)));
+        for (const step of passed) record({ ...step, ts: Date.now() });
+      }
       const notice = context.hasUI ? capture.takeNotice() : undefined;
       if (notice) context.ui.notify(notice, "info");
     } catch (error) {
@@ -812,9 +823,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     }
   };
   pi.on("tool_result", async (event, context) => {
-    if (!event.parentToolCallId) {
-      await captureForTuner(context, { toolName: event.toolName, input: event.input, text: event.content.map((part) => part.type === "text" ? part.text : "").join(""), isError: event.isError });
-    }
+    await captureForTuner(context, { toolName: event.toolName, toolCallId: event.toolCallId, ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}), input: event.input, text: event.content.map((part) => part.type === "text" ? part.text : "").join(""), isError: event.isError });
     return undefined;
   });
   pi.on("input", async (event, context) => {
@@ -1054,6 +1063,8 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     return projected !== messages || messages.length !== event.messages.length ? { messages: projected } : undefined;
   });
   let tunerGuidance: string | undefined;
+  // A new session starts a new prompt, so it reads the rules that the tuner wrote in the meantime.
+  pi.on("session_start", () => { tunerGuidance = undefined; });
   pi.on("before_agent_start", async (event, context) => {
     const config = state.bootstrapped ? state.config : DEFAULT_FABRIC_CONFIG;
     const fullCodeMode = config.fullCodeMode;

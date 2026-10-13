@@ -6,6 +6,9 @@
 //      a different solver model, and a removal test for each learned rule
 //   4. a changed server: the rules of the first seed against a different seed
 //   5. general tasks that do not use the depot, with the learned rules on and off
+//   6. the one switch: real sessions with only `tuner.enabled`, where Fabric
+//      writes the rules by itself, then the held-out tasks with those rules.
+//      The depot then changes its rules, and the sessions continue.
 // and writes REPORT.md and results.json.
 //
 //   bun run build && node bench/tuner/bench.mjs --out bench/results/tuner/full
@@ -13,6 +16,7 @@
 // Each step skips itself when its output is there, so a stopped bench continues.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,8 +49,8 @@ const run = (args, logFile) => new Promise((resolve) => {
   child.on("close", (code) => { children.delete(child); fs.closeSync(fd); resolve(code); });
 });
 const tune = (args, logFile) => run([path.join(root, "dist/cli/index.js"), "tune", ...args, ...common], logFile);
-const startServer = async (port, seed) => {
-  const child = spawn("node", [server, "--port", String(port), "--seed", String(seed)], { stdio: "ignore" });
+const startServer = async (port, seed, quota = 5) => {
+  const child = spawn("node", [server, "--port", String(port), "--seed", String(seed), "--quota", String(quota)], { stdio: "ignore" });
   children.add(child);
   for (let attempt = 0; attempt < 50; attempt += 1) {
     try { if ((await fetch(`http://127.0.0.1:${port}/admin/profile`)).ok) return; } catch { /* not ready */ }
@@ -223,6 +227,27 @@ const report = (data) => {
       line("learned rules on", data.general.on), line("learned rules off", data.general.off), "",
       `Runs that used the shell: ${data.general.shellOn} of ${data.general.on.length} with the rules on, ${data.general.shellOff} of ${data.general.off.length} with the rules off.`, "");
   }
+  if (data.live) {
+    const half = (rows) => `${Math.round(mean(rows.map((row) => row.tokens)))} mean tokens, ${rows.reduce((sum, row) => sum + row.failed, 0)} failed depot calls of ${rows.reduce((sum, row) => sum + row.calls, 0)}, ${rows.filter((row) => row.pass).length} of ${rows.length} passed, ${rows.reduce((sum, row) => sum + (row.edits ?? 0), 0)} edits of learned.md`;
+    const table = (rows) => ["| Session | Task | Result | Failed depot calls | Tokens | Rules in the prompt | Edits after it |", "| --- | --- | --- | --- | --- | --- | --- |",
+      ...rows.map((row) => `| ${row.n} | ${row.task} | ${row.pass ? "pass" : "FAIL"} | ${row.failed} of ${row.calls} | ${row.tokens} | ${row.rulesBefore} | ${row.edits ?? ""} |`), ""];
+    const halves = (rows) => { const middle = Math.floor(rows.length / 2); return [`- Sessions ${rows[0].n} to ${rows[middle - 1].n}: ${half(rows.slice(0, middle))}.`, `- Sessions ${rows[middle].n} to ${rows.at(-1).n}: ${half(rows.slice(middle))}.`, ""]; };
+    const { sessions, sessionsChanged } = data.live;
+    text.push("## 8. The one switch: rules from sessions", "",
+      `One agent directory with only \`tuner.enabled\` on, on the depot of seed ${data.seeds[0].seed} with a quota of 12 calls. Fabric wrote the rules with no review.`, "",
+      ...table(sessions), ...halves(sessions),
+      "Held-out tasks of the same seed, under the bench conditions:", "", HEAD,
+      line("no rules", data.seeds[0].heldoutNone), line("rules from the sessions", data.live.heldout), line("rules from the tuner run", data.seeds[0].heldoutLearned), line("oracle rules", data.seeds[0].oracle), "",
+      "```", data.live.learned.trim() || "(no rules)", "```", "");
+    if (sessionsChanged) {
+      text.push("## 9. The one switch after a change of the depot", "",
+        `The same agent directory. Before session ${sessionsChanged[0].n}, the depot changed to the rules of seed ${driftSeed}, so the rules in learned.md became wrong.`, "",
+        ...table(sessionsChanged), ...halves(sessionsChanged),
+        "Held-out tasks on the changed depot, under the bench conditions:", "", HEAD,
+        line("no rules", data.live.changedNone), line("rules from before the change (stale)", data.live.changedStale), line("rules after the sessions on the changed depot", data.live.changedRepaired), "",
+        "```", data.live.learnedChanged.trim() || "(no rules)", "```", "");
+    }
+  }
   text.push("## Learned rules", "", ...data.seeds.flatMap((seed) => [`### Seed ${seed.seed} (${seed.version})`, "", "```", seed.learned.trim(), "```", ""]));
   return text.join("\n");
 };
@@ -257,8 +282,11 @@ const controls = async (first) => ({
   "learned rules, `tuner.enabled` false": await arm(first.dir, first.tasks, "off", { learned: first.learned, off: true }),
   "placebo: 10 unrelated rules": await arm(first.dir, first.tasks, "placebo", { learned: placebo }),
   "learned rules in a full-size file": await arm(first.dir, first.tasks, "bloat", { learned: bloat(first.learned) }),
-  [`solver ${TRANSFER}, no rules`]: await arm(first.dir, first.tasks, "transfer-none", { model: TRANSFER }),
-  [`solver ${TRANSFER}, learned rules`]: await arm(first.dir, first.tasks, "transfer-learned", { learned: first.learned, model: TRANSFER }),
+  // The second solver is a control only when it is a different model.
+  ...(TRANSFER === SOLVER ? {} : {
+    [`solver ${TRANSFER}, no rules`]: await arm(first.dir, first.tasks, "transfer-none", { model: TRANSFER }),
+    [`solver ${TRANSFER}, learned rules`]: await arm(first.dir, first.tasks, "transfer-learned", { learned: first.learned, model: TRANSFER }),
+  }),
 });
 
 const leaveOneOut = async (first) => {
@@ -297,6 +325,110 @@ const general = async (first) => {
   return { on, off, shellOn: shell("general-on"), shellOff: shell("general-off") };
 };
 
+// --- the one switch: sessions in one agent directory with only `tuner.enabled` ---
+// Phase 1: the depot of the first seed. Phase 2: the same agent directory after the depot changes its rules.
+const live = async (first) => {
+  const dir = path.join(out, "live");
+  const files = { learned: path.join(dir, "learned.md"), sessions: path.join(dir, "sessions.json"), changed: path.join(dir, "learned-changed.md"), sessionsChanged: path.join(dir, "sessions-changed.json") };
+  const port = basePort + 20;
+  if (!fs.existsSync(files.sessionsChanged)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    const agentDir = path.join(dir, "agent");
+    const tunerDir = path.join(agentDir, "fabric", "tuner");
+    fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
+    // The same isolation as a tuner cell: only the credentials of the two model providers.
+    const source = process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
+    const providers = new Set([SOLVER, PROPOSER].map((model) => model.split("/")[0]));
+    const keep = (value) => Object.fromEntries(Object.entries(value ?? {}).filter(([name]) => providers.has(name)));
+    const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return undefined; } };
+    const models = readJson(path.join(source, "models.json"));
+    if (models) fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({ providers: keep(models.providers) }), { mode: 0o600 });
+    const auth = readJson(path.join(source, "auth.json"));
+    if (auth) fs.writeFileSync(path.join(agentDir, "auth.json"), JSON.stringify(keep(auth)), { mode: 0o600 });
+    const mcporter = path.join(agentDir, "mcporter.json");
+    fs.writeFileSync(path.join(agentDir, "fabric.json"), JSON.stringify({ mcp: { configPath: mcporter }, tuner: { enabled: true, proposerModel: PROPOSER } }));
+    // A real environment has no small quota, so an agent with no rules can correct its calls.
+    await startServer(port, first.seed, 12);
+    const { feedback, scoring } = JSON.parse(fs.readFileSync(path.join(first.tasks, "splits.json"), "utf8"));
+    const order = [...feedback.map((task, index) => index % 2 === 0 ? task : scoring[index]), ...scoring.map((task, index) => index % 2 === 0 ? task : feedback[index])];
+    const learnedNow = () => fs.existsSync(path.join(tunerDir, "learned.md")) ? fs.readFileSync(path.join(tunerDir, "learned.md"), "utf8") : "";
+    const edits = () => fs.existsSync(path.join(tunerDir, "accepted.jsonl")) ? fs.readFileSync(path.join(tunerDir, "accepted.jsonl"), "utf8").split("\n").filter(Boolean).length : 0;
+    const runSessions = async (offset) => {
+      const sessions = [];
+      for (const [index, task] of order.entries()) {
+        const n = offset + index + 1;
+        const cell = `live-${n}`;
+        const work = path.join(dir, "work", cell);
+        fs.mkdirSync(work, { recursive: true });
+        fs.writeFileSync(mcporter, JSON.stringify({ mcpServers: { depot: { baseUrl: `http://127.0.0.1:${port}/mcp/${cell}` } } }));
+        const before = { rules: entriesOf(learnedNow()).length, edits: edits() };
+        const session = () => new Promise((resolve) => {
+          const child = spawn("pi", ["--mode", "json", "--no-session", "--no-prompt-templates", "--no-context-files", "--no-themes", "--model", SOLVER, "-e", root],
+            { cwd: work, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_SKIP_VERSION_CHECK: "1" }, stdio: ["pipe", "pipe", "ignore"] });
+          children.add(child);
+          const timer = setTimeout(() => child.kill("SIGKILL"), 300_000);
+          let total = 0;
+          let buffer = "";
+          child.stdout.setEncoding("utf8").on("data", (chunk) => {
+            buffer += chunk;
+            for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+              const row = buffer.slice(0, end);
+              buffer = buffer.slice(end + 1);
+              if (!row.includes('"message_end"')) continue;
+              try { const event = JSON.parse(row); if (event.message?.role === "assistant") total += event.message.usage?.totalTokens ?? 0; } catch { /* not an event */ }
+            }
+          });
+          child.on("close", () => { clearTimeout(timer); children.delete(child); resolve(total); });
+          child.stdin.on("error", () => {});
+          child.stdin.end(fs.readFileSync(path.join(first.tasks, task, "task.md"), "utf8"));
+        });
+        // A session with no model reply is a failure of the provider: wait and run it again.
+        let tokens = await session();
+        for (let attempt = 1; tokens === 0 && attempt < 90; attempt += 1) {
+          say(`live: session ${n} got no model reply, try ${attempt + 1} in 60 s`);
+          await new Promise((resolve) => setTimeout(resolve, 60_000));
+          tokens = await session();
+        }
+        // The proposer runs as a separate process; wait for it before the next session reads learned.md.
+        for (let wait = 0; wait < 100 && fs.existsSync(path.join(tunerDir, "suggest.lock")); wait += 1) await new Promise((resolve) => setTimeout(resolve, 3_000));
+        const check = spawnSync("sh", [path.join(first.tasks, task, "check.sh")], { cwd: work, env: { ...process.env, TUNER_CELL: cell, QUIRK_URL: `http://127.0.0.1:${port}` }, encoding: "utf8" });
+        const depot = await (await fetch(`http://127.0.0.1:${port}/admin/cell/${cell}`)).json();
+        sessions.push({ n, task, pass: check.status === 0, calls: depot.calls ?? 0, failed: (depot.calls ?? 0) - (depot.ok ?? 0), tokens, rulesBefore: before.rules, rules: entriesOf(learnedNow()).length, edits: edits() - before.edits });
+        const last = sessions.at(-1);
+        say(`live: session ${n} ${task} ${last.pass ? "pass" : "FAIL"} failed calls ${last.failed} of ${last.calls} tokens ${tokens} rules ${last.rules} edits ${last.edits}`);
+      }
+      return sessions;
+    };
+    try {
+      const sessions = await runSessions(0);
+      fs.writeFileSync(files.learned, learnedNow());
+      fs.writeFileSync(files.sessions, JSON.stringify(sessions, null, 1));
+      // The depot changes its rules, as a real tool does in a new version. The agent directory stays.
+      await fetch(`http://127.0.0.1:${port}/admin/profile`, { method: "POST", body: JSON.stringify({ seed: driftSeed }) });
+      say(`live: the depot changed to the rules of seed ${driftSeed}`);
+      const changed = await runSessions(order.length);
+      fs.writeFileSync(files.changed, learnedNow());
+      for (const name of ["accepted.jsonl", "suggest.log", "failures.jsonl"]) if (fs.existsSync(path.join(tunerDir, name))) fs.copyFileSync(path.join(tunerDir, name), path.join(dir, name));
+      fs.writeFileSync(files.sessionsChanged, JSON.stringify(changed, null, 1));
+    } finally {
+      fs.rmSync(agentDir, { recursive: true, force: true }); // holds copied credentials
+    }
+  }
+  const learned = fs.readFileSync(files.learned, "utf8");
+  const learnedChanged = fs.readFileSync(files.changed, "utf8");
+  // Held-out tasks on a server with the changed rules and the quota of the bench.
+  const tasksChanged = path.join(dir, "tasks-changed");
+  makeDepotTasks(tasksChanged, port + 1);
+  await startServer(port + 1, driftSeed);
+  return {
+    sessions: JSON.parse(fs.readFileSync(files.sessions, "utf8")), learned, heldout: await arm(first.dir, first.tasks, "live", { learned }),
+    sessionsChanged: JSON.parse(fs.readFileSync(files.sessionsChanged, "utf8")), learnedChanged,
+    changedStale: await arm(dir, tasksChanged, "live-stale", { learned }),
+    changedRepaired: await arm(dir, tasksChanged, "live-repaired", { learned: learnedChanged }),
+    changedNone: await arm(dir, tasksChanged, "live-none", { reps: 1 }),
+  };
+};
+
 if (arg("make-general")) {
   makeGeneralTasks(path.resolve(arg("make-general")));
   process.exit(0);
@@ -306,13 +438,14 @@ const skip = new Set(arg("skip", "").split(","));
 // A failed extra step must not stop the tuner runs of the other chains.
 const step = (name, work) => skip.has(name) ? undefined : work().catch((error) => { say(`step ${name} failed: ${error?.stack ?? error}`); return undefined; });
 // Three chains at the same time: each seed run, then the extra arms of the first seed.
-const [seedData, controlData, looData, tail] = await Promise.all([
+const [seedData, controlData, looData, tail, liveData] = await Promise.all([
   Promise.all(runs),
   runs[0].then((first) => step("controls", () => controls(first))),
   Promise.all(runs.slice(0, 2)).then(([first]) => step("loo", () => leaveOneOut(first))),
   Promise.all([runs[0], runs.at(-1)]).then(async ([first]) => ({ drift: await step("drift", () => drift(first)), general: await step("general", () => general(first)) })),
+  runs[0].then((first) => step("live", () => live(first))),
 ]);
-const data = { seeds: seedData, controls: controlData, loo: looData, ...tail };
+const data = { seeds: seedData, controls: controlData, loo: looData, ...tail, live: liveData };
 const everyCell = [];
 JSON.stringify(data, (_key, value) => { if (value && typeof value === "object" && "task" in value && "tokens" in value) everyCell.push(value); return value; });
 const armTokens = [...new Set(everyCell)].reduce((sum, cell) => sum + cell.tokens, 0);

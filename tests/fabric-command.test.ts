@@ -654,7 +654,7 @@ describe("/fabric command", () => {
       const state = {
         initialized: true,
         ensure: vi.fn().mockResolvedValue(undefined),
-        config: { tuner: { enabled: false, capture: true, autoAccept: false, proposerModel: "" } },
+        config: { tuner: { enabled: false, capture: true, autoAccept: true, proposerModel: "" } },
         reloadConfig,
       } as unknown as FabricState;
       const context = {
@@ -673,15 +673,20 @@ describe("/fabric command", () => {
       });
 
       expect(completions!("tu")).toEqual([{ value: "tuner", label: "tuner" }]);
-      expect(completions!("tuner ")!.map((item) => item.value)).toEqual(["tuner enabled", "tuner capture", "tuner autoAccept", "tuner proposerModel"]);
-      expect(completions!("tuner c")).toEqual([{ value: "tuner capture", label: "capture", description: "on · suggest rules from tool failures and your corrections" }]);
-      expect(completions!("tuner enabled o")).toEqual([{ value: "tuner enabled on", label: "on" }, { value: "tuner enabled off", label: "off" }]);
+      expect(completions!("tuner ")!.map((item) => item.value)).toEqual(["tuner on", "tuner off", "tuner capture", "tuner autoAccept", "tuner proposerModel"]);
+      expect(completions!("tuner o")).toEqual([
+        { value: "tuner on", label: "on", description: "use the learned rules and learn new rules from your sessions" },
+        { value: "tuner off", label: "off", description: "current · no learned rules in the prompt and no capture" },
+      ]);
+      expect(completions!("tuner c")).toEqual([{ value: "tuner capture", label: "capture", description: "on · learn from tool failures and your corrections" }]);
+      expect(completions!("tuner autoAccept o")).toEqual([{ value: "tuner autoAccept on", label: "on" }, { value: "tuner autoAccept off", label: "off" }]);
       expect(completions!("tuner proposerModel ")!.map((item) => item.value)).toEqual(["tuner proposerModel inherit"]);
       expect(completions!("tuner nothing ")).toBeNull();
 
       const saved = async () => (JSON.parse(await readFile(path.join(root, ".pi", "fabric.json"), "utf8")) as { tuner: Record<string, unknown> }).tuner;
-      await handler!("tuner enabled on", context);
+      await handler!("tuner on", context);
       expect(await saved()).toEqual({ enabled: true });
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner on ("), "info");
       expect(reloadConfig).toHaveBeenCalledWith(context);
       await handler!("tuner autoAccept off", context);
       await handler!("tuner proposerModel", context);
@@ -689,10 +694,10 @@ describe("/fabric command", () => {
       expect(await saved()).toEqual({ enabled: true, autoAccept: false, proposerModel: "litellm/b" });
       await handler!("tuner proposerModel inherit", context);
       expect((await saved()).proposerModel).toBe("");
-      await handler!("tuner enabled maybe", context);
+      await handler!("tuner capture maybe", context);
       expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Usage: /fabric tuner"), "warning");
       await handler!("tuner", context);
-      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner: enabled off · capture on · autoAccept off · proposerModel inherit"), "info");
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner: off · capture on · autoAccept on · proposerModel inherit"), "info");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

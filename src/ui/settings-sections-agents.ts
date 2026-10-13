@@ -40,16 +40,16 @@ export const buildTunerSection = (
       "Learned rules for this environment. See docs/tuner.md.",
       // A factory: the model source is discovered only when the section opens.
       () => [
-        setting("tuner.enabled", "Use learned rules", config.tuner.enabled ? "true" : "false", {
-          description: "Add <agent-dir>/fabric/tuner/learned.md to the system prompt. Fabric reads the file one time for each session.",
+        setting("tuner.enabled", "Enabled", config.tuner.enabled ? "true" : "false", {
+          description: "The one switch. Fabric adds <agent-dir>/fabric/tuner/learned.md to the system prompt and, with the two options below on, learns new rules from your sessions.",
           values: BOOLEANS,
         }),
-        setting("tuner.capture", "Suggest rules from sessions", config.tuner.capture ? "true" : "false", {
-          description: "Record repeated tool failures and your corrections, and let the proposer write a rule suggestion. Decide with pi-fabric tune review, accept, and reject.",
+        setting("tuner.capture", "Learn from sessions", config.tuner.capture ? "true" : "false", {
+          description: "Option of Enabled, on by default. Record repeated tool failures and your corrections, and let the proposer write a rule from them.",
           values: BOOLEANS,
         }),
         setting("tuner.autoAccept", "Accept with no review", config.tuner.autoAccept ? "true" : "false", {
-          description: "Write each suggestion to learned.md with no review. A suggestion has no score and can be wrong. pi-fabric tune undo removes the last edit.",
+          description: "Option of Enabled, on by default. Write each new rule to learned.md and show a notice; pi-fabric tune undo removes the last one. Off keeps each rule as a suggestion for pi-fabric tune review, accept, and reject.",
           values: BOOLEANS,
         }),
         setting("tuner.proposerModel", "Proposer model", config.tuner.proposerModel || INHERIT_VALUE, {

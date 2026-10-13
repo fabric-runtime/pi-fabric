@@ -63,8 +63,9 @@ node bench/tuner/bench.mjs --out bench/results/tuner/full
 | Rule values | The learned file without one rule, for each rule |
 | Changed server | The learned rules of the first seed on a server with a different seed, then a tuner run that starts from them |
 | General tasks | 6 small coding tasks with no depot, with the learned rules on and off |
+| One switch | 16 Pi sessions in one agent directory with only `tuner.enabled` on. Fabric writes the rules from the failures of the sessions with no review. The held-out tasks then run with those rules. |
 
-Each part skips itself when its output is there, so you can start a stopped bench again with the same command. `--skip controls,loo,drift,general` runs only the tuner runs and the held-out arms.
+Each part skips itself when its output is there, so you can start a stopped bench again with the same command. `--skip controls,loo,drift,general,live` runs only the tuner runs and the held-out arms.
 
 [RESULTS.md](RESULTS.md) has the results of the last full bench.
 

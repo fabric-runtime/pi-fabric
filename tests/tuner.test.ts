@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FABRIC_CONFIG, normalizeFabricConfig } from "../src/config.js";
 import { learnedRulesPath, MAX_LEARNED_CHARS, readLearnedGuidance } from "../src/tuner/learned.js";
-import { buildEvidence, captureStep, correctionOf, dueTargets, loadCapture, saveCapture, stepOf, takeNotice, tunerFile } from "../src/tuner/capture.js";
+import { buildEvidence, captureStep, correctionOf, dueTargets, holdNested, loadCapture, saveCapture, stepOf, takeNested, takeNotice, tunerFile } from "../src/tuner/capture.js";
 import { applyEdits, beats, buildReport, diffEntries, entriesOf, proposeEdit, removeEntry, renderTranscript, splitTasks, summarize, type CellResult } from "../src/tuner/tuner.js";
 
 const block = (search: string, replace: string) => `<<<<<<< SEARCH\n${search}${search ? "\n" : ""}=======\n${replace}${replace ? "\n" : ""}>>>>>>> REPLACE`;
@@ -14,8 +14,10 @@ const cell = (task: string, score: number, tokens: number, extra: Partial<CellRe
 
 describe("tuner", () => {
   it("is off by default and reads only bounded learned rules", () => {
-    expect(DEFAULT_FABRIC_CONFIG.tuner).toEqual({ enabled: false, proposerModel: "", capture: false, autoAccept: false });
-    expect(normalizeFabricConfig({ tuner: { enabled: true, proposerModel: " a/b ", capture: true, autoAccept: true } }).tuner).toEqual({ enabled: true, proposerModel: "a/b", capture: true, autoAccept: true });
+    // One switch: capture and autoAccept are on by default, and they act only while enabled is true.
+    expect(DEFAULT_FABRIC_CONFIG.tuner).toEqual({ enabled: false, proposerModel: "", capture: true, autoAccept: true });
+    expect(normalizeFabricConfig({ tuner: { enabled: true, proposerModel: " a/b " } }).tuner).toEqual({ enabled: true, proposerModel: "a/b", capture: true, autoAccept: true });
+    expect(normalizeFabricConfig({ tuner: { enabled: true, autoAccept: false } }).tuner).toMatchObject({ capture: true, autoAccept: false });
     expect(normalizeFabricConfig({ tuner: { enabled: "yes" } }).tuner.enabled).toBe(false);
     const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "tuner-"));
     expect(readLearnedGuidance(agentDir)).toBeUndefined();
@@ -59,6 +61,9 @@ describe("tuner", () => {
     expect(beats(summarize([cell("a", 1, 950), cell("b", 0, 950)]), parent)).toBe(false);
     expect(beats(summarize([cell("a", 1, 800), cell("b", 0, 800)]), parent)).toBe(true);
     expect(beats(summarize([cell("a", 0, 100), cell("b", 0, 100)]), parent)).toBe(false);
+    // At a score of 0, fewer tokens is not a win: the agent only stops earlier.
+    expect(beats(summarize([cell("a", 0, 100)]), summarize([cell("a", 0, 1000)]))).toBe(false);
+    expect(beats(summarize([cell("a", 0.2, 100)]), summarize([cell("a", 0, 1000)]))).toBe(true);
   });
 
   it("builds a bounded report with failures first", () => {
@@ -104,6 +109,11 @@ describe("tuner", () => {
     expect(evidence).toContain("upper case");
     expect(evidence).toContain("CALL return await mcp.depot.depot_search({q:'[[PINE]]'})");
     expect(evidence).not.toContain("npm test");
+    expect(evidence).not.toContain("a rule for this target is wrong or old");
+    // A target that already had a proposer call: its failures occurred with the rules in the prompt.
+    expect(buildEvidence(rows, targets, new Set(targets))).toContain("Correct that rule so that it agrees with the call that succeeded.");
+    // With no call that succeeded, the proposer must remove the rule and not guess a new format.
+    expect(buildEvidence(rows.filter((row) => row.failed), targets, new Set(targets))).toContain("Remove the rules for this target that the errors contradict.");
     // A suggestion that waits blocks the next one, and a used target needs more failures.
     fs.writeFileSync(tunerFile("suggestion.json", agentDir), "{}");
     expect(step("s4", "return await mcp.depot.depot_search({q:'ash'})", bad)).toBe(false);
@@ -127,6 +137,24 @@ describe("tuner", () => {
     fs.writeFileSync(tunerFile("notice.txt", agentDir), "changed");
     fs.writeFileSync(tunerFile("suggestion.json", agentDir), "{}");
     expect([takeNotice(agentDir), takeNotice(agentDir), takeNotice(agentDir)]).toEqual(["changed", 'The Fabric tuner has a rule suggestion. Run "pi-fabric tune review".', undefined]);
+  });
+
+  it("uses the nested calls that succeeded for the target and for the exact fix", () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "tuner-nested-"));
+    const search = { ...stepOf("n1", "mcp.depot.depot_search", { q: "q:OAK;" }, '[{"id":"P-1"}]'), target: "mcp.depot.depot_search" };
+    holdNested("call-1", search);
+    const passed = takeNested("call-1");
+    expect(takeNested("call-1")).toEqual([]);
+    // The search passed inside the call, so the failure belongs to the stock call.
+    const code = "for (const q of ['oak','q:OAK;']) { try { await mcp.depot.depot_search({q}) } catch {} } return await mcp.depot.depot_stock({part:'P-1'})";
+    expect(stepOf("n1", "fabric_exec", { code }, "Runtime error: ERR_FORMAT [part]", false, passed.map((step) => step.target)).target).toBe("mcp.depot.depot_stock");
+    // A trial loop: the call fails as a whole, and the nested success gives the arguments that the server accepted.
+    const loop = stepOf("n1", "fabric_exec", { code: code.slice(0, code.indexOf(" return")) }, "Runtime error: ERR_FORMAT [q]", false, ["mcp.depot.depot_search"]);
+    expect(loop.target).toBe("mcp.depot.depot_search");
+    captureStep(loop, [], agentDir, () => undefined);
+    captureStep(search, [], agentDir, () => undefined);
+    expect(buildEvidence(loadCapture(agentDir).rows, ["mcp.depot.depot_search"])).toContain('CALL {"q":"q:OAK;"}');
+    fs.rmSync(agentDir, { recursive: true, force: true });
   });
 
   it("asks the proposer one more time for an edit that does not apply", async () => {

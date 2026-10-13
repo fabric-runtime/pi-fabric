@@ -72,11 +72,16 @@ interface PiMessage {
   content?: unknown;
   isError?: boolean;
   usage?: { totalTokens?: number; cost?: { total?: number } };
+  errorMessage?: string;
 }
 
 class BudgetStop extends Error {}
 
 const EPS = 0.01;
+/** The loop stops after this number of rounds in sequence with no kept edit. */
+const NO_GAIN_ROUNDS = 2;
+/** At this scoring score and above, a round uses half of its candidates. */
+const FEW_CANDIDATES_SCORE = 0.8;
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max)}… [+${text.length - max} chars]`;
 const headTail = (text: string, max: number): string =>
@@ -203,7 +208,8 @@ export const summarize = (results: CellResult[]): Score => {
 /** A candidate wins on a higher score, or on the same score with at least 10% fewer tokens. */
 export const beats = (candidate: Score, parent: Score): boolean =>
   candidate.score > parent.score + EPS ||
-  (Math.abs(candidate.score - parent.score) <= EPS && candidate.tokens < parent.tokens * 0.9);
+  // At a score of 0, fewer tokens only shows that the agent stops earlier, so it is not a win.
+  (candidate.score > EPS && Math.abs(candidate.score - parent.score) <= EPS && candidate.tokens < parent.tokens * 0.9);
 
 // --- transcript and report ---
 
@@ -293,13 +299,34 @@ interface PiRun {
   cost: number;
   stopped?: "timeout" | "tokens";
   stderrTail: string;
+  /** The provider error of the last assistant message. */
+  error?: string;
 }
 
-const runPi = (
+interface PiRunOptions { cwd: string; agentDir: string; timeoutMs: number; maxTokens: number; noReplyTries?: number }
+
+// A run with no model reply is a failure of the provider and not a result of the harness.
+// ponytail: at most 20 tries with a pause of 1 to 5 minutes (about 100 minutes); the run keeps 0 tokens after that.
+const NO_REPLY_TRIES = 20;
+const NO_REPLY_PAUSE_MS = Number(process.env.PI_FABRIC_TUNE_RETRY_MS ?? 60_000);
+
+const runPi = async (pi: string, args: string[], input: string, options: PiRunOptions): Promise<PiRun> => {
+  for (let attempt = 1; ; attempt += 1) {
+    const run = await runPiOnce(pi, args, input, options);
+    if (run.tokens > 0 || attempt >= (options.noReplyTries ?? NO_REPLY_TRIES)) return run;
+    const reason = (run.error ?? run.stderrTail).trim();
+    // A rate limit gives its own time ("Try again in 2572 seconds"). The time can be longer than the real stop, so wait at most 5 minutes for each try.
+    const pause = Math.min(Math.max(300_000, NO_REPLY_PAUSE_MS), Math.max(NO_REPLY_PAUSE_MS, 1000 * Number(/try again in (\d+) seconds/i.exec(reason)?.[1] ?? 0)));
+    process.stderr.write(`  no model reply (${clip(reason || "no error text", 200)}). Try ${attempt + 1} in ${Math.round(pause / 1000)} s.\n`);
+    await new Promise((resolve) => setTimeout(resolve, pause));
+  }
+};
+
+const runPiOnce = (
   pi: string,
   args: string[],
   input: string,
-  options: { cwd: string; agentDir: string; timeoutMs: number; maxTokens: number },
+  options: PiRunOptions,
 ): Promise<PiRun> => new Promise((resolve) => {
   const child = spawn(pi, ["--mode", "json", "--no-session", "--no-prompt-templates", "--no-context-files", "--no-themes", ...args], {
     cwd: options.cwd,
@@ -328,6 +355,7 @@ const runPi = (
       if (event.message.role === "assistant") {
         run.tokens += event.message.usage?.totalTokens ?? 0;
         run.cost += event.message.usage?.cost?.total ?? 0;
+        if (event.message.errorMessage) run.error = event.message.errorMessage;
         if (run.tokens > options.maxTokens) stop("tokens");
       }
     }
@@ -358,13 +386,13 @@ const writeAgentDir = (agentDir: string, models: string[], fabric?: Record<strin
 };
 
 /** One proposer call from an agent dir that holds only the proposer's credentials. */
-export const askProposer = async (pi: string, proposer: string, agentDir: string, prompt: string): Promise<PiRun & { text: string }> => {
+export const askProposer = async (pi: string, proposer: string, agentDir: string, prompt: string, noReplyTries?: number): Promise<PiRun & { text: string }> => {
   writeAgentDir(agentDir, [proposer]);
   try {
     const run = await runPi(pi, [
       "--no-tools", "--no-extensions", "--no-skills", "--model", proposer,
       "--system-prompt", "You revise the instruction file of a coding agent. Reply in the exact format that the user requests.",
-    ], prompt, { cwd: agentDir, agentDir, timeoutMs: 300_000, maxTokens: 200_000 });
+    ], prompt, { cwd: agentDir, agentDir, timeoutMs: 300_000, maxTokens: 200_000, ...(noReplyTries === undefined ? {} : { noReplyTries }) });
     return { ...run, text: textOf(run.messages.filter((message) => message.role === "assistant").at(-1)?.content) };
   } finally {
     fs.rmSync(agentDir, { recursive: true, force: true });
@@ -439,7 +467,8 @@ export class Tuner {
     writeAgentDir(agentDir, [options.model], {
       ...suiteFabric,
       mcp: { ...(suiteFabric.mcp as Record<string, unknown> | undefined), configPath: mcporter },
-      tuner: { enabled: harness.enabled },
+      // A cell only reads the candidate rules: no capture, so no suggestion starts inside a run.
+      tuner: { enabled: harness.enabled, capture: false },
     }, harness.learned);
     fs.writeFileSync(mcporter, mcpConfig);
     try {
@@ -461,7 +490,7 @@ export class Tuner {
       result.cost = run.cost;
       result.turns = transcript.turns;
       result.toolErrors = transcript.toolErrors;
-      result.transcript = transcript.text || `(no transcript) ${run.stderrTail}`;
+      result.transcript = transcript.text || `(no transcript) ${run.error ?? run.stderrTail}`;
       result.errors = transcript.errors;
       if (run.stopped) result.stopped = run.stopped;
     } finally {
@@ -533,16 +562,28 @@ export class Tuner {
       saveVersion("v0", parent.learned, `v0: scoring ${parentScore.score.toFixed(2)}, feedback ${summarize(feedback!).score.toFixed(2)}`);
       row([0, "v0", "", "seed", true, true, parentScore.score.toFixed(3), parentScore.passRate.toFixed(3), parentScore.tokens, summarize(feedback!).score.toFixed(3), this.spentTokens, this.spentUsd.toFixed(4)]);
 
+      let roundsWithNoGain = 0;
       for (let round = 1; round <= options.rounds; round += 1) {
+        // Two stop conditions save the cost of rounds that cannot help.
+        if (parentScore.score >= 1 - EPS) {
+          options.log(`stop before round ${round}: the scoring score is 1.00`);
+          break;
+        }
+        if (roundsWithNoGain >= NO_GAIN_ROUNDS) {
+          options.log(`stop before round ${round}: ${NO_GAIN_ROUNDS} rounds with no kept edit`);
+          break;
+        }
         options.log(`round ${round}: parent ${parent.label} (scoring ${parentScore.score.toFixed(2)}, ${parentScore.tokens} tokens)`);
         const candidates: Array<{ kind: "proposer" | "removal"; learned: string; diagnosis: string; edit: string; removed?: string }> = [];
         // One slot tests the file without its least recently confirmed entry.
         const entries = entriesOf(parent.learned);
         const oldest = [...entries].sort((a, b) => (rules[entryId(a)]?.lastConfirmed ?? 0) - (rules[entryId(b)]?.lastConfirmed ?? 0))[0];
-        if (oldest && options.candidates > 1) {
+        // Near the top, the candidates of one round get almost the same score, so half of them is sufficient.
+        const count = parentScore.score >= FEW_CANDIDATES_SCORE ? Math.min(options.candidates, Math.max(2, Math.ceil(options.candidates / 2))) : options.candidates;
+        if (oldest && count > 1) {
           candidates.push({ kind: "removal", learned: removeEntry(parent.learned, oldest), diagnosis: `Removal test of: ${clip(oldest, 120)}`, edit: `REMOVE ${oldest}`, removed: oldest });
         }
-        const slots = options.candidates - candidates.length;
+        const slots = count - candidates.length;
         const responses = await mapPool(Array.from({ length: slots }, (_, slot) => slot), options.concurrency, (slot) =>
           proposeEdit(parent.learned, proposerPrompt(suite.description, parent, report, history, slot + 1, slots), (prompt) => this.propose(prompt, slot)));
         const tuples: Array<Record<string, unknown>> = [];
@@ -565,8 +606,8 @@ export class Tuner {
         }
         fs.appendFileSync(path.join(dir, "tuples.jsonl"), tuples.map((tuple) => `${JSON.stringify(tuple)}\n`).join(""));
         const best = [...scored].sort((a, b) => b.score.score - a.score.score || a.score.tokens - b.score.tokens)[0];
-        // A removal also wins a tie: the same score with a shorter file.
-        const keep = best !== undefined && (beats(best.score, parentScore) || (best.kind === "removal" && best.score.score >= parentScore.score - EPS));
+        // A removal also wins a tie: the same score with a shorter file. At a score of 0 a tie shows nothing, so the file stays.
+        const keep = best !== undefined && (beats(best.score, parentScore) || (best.kind === "removal" && best.score.score > EPS && best.score.score >= parentScore.score - EPS));
         for (const candidate of scored) {
           const isKept = keep && candidate === best;
           const cells = row([round, isKept ? `v${version + 1}` : candidate.harness.label, parent.label, candidate.kind, true, isKept, candidate.score.score.toFixed(3), candidate.score.passRate.toFixed(3), candidate.score.tokens, "", this.spentTokens, this.spentUsd.toFixed(4)]);
@@ -581,8 +622,10 @@ export class Tuner {
         }
         if (!keep || !best) {
           options.log(`  no candidate is better than ${parent.label}`);
+          roundsWithNoGain += 1;
           continue;
         }
+        roundsWithNoGain = 0;
         version += 1;
         const name = `v${version}`;
         const previous = parent;

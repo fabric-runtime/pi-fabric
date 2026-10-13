@@ -160,9 +160,12 @@ See the [interface & commands reference](docs/interface.md) for every view, keyb
 
 The harness tuner makes the instructions of a model better from measured task runs. The model stays the same. The idea comes from the paper [Harness Learning Enables Generalizable Test-Time Adaptation](https://arxiv.org/abs/2609.35738) (arXiv 2609.35738). Fabric uses the test-time loop of that paper with a standard proposer model from the Pi model list. Fabric trains no model, and you need no local model.
 
-1. `pi-fabric tune run` runs your task suite and writes a report of the failed runs.
-2. A proposer model edits one Markdown file of learned rules. An edit stays only when separate scoring tasks confirm it.
-3. With `"tuner": { "enabled": true }` in `fabric.json`, Fabric adds the kept rules to the system prompt. The default is off.
+The [tuner document](docs/tuner.md) has the goal, the benefits, what to expect, the method, and the benchmark with its design and limits.
+
+One switch turns it on: `/fabric tuner on`, or `"tuner": { "enabled": true }` in `fabric.json`. The default is off. With the switch on, Fabric adds one Markdown file of learned rules to the system prompt, and it adds new rules to that file in two ways:
+
+1. **From your sessions, with no work from you.** Fabric records the repeated tool failures of your sessions and your corrections, and a proposer model writes a rule from them.
+2. **From a task suite, with measured rules.** `pi-fabric tune run` runs your tasks and lets the proposer edit the file. An edit stays only when separate scoring tasks confirm it.
 
 | Benefit | Cause |
 | ------- | ----- |
@@ -172,7 +175,7 @@ The harness tuner makes the instructions of a model better from measured task ru
 | Stale rules get a repair after a tool change | A new tuner run on the changed tool corrects the rules that became wrong. |
 | Same model, any Pi model | The solver and the proposer are `provider/model` keys from `pi --list-models`. The rules that one solver learned also helped a second solver. |
 | Bounded prompt cost | Fabric reads one file of at most 8,000 characters one time for each session, so the prompt prefix stays stable. |
-| You own the result | The rules are plain text with a Git history. Only `pi-fabric tune apply` writes to the agent directory. |
+| You own the result | The rules are plain text in one file. Fabric records each rule that it adds, and `pi-fabric tune undo` removes the last one. |
 
 The benchmark is the [quirk depot](bench/tuner/README.md): an MCP server with rules that the tool schema hides (field formats, paging, stale data with no error, and a reserve and confirm protocol). Three seeds give three different rule sets. The numbers are for held-out tasks, which the tuner did not use. The solver is `glm-5.3-flash` and the proposer is `deepseek-v4.1-flash`.
 
@@ -193,11 +196,13 @@ The benchmark is the [quirk depot](bench/tuner/README.md): an MCP server with ru
 
 The benchmark is synthetic: a model cannot know the depot rules before a run, so the gain is near the best case. One of the three seeds stayed at 75%, because its tuner run did not learn two of the rules. One tuner run used 7 to 8 million tokens with cached input included. See the [full results](bench/tuner/RESULTS.md) and the [tuner guide](docs/tuner.md).
 
-### Suggestions from real sessions
+### Rules from your sessions
 
-`"tuner": { "capture": true }` is a second mode with no task suite. Fabric records the tool failures of your sessions and the messages in which you correct the agent. When one tool fails 3 times and then succeeds, or when you correct the agent 3 times, a proposer writes a rule from those steps. `pi-fabric tune review` shows the suggestion with its evidence, and `pi-fabric tune accept` or `pi-fabric tune reject` makes the decision. No rule enters `learned.md` without your `accept`, and Fabric starts no new proposer call while a suggestion waits. `"autoAccept": true` removes the review: Fabric writes each suggestion, shows a notice, and `pi-fabric tune undo` removes the last edit. The **Tuner** section of `/fabric settings` and the `/fabric tuner` command have all the switches.
+With the tuner on, Fabric records the tool failures of your sessions and the messages in which you correct the agent. When one tool fails 3 times and then succeeds, or when you correct the agent 3 times, a proposer writes a rule from those steps. Fabric writes the rule to `learned.md` and shows a notice with it, and `pi-fabric tune undo` removes the last rule. A rule from a session has no score, so read the notices.
 
-In a live test, 16 sessions on the depot gave 4 suggestions from 4 proposer calls. A script accepted all 4 with no review. On the held-out tasks of the same seed, those rules pass 10 of 16 runs (63%). No rules pass 0 of 8, and the rules of a full tuner run pass 23 of 24. One of the 4 suggestions was partly wrong, so read each suggestion before you accept it. The capture finds only calls that fail: it cannot learn a rule for stale data or paging, where the call returns no error.
+Two options change this: `"capture": false` stops the learning from sessions, and `"autoAccept": false` keeps each new rule as a suggestion for `pi-fabric tune review`, `accept`, and `reject`. The **Tuner** section of `/fabric settings` and the `/fabric tuner` command have the switch and the options.
+
+In a live test, 16 sessions on the depot gave 4 rules from 4 proposer calls, all accepted with no review. On the held-out tasks of the same seed, those rules pass 10 of 16 runs (63%). No rules pass 0 of 8, and the rules of a full tuner run pass 23 of 24. One of the 4 rules was partly wrong, so read each notice. The capture finds only calls that fail: it cannot learn a rule for stale data or paging, where the call returns no error.
 
 ## Reference
 
@@ -225,7 +230,7 @@ In a live test, 16 sessions on the depot gave 4 suggestions from 4 proposer call
 - [Tool entropy](docs/entropy.md): static capability-preserving normal forms, deterministic invocation-friction metrics, bounded repair witnesses, and offline `certify:entropy` proof checks.
 - [Speculative PTC](docs/speculation.md): pre-launching literal read calls while the program streams, with epoch + freshness guarantees.
 - [Skills](docs/skills.md): the core-first invocation policy and user-invoked advanced patterns.
-- [Harness tuner](docs/tuner.md): opt-in learned rules that `pi-fabric tune` edits from execution feedback and keeps only when scoring tasks confirm them, plus opt-in rule suggestions from the tool failures of real sessions.
+- [Harness tuner](docs/tuner.md): opt-in learned rules, with one switch. Fabric learns them from the tool failures and corrections of your sessions, and `pi-fabric tune` learns them from a task suite and keeps only the edits that scoring tasks confirm.
 
 ## Development
 

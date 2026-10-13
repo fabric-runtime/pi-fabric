@@ -10,10 +10,10 @@ import { applyEdits, askProposer, buildReport, diffEntries, proposeEdit, propose
 // See docs/tuner.md.
 
 const USAGE = `Usage:
-  pi-fabric tune run   --tasks <dir> [--dir <out>] [--rounds 5] [--candidates 4] [--init <learned.md>]
+  pi-fabric tune run   --tasks <dir> [--dir <out>] [--rounds 8] [--candidates 4] [--init <learned.md>]
   pi-fabric tune eval  --tasks <dir> [--dir <out>] [--set feedback|scoring|heldout|all] [--learned <file>] [--off] [--label <name>]
   pi-fabric tune apply --dir <out> [--version vN]
-  pi-fabric tune suggest [--min 3] [--auto]   propose a rule from the steps that tuner.capture recorded
+  pi-fabric tune suggest [--min 3] [--auto|--no-auto]   propose a rule from the captured steps (default: tuner.autoAccept)
   pi-fabric tune review              show the suggestion that waits, with its evidence
   pi-fabric tune accept | reject     write the suggestion to learned.md, or discard it
   pi-fabric tune undo                remove the last accepted edit from learned.md
@@ -21,10 +21,12 @@ const USAGE = `Usage:
 Common options:
   --model <provider/model>     solver model (default: Pi's default model)
   --proposer <provider/model>  proposer model (default: tuner.proposerModel, then the solver model)
+                               A model key can end with a thinking level, for example provider/model:high.
+                               With no level, the model uses your defaultThinkingLevel from Pi's settings.json.
   --reps <n>                   runs for each task (default 1)
   --concurrency <n>            parallel task runs (default 3)
   --timeout <seconds>          limit for one task run (default 300)
-  --max-tokens <n>             token limit for one task run (default 400000)
+  --max-tokens <n>             token limit for one task run (default 150000)
   --budget <tokens>            stop cleanly at this total of tokens (default: no limit)
   --budget-usd <usd>           stop cleanly at this total cost (default: no limit)
 
@@ -39,7 +41,7 @@ const parse = (argv: string[]): { flags: Map<string, string>; switches: Set<stri
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (!arg.startsWith("--")) throw new UsageError(`Unexpected argument ${JSON.stringify(arg)}`);
-    if (arg === "--off" || arg === "--auto") switches.add(arg.slice(2));
+    if (arg === "--off" || arg === "--auto" || arg === "--no-auto") switches.add(arg.slice(2));
     else if (argv[index + 1] === undefined) throw new UsageError(`${arg} needs a value`);
     else flags.set(arg.slice(2), argv[++index]!);
   }
@@ -139,10 +141,15 @@ export async function runTuneCli(argv: string[]): Promise<number> {
 
     const agentDir = resolveAgentDir();
     const settings = readJson(path.join(agentDir, "settings.json"));
-    const model = flags.get("model") ?? (settings.defaultProvider && settings.defaultModel ? `${String(settings.defaultProvider)}/${String(settings.defaultModel)}` : undefined);
+    const baseModel = flags.get("model") ?? (settings.defaultProvider && settings.defaultModel ? `${String(settings.defaultProvider)}/${String(settings.defaultModel)}` : undefined);
     const tunerConfig = (readJson(path.join(agentDir, "fabric.json")).tuner ?? {}) as { proposerModel?: unknown; autoAccept?: unknown };
     const configured = tunerConfig.proposerModel;
-    const proposer = flags.get("proposer") ?? (typeof configured === "string" && configured.trim() ? configured.trim() : model);
+    // An isolated run has no Pi settings, so it gets your default thinking level here. A level in the model key wins.
+    const level = typeof settings.defaultThinkingLevel === "string" ? settings.defaultThinkingLevel : "";
+    const withLevel = (key: string | undefined): string | undefined =>
+      !key || !level || /:(off|minimal|low|medium|high|xhigh|max)$/.test(key) ? key : `${key}:${level}`;
+    const model = withLevel(baseModel);
+    const proposer = withLevel(flags.get("proposer") ?? (typeof configured === "string" && configured.trim() ? configured.trim() : baseModel));
     if (!proposer || (!model && command !== "suggest")) throw new UsageError("--model is required (Pi has no default model)");
 
     if (command === "suggest") {
@@ -162,29 +169,36 @@ export async function runTuneCli(argv: string[]): Promise<number> {
           process.stdout.write("No target has enough failures.\n");
           return 0;
         }
-        const evidence = buildEvidence(rows, targets);
+        // A target with an earlier proposer call has its rules in the prompt, so its new failures show a rule that does not work.
+        const evidence = buildEvidence(rows, targets, new Set(targets.filter((target) => need.has(target))));
+        const record = (outcome: string, tokens = 0): void =>
+          fs.appendFileSync(tunerFile("suggest.log"), `${JSON.stringify({ ts: new Date().toISOString(), targets, outcome, tokens })}\n`, { mode: 0o600 });
         const current = readText(learnedRulesPath());
         let tokens = 0;
         let stderrTail = "";
         const response = await proposeEdit(current, proposerPrompt(REAL_SESSIONS, { label: "current", learned: current, enabled: true }, evidence, [], 1, 1), async (prompt) => {
-          const run = await askProposer(flags.get("pi") ?? "pi", proposer, fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-suggest-")), prompt);
+          // One try: this process holds the suggestion lock, and the next failure of the target starts it again.
+          const run = await askProposer(flags.get("pi") ?? "pi", proposer, fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-suggest-")), prompt, 1);
           tokens += run.tokens;
-          stderrTail = run.stderrTail;
+          stderrTail = run.error ?? run.stderrTail;
           return run.text;
         });
         if (!response.trim()) {
+          record("no reply");
           process.stderr.write(`pi-fabric tune: the proposer ${proposer} gave no reply. ${stderrTail}\n`);
           return 1;
         }
-        // The cost limit: each proposer call uses up the steps of its targets and doubles their next threshold.
-        for (const target of targets) need.set(target, 2 * (need.get(target) ?? SUGGEST_AFTER));
-        saveCapture(rows.filter((row) => !targets.includes(row.target)), need);
         const edit = applyEdits(current, response);
+        // The cost limit: each proposer call uses up the steps of its targets. A call with no rule doubles their
+        // next threshold. A call with a rule sets it back, so a rule that does not work gets a repair after 3 failures.
+        for (const target of targets) need.set(target, edit.ok ? SUGGEST_AFTER : 2 * (need.get(target) ?? SUGGEST_AFTER));
+        saveCapture(rows.filter((row) => !targets.includes(row.target)), need);
+        record(edit.ok ? "rule" : edit.reason, tokens);
         if (!edit.ok) {
           process.stdout.write(`No suggestion: ${edit.reason}.\n`);
           return 0;
         }
-        if (switches.has("auto") || tunerConfig.autoAccept === true) {
+        if (switches.has("auto") || (!switches.has("no-auto") && tunerConfig.autoAccept !== false)) {
           // No review: the record and the notice let you find the edit and remove it.
           acceptEdit(current, edit.learned, edit.diagnosis, true);
           const change = diffEntries(current, edit.learned);
@@ -205,12 +219,12 @@ export async function runTuneCli(argv: string[]): Promise<number> {
       dir,
       model: model ?? proposer,
       proposer,
-      rounds: number("rounds", 5),
+      rounds: number("rounds", 8),
       candidates: Math.max(1, number("candidates", 4)),
       reps: Math.max(1, number("reps", 1)),
       concurrency: Math.max(1, number("concurrency", 3)),
       timeoutS: number("timeout", 300),
-      maxTokensPerTask: number("max-tokens", 400_000),
+      maxTokensPerTask: number("max-tokens", 150_000),
       budgetTokens: number("budget", 0),
       budgetUsd: number("budget-usd", 0),
       pi: flags.get("pi") ?? "pi",

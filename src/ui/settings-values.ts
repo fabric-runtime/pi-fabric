@@ -295,7 +295,7 @@ export const summaryFor = (id: string, config: FabricConfig): string => {
     case "agents":
       return `${config.agents.runner}/${config.agents.transport}`;
     case "tuner":
-      return [config.tuner.enabled ? "rules on" : "rules off", ...(config.tuner.capture ? [config.tuner.autoAccept ? "suggest · auto accept" : "suggest"] : [])].join(" · ");
+      return !config.tuner.enabled ? "off" : ["on", ...(config.tuner.capture ? [config.tuner.autoAccept ? "learns" : "learns with review"] : [])].join(" · ");
     case "capture":
       return config.capture.enabled ? "enabled" : "disabled";
     case "ui":
