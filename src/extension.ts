@@ -793,6 +793,34 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     return changed ? { content } : undefined;
   });
 
+  // Opt-in capture for `pi-fabric tune suggest`. Nested calls are part of
+  // their outer result, so only top-level results count.
+  // A message in which the user corrects the agent is a step too.
+  const captureForTuner = async (context: ExtensionContext, event: { toolName: string; input: Record<string, unknown>; text: string; isError: boolean } | { correction: string }): Promise<void> => {
+    if (!state.bootstrapped || !state.config.tuner.capture) return;
+    try {
+      const capture = await import("./tuner/capture.js");
+      const session = context.sessionManager.getSessionId();
+      const step = "correction" in event ? capture.correctionOf(session, event.correction) : capture.stepOf(session, event.toolName, event.input, event.text, event.isError);
+      // The detached CLI reads only the global fabric.json, so it gets the effective values as flags.
+      const { autoAccept, proposerModel } = state.config.tuner;
+      if (step) capture.captureStep(step, [...(autoAccept ? ["--auto"] : []), ...(proposerModel ? ["--proposer", proposerModel] : [])]);
+      const notice = context.hasUI ? capture.takeNotice() : undefined;
+      if (notice) context.ui.notify(notice, "info");
+    } catch (error) {
+      console.warn(`[pi-fabric] tuner capture: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  pi.on("tool_result", async (event, context) => {
+    if (!event.parentToolCallId) {
+      await captureForTuner(context, { toolName: event.toolName, input: event.input, text: event.content.map((part) => part.type === "text" ? part.text : "").join(""), isError: event.isError });
+    }
+    return undefined;
+  });
+  pi.on("input", async (event, context) => {
+    if (event.source !== "extension") await captureForTuner(context, { correction: event.text });
+  });
+
   pi.on("message_end", (event) => {
     if (event.message.role !== "toolResult") return undefined;
     const message = event.message as AgentToolResultMessage & { usage?: Usage };
@@ -1025,6 +1053,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     const projected = extractiveHistory?.inject(context, messages) ?? messages;
     return projected !== messages || messages.length !== event.messages.length ? { messages: projected } : undefined;
   });
+  let tunerGuidance: string | undefined;
   pi.on("before_agent_start", async (event, context) => {
     const config = state.bootstrapped ? state.config : DEFAULT_FABRIC_CONFIG;
     const fullCodeMode = config.fullCodeMode;
@@ -1074,6 +1103,8 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       overrideGuidance,
       extensionRoster,
       resolvedGuidance.appendText,
+      // Loaded at first use, and read once: the section must stay byte-stable for the whole session.
+      config.tuner.enabled ? (tunerGuidance ??= (await import("./tuner/learned.js")).readLearnedGuidance() ?? "") : undefined,
     ].filter((section): section is string => Boolean(section)).join("\n\n");
     // Turn-varying content (skill reference guidance) is delivered here as a
     // persistent message, not appended to the system prompt. Keeping the

@@ -29,6 +29,14 @@ import { formatForeground } from "../core/foreground-tools.js";
 import fs from "node:fs";
 import path from "node:path";
 
+const TUNER_KEYS = ["enabled", "capture", "autoAccept", "proposerModel"] as const;
+const TUNER_KEY_HELP: Record<(typeof TUNER_KEYS)[number], string> = {
+  enabled: "add learned.md to the system prompt",
+  capture: "suggest rules from tool failures and your corrections",
+  autoAccept: "write each suggestion with no review",
+  proposerModel: "the model that writes the rule edits",
+};
+
 interface FabricCommandDeps {
   state: FabricState;
   fabricUi: FabricUiController;
@@ -328,6 +336,7 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
         "decisions",
         "programs",
         "run",
+        "tuner",
       ];
       const idCommands = new Set([
         "messages",
@@ -366,6 +375,19 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
           label: safeText(target.name),
           description: safeText(`${target.status} · ${target.id.slice(0, 8)}`),
         })) : null;
+      }
+      if (subcommand === "tuner") {
+        const { tuner } = state.config;
+        const space = idPrefix.indexOf(" ");
+        const key = space < 0 ? undefined : idPrefix.slice(0, space);
+        const values = key === undefined
+          ? TUNER_KEYS.map((name) => ({ value: name, description: `${name === "proposerModel" ? tuner.proposerModel || "inherit" : tuner[name] ? "on" : "off"} · ${TUNER_KEY_HELP[name]}` }))
+          : key === "proposerModel"
+            ? [...new Set(["inherit", tuner.proposerModel].filter(Boolean))].map((value) => ({ value: `${key} ${value}`, description: "provider/model from pi --list-models" }))
+            : (TUNER_KEYS as readonly string[]).includes(key) ? ["on", "off"].map((value) => ({ value: `${key} ${value}`, description: "" })) : [];
+        const matches = values.filter((item) => item.value.startsWith(idPrefix));
+        // A completion replaces all the argument text, so its value starts with the subcommand.
+        return matches.length > 0 ? matches.map((item) => ({ value: `tuner ${item.value}`, label: item.value.split(" ").at(-1)!, ...(item.description ? { description: item.description } : {}) })) : null;
       }
       if (subcommand === "schema") {
         const modes = ["off", "audit", "enforce"].filter((mode) => mode.startsWith(idPrefix));
@@ -508,6 +530,50 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
           `Schema mode set to ${requested} for this session (config file unchanged; the next session starts from the configured mode)`,
           "info",
         );
+        return;
+      }
+      if (command === "tuner") {
+        const key = argumentsList[0];
+        let value = argumentsList[1];
+        const { tuner } = state.config;
+        if (key === "proposerModel" && value === undefined && context.hasUI) {
+          // No value: select from the Pi model list.
+          let models: Array<{ provider: string; id: string }> = [];
+          try { models = context.modelRegistry.getAvailable(); } catch { /* no registry */ }
+          value = await context.ui.select("Tuner proposer model", ["inherit", ...models.map((model) => `${model.provider}/${model.id}`).sort()]);
+          if (value === undefined) return;
+        }
+        if (key === undefined) {
+          const { suggestionWaits } = await import("../tuner/capture.js");
+          const { learnedRulesPath } = await import("../tuner/learned.js");
+          let rules = 0;
+          try { rules = fs.readFileSync(learnedRulesPath(), "utf8").split("\n").filter((line) => line.startsWith("- ")).length; } catch { /* no learned rules yet */ }
+          context.ui.notify(
+            `Fabric tuner: enabled ${tuner.enabled ? "on" : "off"} · capture ${tuner.capture ? "on" : "off"} · autoAccept ${tuner.autoAccept ? "on" : "off"} · proposerModel ${tuner.proposerModel || "inherit"} · ${rules} learned rule${rules === 1 ? "" : "s"}${suggestionWaits() ? ' · a suggestion waits: run "pi-fabric tune review"' : ""}`,
+            "info",
+          );
+          return;
+        }
+        const flag = value === "on" || value === "true" ? true : value === "off" || value === "false" ? false : undefined;
+        const partial = key === "proposerModel"
+          ? value === "inherit" ? { proposerModel: "" } : value?.includes("/") ? { proposerModel: value } : undefined
+          : (TUNER_KEYS as readonly string[]).includes(key) && flag !== undefined ? { [key]: flag } : undefined;
+        if (!partial) {
+          context.ui.notify("Usage: /fabric tuner [enabled|capture|autoAccept on|off] or /fabric tuner proposerModel <provider/model>|inherit", "warning");
+          return;
+        }
+        try {
+          // The same scope as the settings UI: the project when Pi trusts it.
+          const projectTrusted = context.isProjectTrusted();
+          const saved = saveFabricConfig(
+            { cwd: context.cwd, agentDir: resolveAgentDir(), projectTrusted, scope: projectTrusted ? "project" : "global" },
+            { tuner: partial },
+          );
+          state.reloadConfig(context);
+          context.ui.notify(`Fabric tuner ${key} set to ${value} (${saved.scope}: ${saved.path})`, "info");
+        } catch (error) {
+          context.ui.notify(`Failed to update the Fabric tuner setting: ${error instanceof Error ? error.message : String(error)}`, "error");
+        }
         return;
       }
       if (command === "prewalk") {
@@ -1190,7 +1256,7 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
       }
       if (command !== "status") {
         context.ui.notify(
-          "Usage: /fabric [status|dashboard|chat [id-or-name]|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]]",
+          "Usage: /fabric [status|dashboard|chat [id-or-name]|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]|tuner [enabled|capture|autoAccept on|off]]",
           "warning",
         );
         return;

@@ -278,6 +278,14 @@ Unknown definitions stay visible as waiting. They do not fail the Fabric runtime
 { "thinking": { "bounds": { "min": "low", "max": "high" } } }
 ```
 
+## Harness tuner
+
+`tuner.enabled` (default `false`) adds the learned rules in `<agent-dir>/fabric/tuner/learned.md` to the system prompt. `tuner.proposerModel` (default `""`) is the Pi `provider/model` that proposes edits in `pi-fabric tune`; an empty value selects the solver model. `tuner.capture` (default `false`) records the repeated tool failures of your sessions and your corrections, and proposes a rule from them; no rule enters `learned.md` before you run `pi-fabric tune accept`. `tuner.autoAccept` (default `false`) writes each suggestion to `learned.md` with no review; `pi-fabric tune undo` removes the last edit. The **Tuner** section of `/fabric settings` and the `/fabric tuner <key> <value>` command edit these four values. See [the harness tuner](tuner.md).
+
+```json
+{ "tuner": { "enabled": true, "capture": true, "autoAccept": false, "proposerModel": "provider/model" } }
+```
+
 ## Prewalk executor
 
 `prewalk.enabled` defaults to `true` and is the persistent master switch. Turn it off under **Prewalk → Enabled** in `/fabric settings`, or run `/fabric prewalk --disable`; both save to project scope in a trusted project and global scope otherwise. Disabling also cancels any live arm. `/fabric prewalk --enable` turns it back on. `/fabric prewalk --off` only cancels the current arm for this session and does not change the saved master switch.

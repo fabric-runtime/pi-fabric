@@ -416,6 +416,17 @@ export interface FabricThinkingConfig {
   bounds: FabricThinkingBounds;
 }
 
+export interface FabricTunerConfig {
+  /** Add the tuner's learned rules (`<agentDir>/fabric/tuner/learned.md`) to the system prompt. */
+  enabled: boolean;
+  /** Pi `provider/model` that proposes edits in `pi-fabric tune`; empty uses the solver model. */
+  proposerModel: string;
+  /** Record repeated tool failures of real sessions and propose rules from them (`pi-fabric tune review`). */
+  capture: boolean;
+  /** Write each suggestion to learned.md with no review (`pi-fabric tune undo` removes the last one). */
+  autoAccept: boolean;
+}
+
 export interface FabricConfig {
   fullCodeMode: boolean;
   executor: FabricExecutorConfig;
@@ -440,6 +451,7 @@ export interface FabricConfig {
   schema: FabricSchemaConfig;
   speculation: FabricSpeculationConfig;
   thinking: FabricThinkingConfig;
+  tuner: FabricTunerConfig;
   codePreview: CodePreviewSettings;
 }
 
@@ -644,6 +656,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     mcpAllowlist: [],
   },
   thinking: { bounds: {} },
+  tuner: { enabled: false, proposerModel: "", capture: false, autoAccept: false },
   foreground: { tools: [], maxTools: 4 },
   codePreview: defaultCodePreviewSettings(),
 };
@@ -1573,6 +1586,12 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
     thinking: {
       // Bounds are a ceiling policy: malformed values fail closed.
       bounds: normalizeThinkingBounds(objectValue(input.thinking).bounds, "thinking.bounds"),
+    },
+    tuner: {
+      enabled: booleanValue(objectValue(input.tuner).enabled, DEFAULT_FABRIC_CONFIG.tuner.enabled),
+      proposerModel: (stringValue(objectValue(input.tuner).proposerModel) ?? "").trim().slice(0, 256),
+      capture: booleanValue(objectValue(input.tuner).capture, DEFAULT_FABRIC_CONFIG.tuner.capture),
+      autoAccept: booleanValue(objectValue(input.tuner).autoAccept, DEFAULT_FABRIC_CONFIG.tuner.autoAccept),
     },
     // Malformed entries fail config loading; semantic refusals report at runtime.
     foreground: foregroundConfigValue(input.foreground),

@@ -13,6 +13,7 @@ type FabricCliCommand = (argv: string[]) => Promise<number>;
 const commands: Record<string, () => Promise<FabricCliCommand>> = {
   mesh: async () => (await import("./mesh.js")).runMeshCli,
   decisions: async () => (await import("./decisions.js")).runDecisionsCli,
+  tune: async () => (await import("./tune.js")).runTuneCli,
 };
 
 const usage = (): string => [

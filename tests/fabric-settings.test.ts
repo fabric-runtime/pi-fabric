@@ -190,6 +190,7 @@ describe("FabricSettingsComponent", () => {
       "MCP",
       "Prewalk",
       "Agents",
+      "Tuner",
       "Capture",
       "UI",
       "Compaction",
@@ -200,7 +201,7 @@ describe("FabricSettingsComponent", () => {
     ]) {
       expect(labels).toContain(label);
     }
-    expect(items.length).toBe(15);
+    expect(items.length).toBe(16);
   });
 
   it("marks submenu rows with a drill-in marker and leaves inline toggles plain", () => {

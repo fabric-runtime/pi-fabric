@@ -1,0 +1,32 @@
+{
+  "feedback": [
+    "f1-id",
+    "f2-stock",
+    "f3-price",
+    "f4-both",
+    "f5-order",
+    "f6-compare",
+    "f7-total",
+    "f8-list"
+  ],
+  "scoring": [
+    "s1-id",
+    "s2-stock",
+    "s3-price",
+    "s4-both",
+    "s5-order",
+    "s6-compare",
+    "s7-total",
+    "s8-list"
+  ],
+  "heldout": [
+    "h1-id",
+    "h2-stock",
+    "h3-price",
+    "h4-both",
+    "h5-order",
+    "h6-compare",
+    "h7-total",
+    "h8-list"
+  ]
+}

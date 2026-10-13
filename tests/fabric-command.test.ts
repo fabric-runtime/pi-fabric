@@ -637,6 +637,67 @@ describe("/fabric command", () => {
     }
   });
 
+  it("completes and saves the tuner settings", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fabric-command-tuner-"));
+    try {
+      let handler: ((argumentsText: string, context: ExtensionContext) => Promise<void>) | undefined;
+      let completions: ((prefix: string) => Array<{ value: string; label: string; description?: string }> | null) | undefined;
+      const pi = {
+        registerCommand: vi.fn((_name: string, definition: { handler: typeof handler; getArgumentCompletions: typeof completions }) => {
+          handler = definition.handler;
+          completions = definition.getArgumentCompletions;
+        }),
+      } as unknown as ExtensionAPI;
+      const reloadConfig = vi.fn();
+      const notify = vi.fn();
+      const select = vi.fn().mockResolvedValue("litellm/b");
+      const state = {
+        initialized: true,
+        ensure: vi.fn().mockResolvedValue(undefined),
+        config: { tuner: { enabled: false, capture: true, autoAccept: false, proposerModel: "" } },
+        reloadConfig,
+      } as unknown as FabricState;
+      const context = {
+        cwd: root,
+        hasUI: true,
+        isProjectTrusted: () => true,
+        modelRegistry: { getAvailable: () => [{ provider: "litellm", id: "b" }, { provider: "litellm", id: "a" }] },
+        ui: { notify, select },
+      } as unknown as ExtensionContext;
+      registerFabricCommand(pi, {
+        state,
+        fabricUi: {} as FabricUiController,
+        capturedTools: {} as CapturedToolCatalog,
+        applyFabricMode: vi.fn(),
+        suspendToolCapture: vi.fn(),
+      });
+
+      expect(completions!("tu")).toEqual([{ value: "tuner", label: "tuner" }]);
+      expect(completions!("tuner ")!.map((item) => item.value)).toEqual(["tuner enabled", "tuner capture", "tuner autoAccept", "tuner proposerModel"]);
+      expect(completions!("tuner c")).toEqual([{ value: "tuner capture", label: "capture", description: "on · suggest rules from tool failures and your corrections" }]);
+      expect(completions!("tuner enabled o")).toEqual([{ value: "tuner enabled on", label: "on" }, { value: "tuner enabled off", label: "off" }]);
+      expect(completions!("tuner proposerModel ")!.map((item) => item.value)).toEqual(["tuner proposerModel inherit"]);
+      expect(completions!("tuner nothing ")).toBeNull();
+
+      const saved = async () => (JSON.parse(await readFile(path.join(root, ".pi", "fabric.json"), "utf8")) as { tuner: Record<string, unknown> }).tuner;
+      await handler!("tuner enabled on", context);
+      expect(await saved()).toEqual({ enabled: true });
+      expect(reloadConfig).toHaveBeenCalledWith(context);
+      await handler!("tuner autoAccept off", context);
+      await handler!("tuner proposerModel", context);
+      expect(select).toHaveBeenCalledWith("Tuner proposer model", ["inherit", "litellm/a", "litellm/b"]);
+      expect(await saved()).toEqual({ enabled: true, autoAccept: false, proposerModel: "litellm/b" });
+      await handler!("tuner proposerModel inherit", context);
+      expect((await saved()).proposerModel).toBe("");
+      await handler!("tuner enabled maybe", context);
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Usage: /fabric tuner"), "warning");
+      await handler!("tuner", context);
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner: enabled off · capture on · autoAccept off · proposerModel inherit"), "info");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects arming while the prewalk master switch is disabled", async () => {
     let handler: ((argumentsText: string, context: ExtensionContext) => Promise<void>) | undefined;
     const sendUserMessage = vi.fn();

@@ -12,7 +12,7 @@ import {
   buildApprovalsSection,
   buildMcpSection,
 } from "./settings-sections-execution.js";
-import { buildPrewalkSection, buildAgentsSection } from "./settings-sections-agents.js";
+import { buildPrewalkSection, buildAgentsSection, buildTunerSection } from "./settings-sections-agents.js";
 import {
   buildCaptureSection,
   buildUiSection,
@@ -60,6 +60,7 @@ export const buildFabricSettingsItems = (
     buildMcpSection(context),
     buildPrewalkSection(context),
     buildAgentsSection(context),
+    buildTunerSection(context),
     buildCaptureSection(context),
     buildUiSection(context),
     buildCompactionSection(context),

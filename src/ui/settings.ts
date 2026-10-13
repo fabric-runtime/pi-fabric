@@ -42,6 +42,7 @@ const ROOT_ITEM_IDS = [
   "mcp",
   "prewalk",
   "agents",
+  "tuner",
   "capture",
   "ui",
   "compaction",
