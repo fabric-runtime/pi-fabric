@@ -157,13 +157,20 @@ export async function runTuneCli(argv: string[]): Promise<number> {
     const model = withLevel(baseModel);
     const writer = withLevel(flags.get("writer") ?? (typeof configured === "string" && configured.trim() ? configured.trim() : baseModel));
     // A stop from the keyboard: the task runs are in their own process groups, and a `finally` block does not run.
-    for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { stopRuns(); process.exit(130); });
+    let ownLock: string | undefined;
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => {
+      stopRuns();
+      if (ownLock) fs.rmSync(ownLock, { force: true });
+      process.exit(130);
+    });
 
     if (command === "suggest") {
       const lock = tunerFile("suggest.lock");
       fs.mkdirSync(path.dirname(lock), { recursive: true });
       // One operation makes the lock, so two processes cannot both get it. An old lock is from a process that stopped.
-      const claim = (): boolean => { try { fs.writeFileSync(lock, String(process.pid), { flag: "wx" }); return true; } catch { return false; } };
+      const claim = (): boolean => {
+        try { fs.writeFileSync(lock, String(process.pid), { flag: "wx" }); ownLock = lock; return true; } catch { return false; }
+      };
       if (!claim()) {
         if (lockHeld()) return 0;
         fs.rmSync(lock, { force: true });
