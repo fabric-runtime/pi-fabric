@@ -125,10 +125,11 @@ export const fixOf = (rows: CapturedStep[], target: string): CapturedStep | unde
   return last && !last.failed ? last : undefined;
 };
 
-/** The rules that start with the tool name of one of the targets. A rule that only names the tool in its text stays. */
+/** The rules that start with the full name of a target, or with its tool name alone. A rule of a different server stays. */
 export const rulesFor = (entries: string[], targets: string[]): string[] => {
-  const names = targets.map((target) => (target.startsWith("mcp.") ? target.split(".").at(-1)! : target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  return entries.filter((entry) => names.some((name) => new RegExp(`^- \\W*(?:[\\w.]*\\.)?${name}\\b`).test(entry)));
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const names = targets.flatMap((target) => [target, ...(target.startsWith("mcp.") ? [target.split(".").at(-1)!] : [])]).map(escape);
+  return entries.filter((entry) => names.some((name) => new RegExp(`^- \\W*${name}\\b`).test(entry)));
 };
 
 /**
@@ -228,6 +229,8 @@ export const takeNotice = (agentDir?: string): string | undefined => {
     fs.rmSync(file, { force: true });
     return text;
   } catch { /* no accepted edit to report */ }
+  // The next suggestion gets its own notice.
+  if (!suggestionWaits(agentDir)) reviewNoticeShown = false;
   if (reviewNoticeShown || !suggestionWaits(agentDir)) return undefined;
   reviewNoticeShown = true;
   return 'The Fabric tuner has a rule suggestion. Run "pi-fabric tune review".';

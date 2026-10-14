@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -177,6 +177,8 @@ export const applyEdits = (parent: string, response: string): EditResult => {
     else learned = learned.replace(search, () => replace);
   }
   learned = normalizeLearned(learned);
+  // A reply that leaves out the end of a block puts the markers of the next block into the replacement text.
+  if (/^(<<<<<<< SEARCH|=======|>>>>>>> REPLACE)\s*$/m.test(learned)) return { ok: false, reason: "an edit block has no end marker, so its markers are in the new text", diagnosis };
   if (learned === normalizeLearned(parent)) return { ok: false, reason: "edit changes nothing", diagnosis };
   if (learned.length > MAX_LEARNED_CHARS || learned.split("\n").length > MAX_LEARNED_LINES) {
     return { ok: false, reason: `file is above the limit of ${MAX_LEARNED_LINES} lines or ${MAX_LEARNED_CHARS} characters`, diagnosis };
@@ -322,6 +324,18 @@ const runPi = async (pi: string, args: string[], input: string, options: PiRunOp
   }
 };
 
+// The live child processes, and each agent directory with copied credentials.
+const children = new Set<ChildProcess>();
+const agentDirs = new Set<string>();
+
+/** Stop each live run and delete the copied credentials. For a signal handler: a `finally` block does not run after `process.exit`. */
+export const stopRuns = (): void => {
+  for (const child of children) {
+    try { process.kill(-child.pid!, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+  }
+  for (const agentDir of agentDirs) fs.rmSync(agentDir, { recursive: true, force: true });
+};
+
 const runPiOnce = (
   pi: string,
   args: string[],
@@ -334,6 +348,7 @@ const runPiOnce = (
     stdio: ["pipe", "pipe", "pipe"],
     detached: true,
   });
+  children.add(child);
   const run: PiRun = { messages: [], tokens: 0, cost: 0, stderrTail: "" };
   const stop = (reason: "timeout" | "tokens") => {
     run.stopped ??= reason;
@@ -362,7 +377,7 @@ const runPiOnce = (
   });
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => { run.stderrTail = (run.stderrTail + chunk).slice(-600); });
   child.on("error", (error) => { run.stderrTail = String(error); });
-  child.on("close", () => { clearTimeout(timer); resolve(run); });
+  child.on("close", () => { clearTimeout(timer); children.delete(child); resolve(run); });
   child.stdin.on("error", () => { /* the child can exit before it reads stdin */ });
   child.stdin.end(input);
 });
@@ -372,6 +387,7 @@ const writeAgentDir = (agentDir: string, models: string[], fabric?: Record<strin
   const source = resolveAgentDir();
   const providers = new Set(models.map((model) => model.split("/")[0]!));
   fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
+  agentDirs.add(agentDir);
   const keep = (value: unknown): Record<string, unknown> =>
     Object.fromEntries(Object.entries((value ?? {}) as Record<string, unknown>).filter(([name]) => providers.has(name)));
   const modelsJson = readJson(path.join(source, "models.json"));
@@ -455,9 +471,17 @@ export class Tuner {
     const result: CellResult = { task, rep, pass: false, score: 0, checkOutput: "", tokens: 0, cost: 0, wallS: 0, turns: 0, toolErrors: 0, transcript: "", errors: "" };
     const setup = path.join(taskDir, "setup.sh");
     const setupRun = fs.existsSync(setup) ? spawnSync("sh", [setup], { cwd: work, env, timeout: 120_000, encoding: "utf8" }) : undefined;
+    const save = (): CellResult => {
+      result.wallS = Math.round((Date.now() - started) / 100) / 10;
+      fs.writeFileSync(path.join(cellDir, "transcript.md"), result.transcript);
+      fs.writeFileSync(path.join(cellDir, "result.json"), JSON.stringify({ ...result, transcript: undefined, errors: undefined, cell: cellId }, null, 2));
+      options.log(`  ${harness.label} ${task} rep${rep}: ${result.pass ? "pass" : "FAIL"} score ${result.score.toFixed(2)} tokens ${result.tokens} ${result.wallS}s${result.stopped ? ` (${result.stopped})` : ""}`);
+      return result;
+    };
     if (setupRun && setupRun.status !== 0) {
       result.checkOutput = `setup.sh failed: ${clip(`${setupRun.stdout}${setupRun.stderr}`, 400)}`;
-      return result;
+      result.transcript = result.checkOutput;
+      return save();
     }
     // Every cell gets its own MCP config, so a suite server can tell the cells apart.
     const mcporter = path.join(agentDir, "mcporter.json");
@@ -496,11 +520,7 @@ export class Tuner {
     } finally {
       fs.rmSync(agentDir, { recursive: true, force: true }); // holds copied credentials
     }
-    result.wallS = Math.round((Date.now() - started) / 100) / 10;
-    fs.writeFileSync(path.join(cellDir, "transcript.md"), result.transcript);
-    fs.writeFileSync(path.join(cellDir, "result.json"), JSON.stringify({ ...result, transcript: undefined, errors: undefined, cell: cellId }, null, 2));
-    options.log(`  ${harness.label} ${task} rep${rep}: ${result.pass ? "pass" : "FAIL"} score ${result.score.toFixed(2)} tokens ${result.tokens} ${result.wallS}s${result.stopped ? ` (${result.stopped})` : ""}`);
-    return result;
+    return save();
   }
 
   /** Run every task of the given sets with each harness; one flat pool for all cells. */
@@ -554,6 +574,9 @@ export class Tuner {
 
     try {
       options.log(`v0: feedback set (${suite.sets.feedback.length} tasks) and scoring set (${suite.sets.scoring.length} tasks)`);
+      // The seed file exists before its runs, so `tune apply` works after a budget stop in round 0.
+      fs.mkdirSync(path.join(harnessDir, "v0"), { recursive: true });
+      fs.writeFileSync(path.join(harnessDir, "v0", "learned.md"), parent.learned);
       const [feedback] = await this.evaluate([parent], suite.sets.feedback);
       const [scoring] = await this.evaluate([parent], suite.sets.scoring);
       report = buildReport(parent.label, feedback!);

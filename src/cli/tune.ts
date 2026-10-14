@@ -4,7 +4,7 @@ import path from "node:path";
 import { resolveAgentDir } from "../core/agent-dir.js";
 import { buildEvidence, dueTargets, findFabricRoot, fixOf, loadCapture, lockHeld, rulesFor, saveCapture, staleEdit, SUGGEST_AFTER, tunerFile, USER_TARGET } from "../tuner/capture.js";
 import { learnedRulesPath } from "../tuner/learned.js";
-import { applyEdits, askWriter, buildReport, diffEntries, entriesOf, proposeEdit, writerPrompt, summarize, Tuner, type TunerOptions } from "../tuner/tuner.js";
+import { applyEdits, askWriter, buildReport, diffEntries, entriesOf, proposeEdit, stopRuns, writerPrompt, summarize, Tuner, type TunerOptions } from "../tuner/tuner.js";
 
 // `pi-fabric tune`: improve the learned rules file from execution feedback.
 // See docs/tuner.md.
@@ -150,13 +150,19 @@ export async function runTuneCli(argv: string[]): Promise<number> {
       !key || !level || /:(off|minimal|low|medium|high|xhigh|max)$/.test(key) ? key : `${key}:${level}`;
     const model = withLevel(baseModel);
     const writer = withLevel(flags.get("writer") ?? (typeof configured === "string" && configured.trim() ? configured.trim() : baseModel));
-    if (!writer || (!model && command !== "suggest")) throw new UsageError("--model is required (Pi has no default model)");
+    // A stop from the keyboard: the task runs are in their own process groups, and a `finally` block does not run.
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { stopRuns(); process.exit(130); });
 
     if (command === "suggest") {
       const lock = tunerFile("suggest.lock");
       fs.mkdirSync(path.dirname(lock), { recursive: true });
-      if (lockHeld()) return 0;
-      fs.writeFileSync(lock, String(process.pid));
+      // One operation makes the lock, so two processes cannot both get it. An old lock is from a process that stopped.
+      const claim = (): boolean => { try { fs.writeFileSync(lock, String(process.pid), { flag: "wx" }); return true; } catch { return false; } };
+      if (!claim()) {
+        if (lockHeld()) return 0;
+        fs.rmSync(lock, { force: true });
+        if (!claim()) return 0;
+      }
       try {
         if (pendingSuggestion()) {
           process.stdout.write('A suggestion waits. Run "pi-fabric tune review".\n');
@@ -184,11 +190,17 @@ export async function runTuneCli(argv: string[]): Promise<number> {
         const evidence = buildEvidence(rows, targets, repeated);
         let tokens = 0;
         let stderrTail = "";
+        if (wrong.length === 0 && !writer) {
+          // The session has no model, and Pi has no default model.
+          record("no model");
+          notice('The Fabric tuner has no model for the rule writer. Select one with "/fabric tuner writerModel".');
+          return 1;
+        }
         const response = wrong.length > 0
           ? staleEdit(rows, stale, wrong)
           : await proposeEdit(current, writerPrompt(REAL_SESSIONS, { label: "current", learned: current, enabled: true }, evidence, [], 1, 1), async (prompt) => {
             // One try: this process holds the suggestion lock, and the next failure of the target starts it again.
-            const run = await askWriter(flags.get("pi") ?? "pi", writer, fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-suggest-")), prompt, 1);
+            const run = await askWriter(flags.get("pi") ?? "pi", writer ?? "", fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-suggest-")), prompt, 1);
             tokens += run.tokens;
             stderrTail = run.error ?? run.stderrTail;
             return run.text;
@@ -202,7 +214,9 @@ export async function runTuneCli(argv: string[]): Promise<number> {
         const edit = applyEdits(current, response);
         // The cost limit: each rule writer call uses up the steps of its targets. A call with no rule doubles their
         // next threshold. A call with a rule sets it back, so a rule that does not work gets a repair after 2 failures.
-        for (const target of targets) need.set(target, edit.ok ? SUGGEST_AFTER : 2 * (need.get(target) ?? SUGGEST_AFTER));
+        // After a removal, the first call that succeeds after one failure makes the note a rule again.
+        // ponytail: a call that succeeds with no failure before it gives no step, so the note stays; record it if that occurs.
+        for (const target of targets) need.set(target, wrong.length > 0 && edit.ok ? 1 : edit.ok ? SUGGEST_AFTER : 2 * (need.get(target) ?? SUGGEST_AFTER));
         saveCapture(rows.filter((row) => !targets.includes(row.target)), need);
         record(edit.ok ? wrong.length > 0 ? "removed" : "rule" : edit.reason, tokens);
         if (!edit.ok) {
@@ -225,6 +239,7 @@ export async function runTuneCli(argv: string[]): Promise<number> {
         fs.rmSync(lock, { force: true });
       }
     }
+    if (!writer || !model) throw new UsageError("--model is required (Pi has no default model)");
 
     const options: TunerOptions = {
       tasksDir: path.resolve(need("tasks")),

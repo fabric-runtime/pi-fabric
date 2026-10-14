@@ -38,6 +38,8 @@ describe("tuner", () => {
     expect(removed.ok && removed.learned).toBe("- Ids: use $1 form.\n");
     expect(applyEdits(parent, block("- not there", "- x"))).toMatchObject({ ok: false });
     expect(applyEdits(parent, "NO_CHANGE")).toMatchObject({ ok: false, reason: "the rule writer declared no change" });
+    // A block with no end marker puts the markers of the next block into the new text.
+    expect(applyEdits(parent, `<<<<<<< SEARCH\n=======\n- new rule\n<<<<<<< SEARCH\n=======\n- second\n>>>>>>> REPLACE`)).toMatchObject({ ok: false, reason: expect.stringContaining("no end marker") });
     expect(applyEdits(parent, block("", "y".repeat(MAX_LEARNED_CHARS)))).toMatchObject({ ok: false });
     expect(applyEdits(parent, block("- Ids: use $1 form.", "- Ids: use $1 form."))).toMatchObject({ ok: false, reason: "edit changes nothing" });
   });
@@ -124,6 +126,8 @@ describe("tuner", () => {
     const entries = ["- mcp.depot.depot_stock: part is P#1", "- depot_stock `date`: MM/DD/YYYY", "- mcp.depot.depot_reserve: do not reuse the depot_stock formats", "- pi.bash: use bun"];
     expect(rulesFor(entries, ["mcp.depot.depot_stock"])).toEqual(entries.slice(0, 2));
     expect(rulesFor(entries, ["pi.bash"])).toEqual(entries.slice(3));
+    // The same tool name on a different server is a different tool.
+    expect(rulesFor(["- mcp.beta.depot_stock: part is P#1", ...entries], ["mcp.depot.depot_stock"])).toEqual(entries.slice(0, 2));
     // The rule that only fails goes out, and the facts go in: the rejected call and the words of the tool.
     const facts = applyEdits(`${entries.join("\n")}\n`, staleEdit(again, ["mcp.depot.depot_search"], [entries[0]!]));
     expect(facts).toMatchObject({ ok: true });
@@ -155,6 +159,11 @@ describe("tuner", () => {
     fs.writeFileSync(tunerFile("notice.txt", agentDir), "changed");
     fs.writeFileSync(tunerFile("suggestion.json", agentDir), "{}");
     expect([takeNotice(agentDir), takeNotice(agentDir), takeNotice(agentDir)]).toEqual(["changed", 'The Fabric tuner has a rule suggestion. Run "pi-fabric tune review".', undefined]);
+    // After your decision, the next suggestion gets its own notice.
+    fs.rmSync(tunerFile("suggestion.json", agentDir));
+    expect(takeNotice(agentDir)).toBeUndefined();
+    fs.writeFileSync(tunerFile("suggestion.json", agentDir), "{}");
+    expect(takeNotice(agentDir)).toContain("rule suggestion");
   });
 
   it("uses the nested calls that succeeded for the target and for the exact fix", () => {
