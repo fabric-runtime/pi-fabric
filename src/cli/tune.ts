@@ -213,6 +213,8 @@ export async function runTuneCli(argv: string[]): Promise<number> {
           ? staleEdit(rows, stale, wrong)
           : await proposeEdit(current, writerPrompt(REAL_SESSIONS, { label: "current", learned: current, enabled: true }, evidence, [], 1, 1), async (prompt) => {
             // One try: this process holds the suggestion lock, and the next failure of the target starts it again.
+            // Two calls of 300 s can pass the age of an old lock, so each call makes the lock new again.
+            try { fs.utimesSync(lock, new Date(), new Date()); } catch {}
             const run = await askWriter(flags.get("pi") ?? "pi", writer ?? "", fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-suggest-")), prompt, 1);
             tokens += run.tokens;
             stderrTail = run.error ?? run.stderrTail;
