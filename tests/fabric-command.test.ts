@@ -654,7 +654,7 @@ describe("/fabric command", () => {
       const state = {
         initialized: true,
         ensure: vi.fn().mockResolvedValue(undefined),
-        config: { tuner: { enabled: false, capture: true, autoAccept: true, proposerModel: "" } },
+        config: { tuner: { enabled: false, capture: true, autoAccept: true, writerModel: "" } },
         reloadConfig,
       } as unknown as FabricState;
       const context = {
@@ -673,31 +673,41 @@ describe("/fabric command", () => {
       });
 
       expect(completions!("tu")).toEqual([{ value: "tuner", label: "tuner" }]);
-      expect(completions!("tuner ")!.map((item) => item.value)).toEqual(["tuner on", "tuner off", "tuner capture", "tuner autoAccept", "tuner proposerModel"]);
+      expect(completions!("tuner ")!.map((item) => item.value)).toEqual(["tuner on", "tuner off", "tuner capture", "tuner autoAccept", "tuner writerModel"]);
       expect(completions!("tuner o")).toEqual([
         { value: "tuner on", label: "on", description: "use the learned rules and learn new rules from your sessions" },
         { value: "tuner off", label: "off", description: "current · no learned rules in the prompt and no capture" },
       ]);
       expect(completions!("tuner c")).toEqual([{ value: "tuner capture", label: "capture", description: "on · learn from tool failures and your corrections" }]);
       expect(completions!("tuner autoAccept o")).toEqual([{ value: "tuner autoAccept on", label: "on" }, { value: "tuner autoAccept off", label: "off" }]);
-      expect(completions!("tuner proposerModel ")!.map((item) => item.value)).toEqual(["tuner proposerModel inherit"]);
+      expect(completions!("tuner writerModel ")!.map((item) => item.value)).toEqual(["tuner writerModel inherit"]);
       expect(completions!("tuner nothing ")).toBeNull();
 
       const saved = async () => (JSON.parse(await readFile(path.join(root, ".pi", "fabric.json"), "utf8")) as { tuner: Record<string, unknown> }).tuner;
+      // `on` opens the model dialog. A closed dialog keeps the current model.
+      select.mockResolvedValueOnce(undefined);
       await handler!("tuner on", context);
       expect(await saved()).toEqual({ enabled: true });
-      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner on ("), "info");
+      await handler!("tuner on", context);
+      expect(await saved()).toEqual({ enabled: true, writerModel: "litellm/b" });
+      expect(notify).toHaveBeenLastCalledWith(expect.stringMatching(/^Fabric tuner is on\. Rule writer: litellm\/b\..*next session \(\/new\)\. \(project: /), "info");
       expect(reloadConfig).toHaveBeenCalledWith(context);
       await handler!("tuner autoAccept off", context);
-      await handler!("tuner proposerModel", context);
-      expect(select).toHaveBeenCalledWith("Tuner proposer model", ["inherit", "litellm/a", "litellm/b"]);
-      expect(await saved()).toEqual({ enabled: true, autoAccept: false, proposerModel: "litellm/b" });
-      await handler!("tuner proposerModel inherit", context);
-      expect((await saved()).proposerModel).toBe("");
+      await handler!("tuner writerModel", context);
+      expect(select).toHaveBeenCalledWith("Tuner rule writer model", ["inherit", "litellm/a", "litellm/b"]);
+      expect(await saved()).toEqual({ enabled: true, autoAccept: false, writerModel: "litellm/b" });
+      // With a host that can show components, the Fabric model picker opens, and its Inherit row clears the value.
+      const custom = vi.fn().mockResolvedValue({ model: "Inherit" });
+      await handler!("tuner writerModel", { ...context, ui: { notify, select, custom } } as unknown as ExtensionContext);
+      expect(custom).toHaveBeenCalledTimes(1);
+      expect((await saved()).writerModel).toBe("");
+      await handler!("tuner writerModel litellm/b", context);
+      await handler!("tuner writerModel inherit", context);
+      expect((await saved()).writerModel).toBe("");
       await handler!("tuner capture maybe", context);
       expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Usage: /fabric tuner"), "warning");
       await handler!("tuner", context);
-      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner: off · capture on · autoAccept on · proposerModel inherit"), "info");
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner: off · capture on · autoAccept on · writerModel inherit"), "info");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

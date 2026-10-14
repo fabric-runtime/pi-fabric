@@ -11,8 +11,8 @@ import { truncateMiddle } from "../util.js";
 import type { FabricUiController } from "../ui/controller.js";
 import { FABRIC_CONVERSATION_SHORTCUT } from "../ui/conversation-shortcut.js";
 import { safeText } from "../ui/format.js";
-import { FabricModelSelector } from "../ui/fabric-model-selector.js";
-import { buildModelSource } from "../ui/model-picker.js";
+import { FabricModelSelector, type FabricModelSelectorOptions } from "../ui/fabric-model-selector.js";
+import { buildModelSource, INHERIT_VALUE } from "../ui/model-picker.js";
 import {
   FABRIC_PEER_AWAIT_SETTLE_EVENT,
   FABRIC_PEER_CARDS_EVENT,
@@ -30,13 +30,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 // `on` and `off` are the one switch (tuner.enabled); the keys are its options.
-const TUNER_KEYS = ["capture", "autoAccept", "proposerModel"] as const;
+const TUNER_KEYS = ["capture", "autoAccept", "writerModel"] as const;
 const TUNER_HELP: Record<"on" | "off" | (typeof TUNER_KEYS)[number], string> = {
   on: "use the learned rules and learn new rules from your sessions",
   off: "no learned rules in the prompt and no capture",
   capture: "learn from tool failures and your corrections",
   autoAccept: "write each new rule with no review",
-  proposerModel: "the model that writes the rule edits",
+  writerModel: "the model that writes the rule edits",
 };
 
 interface FabricCommandDeps {
@@ -92,6 +92,28 @@ const summarizeLogLine = (entry: unknown): string => {
   return truncateMiddle(JSON.stringify(record), 160);
 };
 
+/** The Fabric model picker as a dialog. undefined: the host cannot show it. `{ model: undefined }`: the user closed it. */
+const pickModel = async (
+  context: ExtensionContext,
+  options: Pick<FabricModelSelectorOptions, "currentValue" | "headerText" | "inheritRow" | "inheritName">,
+): Promise<{ model?: string | undefined } | undefined> => {
+  if (typeof context.ui.custom !== "function") return undefined;
+  try {
+    return await context.ui.custom<{ model?: string | undefined } | undefined>(
+      (_tui, theme, _keybindings, done) =>
+        new FabricModelSelector({
+          theme,
+          source: buildModelSource(context.modelRegistry, resolveAgentDir()),
+          ...options,
+          onSelect: (value) => done({ model: value }),
+          onCancel: () => done({ model: undefined }),
+        }),
+    );
+  } catch {
+    return undefined;
+  }
+};
+
 const resolvePrewalkModel = async (
   state: FabricState,
   context: ExtensionContext,
@@ -128,25 +150,12 @@ const resolvePrewalkModel = async (
     );
     return undefined;
   }
-  if (typeof context.ui.custom === "function") {
-    try {
-      // undefined = host can't show the dialog; { model: undefined } = user cancelled.
-      const picked = await context.ui.custom<{ model?: string | undefined } | undefined>(
-        (_tui, theme, _keybindings, done) =>
-          new FabricModelSelector({
-            theme,
-            source: buildModelSource(context.modelRegistry, resolveAgentDir()),
-            currentValue: "",
-            headerText:
-              "Prewalk executor model. Fabric hands off at the next matching mutation boundary; Main continues on the picked model.",
-            inheritRow: false,
-            onSelect: (value) => done({ model: value }),
-            onCancel: () => done({ model: undefined }),
-          }),
-      );
-      if (picked !== undefined) return picked.model;
-    } catch {}
-  }
+  const picked = await pickModel(context, {
+    currentValue: "",
+    headerText: "Prewalk executor model. Fabric hands off at the next matching mutation boundary; Main continues on the picked model.",
+    inheritRow: false,
+  });
+  if (picked !== undefined) return picked.model;
   return context.ui.select("Prewalk executor model", keys);
 };
 
@@ -385,10 +394,10 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
         const values = key === undefined
           ? [
               ...(["on", "off"] as const).map((name) => ({ value: name, description: `${(name === "on") === tuner.enabled ? "current · " : ""}${TUNER_HELP[name]}` })),
-              ...TUNER_KEYS.map((name) => ({ value: name, description: `${name === "proposerModel" ? tuner.proposerModel || "inherit" : tuner[name] ? "on" : "off"} · ${TUNER_HELP[name]}` })),
+              ...TUNER_KEYS.map((name) => ({ value: name, description: `${name === "writerModel" ? tuner.writerModel || "inherit" : tuner[name] ? "on" : "off"} · ${TUNER_HELP[name]}` })),
             ]
-          : key === "proposerModel"
-            ? [...new Set(["inherit", tuner.proposerModel].filter(Boolean))].map((value) => ({ value: `${key} ${value}`, description: "provider/model from pi --list-models" }))
+          : key === "writerModel"
+            ? [...new Set(["inherit", tuner.writerModel].filter(Boolean))].map((value) => ({ value: `${key} ${value}`, description: "provider/model from pi --list-models" }))
             : (TUNER_KEYS as readonly string[]).includes(key) ? ["on", "off"].map((value) => ({ value: `${key} ${value}`, description: "" })) : [];
         const matches = values.filter((item) => item.value.startsWith(idPrefix));
         // A completion replaces all the argument text, so its value starts with the subcommand.
@@ -541,11 +550,20 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
         const key = argumentsList[0];
         let value = argumentsList[1];
         const { tuner } = state.config;
-        if (key === "proposerModel" && value === undefined && context.hasUI) {
-          // No value: select from the Pi model list.
+        // The same picker as /fabric settings. A closed dialog gives undefined.
+        const selectModel = async (): Promise<string | undefined> => {
+          const picked = await pickModel(context, {
+            currentValue: tuner.writerModel || INHERIT_VALUE,
+            headerText: "Model that writes the tuner rules. Inherit uses the model of your session.",
+            inheritName: "Use the model and the thinking level of your session",
+          });
+          if (picked !== undefined) return picked.model === INHERIT_VALUE ? "inherit" : picked.model;
           let models: Array<{ provider: string; id: string }> = [];
           try { models = context.modelRegistry.getAvailable(); } catch { /* no registry */ }
-          value = await context.ui.select("Tuner proposer model", ["inherit", ...models.map((model) => `${model.provider}/${model.id}`).sort()]);
+          return context.ui.select("Tuner rule writer model", ["inherit", ...models.map((model) => `${model.provider}/${model.id}`).sort()]);
+        };
+        if (key === "writerModel" && value === undefined && context.hasUI) {
+          value = await selectModel();
           if (value === undefined) return;
         }
         if (key === undefined) {
@@ -554,19 +572,21 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
           let rules = 0;
           try { rules = fs.readFileSync(learnedRulesPath(), "utf8").split("\n").filter((line) => line.startsWith("- ")).length; } catch { /* no learned rules yet */ }
           context.ui.notify(
-            `Fabric tuner: ${tuner.enabled ? "on" : "off"} · capture ${tuner.capture ? "on" : "off"} · autoAccept ${tuner.autoAccept ? "on" : "off"} · proposerModel ${tuner.proposerModel || "inherit"} · ${rules} learned rule${rules === 1 ? "" : "s"}${suggestionWaits() ? ' · a suggestion waits: run "pi-fabric tune review"' : ""}`,
+            `Fabric tuner: ${tuner.enabled ? "on" : "off"} · capture ${tuner.capture ? "on" : "off"} · autoAccept ${tuner.autoAccept ? "on" : "off"} · writerModel ${tuner.writerModel || "inherit"} · ${rules} learned rule${rules === 1 ? "" : "s"}${suggestionWaits() ? ' · a suggestion waits: run "pi-fabric tune review"' : ""}`,
             "info",
           );
           return;
         }
         const flag = value === "on" || value === "true" ? true : value === "off" || value === "false" ? false : undefined;
+        // `on` also asks for the model that writes the rules. A closed dialog keeps the current model.
+        const model = key === "on" && context.hasUI ? await selectModel() : undefined;
         const partial = key === "on" || key === "off"
-          ? { enabled: key === "on" }
-          : key === "proposerModel"
-            ? value === "inherit" ? { proposerModel: "" } : value?.includes("/") ? { proposerModel: value } : undefined
+          ? { enabled: key === "on", ...(model === undefined ? {} : { writerModel: model === "inherit" ? "" : model }) }
+          : key === "writerModel"
+            ? value === "inherit" ? { writerModel: "" } : value?.includes("/") ? { writerModel: value } : undefined
             : (TUNER_KEYS as readonly string[]).includes(key) && flag !== undefined ? { [key]: flag } : undefined;
         if (!partial) {
-          context.ui.notify("Usage: /fabric tuner [on|off] or /fabric tuner capture|autoAccept on|off or /fabric tuner proposerModel <provider/model>|inherit", "warning");
+          context.ui.notify("Usage: /fabric tuner [on|off] or /fabric tuner capture|autoAccept on|off or /fabric tuner writerModel <provider/model>|inherit", "warning");
           return;
         }
         try {
@@ -577,7 +597,16 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
             { tuner: partial },
           );
           state.reloadConfig(context);
-          context.ui.notify(`Fabric tuner ${value === undefined ? key : `${key} set to ${value}`} (${saved.scope}: ${saved.path})`, "info");
+          const where = `(${saved.scope}: ${saved.path})`;
+          const writerNow = "writerModel" in partial ? partial.writerModel : tuner.writerModel;
+          context.ui.notify(
+            key === "on"
+              ? `Fabric tuner is on. Rule writer: ${writerNow || "the model of your session"}. Fabric learns from repeated tool failures and from your corrections, and it shows a notice for each rule update. A new rule applies from the next session (/new). ${where}`
+              : key === "off"
+                ? `Fabric tuner is off. The learned rules stay in their file, and new sessions do not use them. ${where}`
+                : `Fabric tuner ${key} set to ${value} ${where}`,
+            "info",
+          );
         } catch (error) {
           context.ui.notify(`Failed to update the Fabric tuner setting: ${error instanceof Error ? error.message : String(error)}`, "error");
         }

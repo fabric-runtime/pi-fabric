@@ -7,8 +7,8 @@ import { looksFailed } from "./capture.js";
 import { MAX_LEARNED_CHARS, MAX_LEARNED_LINES } from "./learned.js";
 
 // Harness tuner (after "Harness Learning Enables Generalizable Test-Time
-// Adaptation", arXiv 2609.35738, without the trained proposer). The harness is
-// the learned rules file. A proposer model edits it from an execution report,
+// Adaptation", arXiv 2609.35738, without the trained writer). The harness is
+// the learned rules file. A rule writer model (the rule writer of the paper) edits it from an execution report,
 // and an edit stays only when the scoring tasks confirm it.
 //
 // ponytail: a cell is a fresh directory plus an isolated agent dir, not a
@@ -18,10 +18,10 @@ import { MAX_LEARNED_CHARS, MAX_LEARNED_LINES } from "./learned.js";
 export interface TunerOptions {
   tasksDir: string;
   dir: string;
-  /** Solver `provider/model`: the model that uses the harness. */
+  /** Main model `provider/model`: the model that does the tasks with the harness. */
   model: string;
-  /** Proposer `provider/model`: the model that edits the harness. */
-  proposer: string;
+  /** Rule writer `provider/model`: the model that edits the harness. */
+  writer: string;
   rounds: number;
   candidates: number;
   reps: number;
@@ -157,7 +157,7 @@ const normalizeLearned = (text: string): string => {
 export const removeEntry = (learned: string, entry: string): string =>
   normalizeLearned(learned.replace(learned.includes(`${entry}\n`) ? `${entry}\n` : entry, () => ""));
 
-const NO_CHANGE = "proposer declared no change";
+const NO_CHANGE = "the rule writer declared no change";
 
 export type EditResult =
   | { ok: true; learned: string; diagnosis: string }
@@ -165,7 +165,7 @@ export type EditResult =
 
 const EDIT_BLOCK = /<<<<<<< SEARCH\r?\n([\s\S]*?)\r?\n?=======\r?\n([\s\S]*?)\r?\n?>>>>>>> REPLACE/g;
 
-/** Apply the proposer's SEARCH/REPLACE blocks. An empty SEARCH appends. */
+/** Apply the rule writer's SEARCH/REPLACE blocks. An empty SEARCH appends. */
 export const applyEdits = (parent: string, response: string): EditResult => {
   const diagnosis = clip((/DIAGNOSIS:\s*([\s\S]*?)(?=<<<<<<< SEARCH|NO_CHANGE|$)/.exec(response)?.[1] ?? "").trim(), 600);
   const blocks = [...response.matchAll(EDIT_BLOCK)];
@@ -184,7 +184,7 @@ export const applyEdits = (parent: string, response: string): EditResult => {
   return { ok: true, learned, diagnosis };
 };
 
-/** One more proposer call for a reply that Fabric cannot apply. `ask` gets the prompt and returns the reply. */
+/** One more rule writer call for a reply that Fabric cannot apply. `ask` gets the prompt and returns the reply. */
 export const proposeEdit = async (parent: string, prompt: string, ask: (prompt: string) => Promise<string>): Promise<string> => {
   const response = await ask(prompt);
   const edit = applyEdits(parent, response);
@@ -255,7 +255,7 @@ export const diffEntries = (before: string, after: string): string => {
   ].join("\n\n");
 };
 
-/** Markdown report for the proposer, at most `maxChars` (about 6k tokens by default). */
+/** Markdown report for the writer, at most `maxChars` (about 6k tokens by default). */
 export const buildReport = (label: string, results: CellResult[], maxChars = 24_000): string => {
   const total = summarize(results);
   const worst = new Map<string, CellResult>();
@@ -385,12 +385,12 @@ const writeAgentDir = (agentDir: string, models: string[], fabric?: Record<strin
   }
 };
 
-/** One proposer call from an agent dir that holds only the proposer's credentials. */
-export const askProposer = async (pi: string, proposer: string, agentDir: string, prompt: string, noReplyTries?: number): Promise<PiRun & { text: string }> => {
-  writeAgentDir(agentDir, [proposer]);
+/** One rule writer call from an agent dir that holds only the rule writer's credentials. */
+export const askWriter = async (pi: string, writer: string, agentDir: string, prompt: string, noReplyTries?: number): Promise<PiRun & { text: string }> => {
+  writeAgentDir(agentDir, [writer]);
   try {
     const run = await runPi(pi, [
-      "--no-tools", "--no-extensions", "--no-skills", "--model", proposer,
+      "--no-tools", "--no-extensions", "--no-skills", "--model", writer,
       "--system-prompt", "You revise the instruction file of a coding agent. Reply in the exact format that the user requests.",
     ], prompt, { cwd: agentDir, agentDir, timeoutMs: 300_000, maxTokens: 200_000, ...(noReplyTries === undefined ? {} : { noReplyTries }) });
     return { ...run, text: textOf(run.messages.filter((message) => message.role === "assistant").at(-1)?.content) };
@@ -513,7 +513,7 @@ export class Tuner {
 
   private async propose(prompt: string, slot: number): Promise<string> {
     this.checkBudget();
-    const run = await askProposer(this.options.pi, this.options.proposer, path.join(this.options.dir, `proposer-agent-${slot}`), prompt);
+    const run = await askWriter(this.options.pi, this.options.writer, path.join(this.options.dir, `writer-agent-${slot}`), prompt);
     this.spend(run);
     return run.text;
   }
@@ -574,7 +574,7 @@ export class Tuner {
           break;
         }
         options.log(`round ${round}: parent ${parent.label} (scoring ${parentScore.score.toFixed(2)}, ${parentScore.tokens} tokens)`);
-        const candidates: Array<{ kind: "proposer" | "removal"; learned: string; diagnosis: string; edit: string; removed?: string }> = [];
+        const candidates: Array<{ kind: "writer" | "removal"; learned: string; diagnosis: string; edit: string; removed?: string }> = [];
         // One slot tests the file without its least recently confirmed entry.
         const entries = entriesOf(parent.learned);
         const oldest = [...entries].sort((a, b) => (rules[entryId(a)]?.lastConfirmed ?? 0) - (rules[entryId(b)]?.lastConfirmed ?? 0))[0];
@@ -585,18 +585,18 @@ export class Tuner {
         }
         const slots = count - candidates.length;
         const responses = await mapPool(Array.from({ length: slots }, (_, slot) => slot), options.concurrency, (slot) =>
-          proposeEdit(parent.learned, proposerPrompt(suite.description, parent, report, history, slot + 1, slots), (prompt) => this.propose(prompt, slot)));
+          proposeEdit(parent.learned, writerPrompt(suite.description, parent, report, history, slot + 1, slots), (prompt) => this.propose(prompt, slot)));
         const tuples: Array<Record<string, unknown>> = [];
         let keptRow: Array<string | number | boolean> | undefined;
         for (const response of responses) {
           const edit = applyEdits(parent.learned, response);
           if (edit.ok && !candidates.some((candidate) => candidate.learned === edit.learned)) {
-            candidates.push({ kind: "proposer", learned: edit.learned, diagnosis: edit.diagnosis, edit: response });
+            candidates.push({ kind: "writer", learned: edit.learned, diagnosis: edit.diagnosis, edit: response });
           } else {
             const reason = edit.ok ? "same as another candidate" : edit.reason;
             options.log(`  discarded a candidate: ${reason}`);
             tuples.push({ round, parent: parent.label, report, harness: parent.learned, edit: response, valid: false, reason, reward: null });
-            row([round, "-", parent.label, "proposer", false, false, "", "", "", "", this.spentTokens, this.spentUsd.toFixed(4)]);
+            row([round, "-", parent.label, "writer", false, false, "", "", "", "", this.spentTokens, this.spentUsd.toFixed(4)]);
           }
         }
         const harnesses = candidates.map((candidate, index): Harness => ({ label: `r${round}c${index + 1}`, learned: candidate.learned, enabled: true }));
@@ -657,7 +657,7 @@ export class Tuner {
     const lines = [
       "# Tuner summary",
       "",
-      `Solver ${options.model}. Proposer ${options.proposer}. Final harness ${parent.label}. Spent ${this.spentTokens} tokens, $${this.spentUsd.toFixed(4)}.`,
+      `Main model ${options.model}. Rule writer ${options.writer}. Final harness ${parent.label}. Spent ${this.spentTokens} tokens, $${this.spentUsd.toFixed(4)}.`,
       ...(stopReason ? ["", `Stopped early: ${stopReason}. The held-out comparison did not run.`] : []),
       "",
       "## Kept edits",
@@ -682,7 +682,7 @@ export class Tuner {
   }
 }
 
-export const proposerPrompt = (suite: string, parent: Harness, report: string, history: string[], slot: number, slots: number): string => `A coding agent solves tasks. Before each task, the agent reads one file of learned rules, learned.md, in its system prompt. You improve learned.md. The model of the agent does not change.
+export const writerPrompt = (suite: string, parent: Harness, report: string, history: string[], slot: number, slots: number): string => `A coding agent solves tasks. Before each task, the agent reads one file of learned rules, learned.md, in its system prompt. You improve learned.md. The model of the agent does not change.
 
 # Task suite
 ${suite}

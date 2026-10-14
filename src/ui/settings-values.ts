@@ -228,7 +228,7 @@ export const coerceValue = (id: string, value: string, config: FabricConfig): un
   // Agents inherit; prewalk asks interactively when it is armed.
   if (
     id === "approvals.model" ||
-    id === "tuner.proposerModel" ||
+    id === "tuner.writerModel" ||
     id === "prewalk.model" ||
     id === "agents.model" ||
     id === "agents.claude.model" ||

@@ -45,17 +45,18 @@ export const buildTunerSection = (
           values: BOOLEANS,
         }),
         setting("tuner.capture", "Learn from sessions", config.tuner.capture ? "true" : "false", {
-          description: "Option of Enabled, on by default. Record repeated tool failures and your corrections, and let the proposer write a rule from them.",
+          description: "Option of Enabled, on by default. Record repeated tool failures and your corrections, and let the rule writer write a rule from them.",
           values: BOOLEANS,
         }),
         setting("tuner.autoAccept", "Accept with no review", config.tuner.autoAccept ? "true" : "false", {
           description: "Option of Enabled, on by default. Write each new rule to learned.md and show a notice; pi-fabric tune undo removes the last one. Off keeps each rule as a suggestion for pi-fabric tune review, accept, and reject.",
           values: BOOLEANS,
         }),
-        setting("tuner.proposerModel", "Proposer model", config.tuner.proposerModel || INHERIT_VALUE, {
-          description: "Pi provider/model that writes the rule edits. Inherit uses the default model of Pi.",
+        setting("tuner.writerModel", "Rule writer model", config.tuner.writerModel || INHERIT_VALUE, {
+          description: "Pi provider/model that writes the rule edits. Inherit uses the model and the thinking level of your session.",
           submenu: modelPickerSubmenu(theme, options.modelSource, {
-            headerText: "Proposer model for pi-fabric tune and for rule suggestions.",
+            headerText: "Model that writes the tuner rules. Inherit uses the model of your session.",
+            inheritName: "Use the model and the thinking level of your session",
           }),
         }),
       ],

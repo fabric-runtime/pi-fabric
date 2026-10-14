@@ -280,13 +280,13 @@ Unknown definitions stay visible as waiting. They do not fail the Fabric runtime
 
 ## Harness tuner
 
-`tuner.enabled` (default `false`) is the one switch of the [harness tuner](tuner.md). With it on, Fabric adds the learned rules in `<agent-dir>/fabric/tuner/learned.md` to the system prompt, learns new rules from the repeated tool failures of your sessions and from your corrections, and writes each new rule to that file with a notice. `pi-fabric tune undo` removes the last rule.
+`tuner.enabled` (default `false`) is the one switch of the [harness tuner](tuner.md). With it on, Fabric adds the learned rules in `<agent-dir>/fabric/tuner/learned.md` to the system prompt, learns new rules from the repeated tool failures of your sessions and from your corrections, and writes each new rule to that file with a notice. A session reads the file one time at its start, so a new rule applies from the next session (`/new`). `pi-fabric tune undo` removes the last rule.
 
 ```json
 { "tuner": { "enabled": true } }
 ```
 
-Three options change this behavior. `tuner.capture` (default `true`) set to `false` stops the learning from sessions. `tuner.autoAccept` (default `true`) set to `false` keeps each new rule as a suggestion for `pi-fabric tune review`, `accept`, and `reject`. `tuner.proposerModel` (default `""`) is the Pi `provider/model` that writes the rule edits; an empty value selects the default model of Pi. The **Tuner** section of `/fabric settings` and the `/fabric tuner` command edit these values.
+Three options change this behavior. `tuner.capture` (default `true`) set to `false` stops the learning from sessions. `tuner.autoAccept` (default `true`) set to `false` keeps each new rule as a suggestion for `pi-fabric tune review`, `accept`, and `reject`. `tuner.writerModel` (default `""`) is the Pi `provider/model` that writes the rule edits; an empty value selects the model and the thinking level of your session. The **Tuner** section of `/fabric settings` and the `/fabric tuner` command edit these values.
 
 ## Prewalk executor
 

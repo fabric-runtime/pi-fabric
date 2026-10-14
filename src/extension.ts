@@ -802,9 +802,13 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       const capture = await import("./tuner/capture.js");
       const session = context.sessionManager.getSessionId();
       // The detached CLI reads only the global fabric.json, so it gets the effective values as flags.
-      const { autoAccept, proposerModel } = state.config.tuner;
+      const { autoAccept, writerModel } = state.config.tuner;
+      // Inherit: the model and the thinking level of this session.
+      // ponytail: a model that only an extension supplies gives no reply in the detached call; set tuner.writerModel then.
+      const writer = writerModel || (context.model ? `${context.model.provider}/${context.model.id}:${pi.getThinkingLevel()}` : "");
       const record = (step: ReturnType<typeof capture.correctionOf>): void => {
-        if (step) capture.captureStep(step, [autoAccept ? "--auto" : "--no-auto", ...(proposerModel ? ["--proposer", proposerModel] : [])]);
+        if (!step || !capture.captureStep(step, [autoAccept ? "--auto" : "--no-auto", ...(writer ? ["--writer", writer] : [])])) return;
+        if (context.hasUI) context.ui.notify(`Fabric tuner: a rule update for ${step.target === capture.USER_TARGET ? "your corrections" : step.target} started. A notice shows the result.`, "info");
       };
       if ("correction" in event) record(capture.correctionOf(session, event.correction));
       else if (event.parentToolCallId) {
@@ -812,9 +816,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
         const step = { ...capture.stepOf(session, event.toolName, event.input, event.text, event.isError), target: event.toolName };
         if (!step.failed) capture.holdNested(event.parentToolCallId, step);
       } else {
-        const passed = capture.takeNested(event.toolCallId);
-        record(capture.stepOf(session, event.toolName, event.input, event.text, event.isError, passed.map((step) => step.target)));
-        for (const step of passed) record({ ...step, ts: Date.now() });
+        for (const step of capture.stepsOf(session, event.toolName, event.input, event.text, event.isError, capture.takeNested(event.toolCallId))) record(step);
       }
       const notice = context.hasUI ? capture.takeNotice() : undefined;
       if (notice) context.ui.notify(notice, "info");
@@ -1067,6 +1069,13 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   pi.on("session_start", () => { tunerGuidance = undefined; });
   pi.on("before_agent_start", async (event, context) => {
     const config = state.bootstrapped ? state.config : DEFAULT_FABRIC_CONFIG;
+    if (config.tuner.enabled && tunerGuidance === undefined) {
+      // Loaded at first use, and read once: the section must stay byte-stable for the whole session.
+      tunerGuidance = (await import("./tuner/learned.js")).readLearnedGuidance() ?? "";
+      // One line for each session shows that the tuner works.
+      const rules = tunerGuidance.match(/^- /gm)?.length ?? 0;
+      if (context.hasUI) context.ui.notify(`Fabric tuner: ${rules} learned rule${rules === 1 ? "" : "s"} in the prompt of this session.`, "info");
+    }
     const fullCodeMode = config.fullCodeMode;
     const schemaMode = config.schema.mode;
     const effectiveFullCodeMode = fullCodeMode || schemaMode === "enforce";
@@ -1114,8 +1123,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       overrideGuidance,
       extensionRoster,
       resolvedGuidance.appendText,
-      // Loaded at first use, and read once: the section must stay byte-stable for the whole session.
-      config.tuner.enabled ? (tunerGuidance ??= (await import("./tuner/learned.js")).readLearnedGuidance() ?? "") : undefined,
+      config.tuner.enabled ? tunerGuidance : undefined,
     ].filter((section): section is string => Boolean(section)).join("\n\n");
     // Turn-varying content (skill reference guidance) is delivered here as a
     // persistent message, not appended to the system prompt. Keeping the

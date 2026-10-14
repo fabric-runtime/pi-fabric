@@ -8,11 +8,11 @@ import { learnedRulesPath } from "./learned.js";
 // Capture for `pi-fabric tune suggest` (`tuner.capture`): the failed tool
 // steps of real sessions, and the first call to the same target that succeeds
 // after a failure. When one target fails again and again, a detached
-// `tune suggest` asks the proposer for a rule. A rule reaches learned.md only
+// `tune suggest` asks the rule writer for a rule. A rule reaches learned.md only
 // through `pi-fabric tune accept`.
 
 /** Failures of one target before its first suggestion. Each suggestion doubles the number for that target. */
-export const SUGGEST_AFTER = 3;
+export const SUGGEST_AFTER = 2;
 // ponytail: byte cap that drops the oldest half; rotate by age if a capture must live longer.
 const MAX_CAPTURE_BYTES = 1_000_000;
 const LOCK_STALE_MS = 10 * 60_000;
@@ -78,6 +78,16 @@ export const stepOf = (session: string, toolName: string, input: Record<string, 
   };
 };
 
+/**
+ * The steps of one top-level result, with the nested calls that succeeded inside it.
+ * A fabric_exec that returns no error proves nothing, because its code can catch each error.
+ * So for a call with a target in its code, only a nested call that succeeded is a fix.
+ */
+export const stepsOf = (session: string, toolName: string, input: Record<string, unknown>, text: string, isError: boolean, passed: CapturedStep[]): CapturedStep[] => {
+  const step = stepOf(session, toolName, input, text, isError, passed.map((ok) => ok.target));
+  return [...(step.failed || step.target === toolName ? [step] : []), ...passed.map((ok) => ({ ...ok, ts: Date.now() }))];
+};
+
 /** `need` holds the failure count that a target must reach before its next suggestion. */
 export const loadCapture = (agentDir?: string): { rows: CapturedStep[]; need: Map<string, number> } => {
   const rows: CapturedStep[] = [];
@@ -109,7 +119,47 @@ export const dueTargets = (rows: CapturedStep[], need: Map<string, number>, min 
   return [...counts].filter(([target, count]) => count >= factor * (need.get(target) ?? min)).map(([target]) => target);
 };
 
-/** The proposer's report: for each target, its different failures and a call that succeeded afterward. */
+/** The call that shows the correct form: the newest step of the target, when that step succeeded. A success before the newest failure proves nothing, because the tool can change. */
+export const fixOf = (rows: CapturedStep[], target: string): CapturedStep | undefined => {
+  const last = rows.filter((row) => row.target === target).at(-1);
+  return last && !last.failed ? last : undefined;
+};
+
+/** The rules that start with the tool name of one of the targets. A rule that only names the tool in its text stays. */
+export const rulesFor = (entries: string[], targets: string[]): string[] => {
+  const names = targets.map((target) => (target.startsWith("mcp.") ? target.split(".").at(-1)! : target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return entries.filter((entry) => names.some((name) => new RegExp(`^- \\W*(?:[\\w.]*\\.)?${name}\\b`).test(entry)));
+};
+
+/**
+ * The edit for targets that only fail with their rules in the prompt. It removes those rules and puts facts in
+ * their place: the calls that the tool rejected and what the tool said. Code writes it, so it holds no guess.
+ */
+export const staleEdit = (rows: CapturedStep[], targets: string[], wrong: string[]): string => {
+  // Tool text goes into the prompt as a quotation: one line, cut, and with no edit markers or code marks.
+  const quote = (text: string, max: number): string => oneLine(text.replace(/`|[<>=]{7}/g, " "), max);
+  const last = (values: string[]): string[] => [...new Set(values)].slice(-3);
+  const notes = targets.map((target) => {
+    const failures = rows.filter((row) => row.failed && row.target === target);
+    // ponytail: a long call is a program, and its start does not show the call that failed. Only short calls go in.
+    const calls = last(failures.filter((row) => row.call.length <= 160).map((row) => quote(row.call, 160)));
+    const errors = last(failures.map((row) => quote(row.result, 200)));
+    return [
+      `- ${target}: the correct form is not known. An earlier rule failed, and Fabric removed it.`,
+      ...(calls.length > 0 ? [`The tool rejected: ${calls.map((call) => `\`${call}\``).join(", ")}.`] : []),
+      `The tool said: ${errors.map((error) => `"${error}"`).join(" and ")}.`,
+      "Read the error text and try a different form.",
+    ].join(" ");
+  });
+  const block = (search: string, replace: string): string => `<<<<<<< SEARCH\n${search}${search ? "\n" : ""}=======\n${replace}${replace ? "\n" : ""}>>>>>>> REPLACE`;
+  return [
+    `DIAGNOSIS: Each call to ${targets.join(", ")} failed with its rule in the prompt, and no call succeeded. Fabric removed the rule and wrote what the tool said. It wrote no new form.`,
+    ...wrong.map((entry) => block(entry, "")),
+    ...notes.map((note) => block("", note)),
+  ].join("\n");
+};
+
+/** The rule writer's report: for each target, its different failures and a call that succeeded afterward. */
 export const buildEvidence = (rows: CapturedStep[], targets: string[], repeated: ReadonlySet<string> = new Set()): string => {
   const sections = targets.map((target) => {
     const failures = rows.filter((row) => row.failed && row.target === target);
@@ -122,15 +172,16 @@ export const buildEvidence = (rows: CapturedStep[], targets: string[], repeated:
         "```",
       ].join("\n");
     }
-    const fix = rows.filter((row) => !row.failed && row.target === target && failures.some((failure) => failure.session === row.session && failure.ts <= row.ts)).at(-1);
+    const fix = fixOf(rows, target);
     return [
       `## ${target}: ${failures.length} failures in ${new Set(failures.map((row) => row.session)).size} sessions`,
       "```",
       ...examples.flatMap((row) => [`CALL ${row.call}`, `ERROR: ${row.result}`]),
       "```",
-      ...(fix ? ["A later call in the same session that succeeded:", "```", `CALL ${fix.call}`, `RESULT: ${fix.result}`, "```"] : []),
+      ...(fix ? ["The newest call, which succeeded:", "```", `CALL ${fix.call}`, `RESULT: ${fix.result}`, "```"] : []),
       // A tool can change, and a rule can be wrong from the start. With no call that succeeded, a new format
       // is a guess: the agent finds the format faster with no rule than with a wrong one.
+      ...(!fix && !repeated.has(target) ? ["No call to this target succeeded. Write only what an error says in clear words. Do not write a form that no call confirmed."] : []),
       ...(repeated.has(target) ? [`These failures occurred with the current learned.md in the prompt, so a rule for this target is wrong or old. ${fix
         ? "Correct that rule so that it agrees with the call that succeeded. Copy the form of its arguments and keep no part of the old form. Do not add a second rule that disagrees with it."
         : "No call succeeded, so the correct form is not known. Remove the rules for this target that the errors contradict. Do not write a format that no call confirmed, and do not join the old form with the words of an error."}`] : []),

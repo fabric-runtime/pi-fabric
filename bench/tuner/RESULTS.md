@@ -1,258 +1,288 @@
 # Harness tuner: full bench on the quirk depot
 
-Solver litellm/glm-5.3-flash. Proposer litellm/deepseek-v4.1-flash. Seeds 1, 2, 7. 4 rounds, 4 candidates. Total 45.2 million tokens (cached input included). Runs with no model reply: 0.
+Main model litellm/deepseek-v4.1-flash:max. Rule writer litellm/deepseek-v4.1-flash:max. Seeds 1, 2, 7. 8 rounds, 4 candidates. Total 44.8 million tokens (cached input included). Runs with no model reply: 0.
 
-This file is the output of `node bench/tuner/bench.mjs`, with two additions: this note and the last section. Refer to [README.md](README.md) for the server, the tasks, and the commands.
+This file is the output of `node bench/tuner/bench.mjs`, with these additions: this note and sections 10 to 12. Refer to [README.md](README.md) for the server, the tasks, and the commands.
 
-- The numbers come from the second run, which uses the tuner code of this repository.
-- The second run did not repeat three control arms, because they do not depend on the tuner or on the learned rules: `tuner.enabled` false, placebo, and the other solver with no rules. Their runs come from the first run on the same tasks and the same server. The token total includes them.
-- The second run did not repeat the removal arms (section 5). The last section shows them for the first run.
+- Sections 1 to 7 come from one full run. Sections 8 and 9 come from a later run of the session part only, with the last corrections of the capture.
+- The bench skipped the second main model control, because the main model and the second model are the same.
 - A run stops at 150,000 tokens or 300 seconds. The token numbers include cached input tokens.
+- `complete rules` is the full rule set of the server, which a script writes from the server profile.
 
 ## 1. Tuner runs
 
 | Seed | Version | Kept edit | Scoring score | Scoring pass rate | Mean tokens | Rules | Characters |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | v0 | seed (round 0) | 0.492 | 25% | 132557 | 0 | 0 |
-| 1 | v1 | proposer (round 1) | 0.733 | 38% | 32079 | 7 | 1814 |
-| 1 | v2 | proposer (round 2) | 0.975 | 88% | 21937 | 9 | 2677 |
-| 1 | v3 | proposer (round 3) | 1.000 | 100% | 19019 | 10 | 3331 |
-| 2 | v0 | seed (round 0) | 0.392 | 13% | 142805 | 0 | 0 |
-| 2 | v1 | proposer (round 1) | 0.675 | 38% | 28911 | 9 | 2334 |
-| 2 | v2 | proposer (round 2) | 0.975 | 88% | 20429 | 10 | 2519 |
-| 2 | v3 | proposer (round 3) | 1.000 | 100% | 19751 | 11 | 2859 |
-| 7 | v0 | seed (round 0) | 0.183 | 0% | 158360 | 0 | 0 |
-| 7 | v1 | proposer (round 1) | 0.808 | 63% | 36634 | 7 | 1772 |
-| 7 | v2 | proposer (round 2) | 0.975 | 88% | 22754 | 10 | 2733 |
+| 1 | v0 | seed (round 0) | 0.517 | 25% | 77548 | 0 | 0 |
+| 1 | v1 | rule writer (round 1) | 0.900 | 63% | 26531 | 8 | 1417 |
+| 1 | v2 | rule writer (round 2) | 0.975 | 88% | 21984 | 11 | 2057 |
+| 1 | v3 | rule writer (round 3) | 1.000 | 100% | 20037 | 13 | 2879 |
+| 2 | v0 | seed (round 0) | 0.267 | 0% | 121643 | 0 | 0 |
+| 2 | v1 | rule writer (round 1) | 0.767 | 50% | 83777 | 8 | 1748 |
+| 2 | v2 | rule writer (round 2) | 0.975 | 88% | 22854 | 10 | 2219 |
+| 2 | v3 | rule writer (round 3) | 1.000 | 100% | 21343 | 12 | 2882 |
+| 7 | v0 | seed (round 0) | 0.000 | 0% | 129071 | 0 | 0 |
+| 7 | v1 | rule writer (round 1) | 0.033 | 0% | 72422 | 2 | 691 |
+| 7 | v2 | rule writer (round 2) | 0.817 | 50% | 68346 | 2 | 1197 |
+| 7 | v3 | rule writer (round 3) | 0.950 | 75% | 43141 | 2 | 1416 |
+| 7 | v4 | rule writer (round 5) | 0.975 | 88% | 58445 | 6 | 2793 |
+| 7 | v5 | rule writer (round 6) | 1.000 | 100% | 46640 | 6 | 3364 |
 
-Seed 1: 16 candidates, 0 discarded as invalid, 7.5 million tokens.
-Seed 2: 16 candidates, 0 discarded as invalid, 7.3 million tokens.
-Seed 7: 16 candidates, 0 discarded as invalid, 8.0 million tokens.
+Seed 1: 8 candidates, 0 discarded as invalid, 4.3 million tokens.
+Seed 2: 10 candidates, 0 discarded as invalid, 7.2 million tokens.
+Seed 7: 16 candidates, 0 discarded as invalid, 13.5 million tokens.
 
 ## 2. Held-out tasks, all seeds
 
-The tuner did not use these tasks. `no rules` is the v0 harness. `oracle` is the complete rule set from the server profile.
+The tuner did not use these tasks. `no rules` is the v0 harness. `complete rules` is the rule set that a script writes from the server profile.
 
 | Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| no rules | 24 | 3 | 13% (4% to 31%) | 0.35 | 145791 | 73 s | 6.4 | 18 |
-| learned (tuner) | 72 | 64 | 89% (80% to 94%) | 0.98 | 23702 | 22 s | 0.4 | 0 |
-| oracle | 48 | 48 | 100% (93% to 100%) | 1.00 | 20905 | 21 s | 1.2 | 0 |
+| no rules | 24 | 4 | 17% (7% to 36%) | 0.34 | 78394 | 24 s | 4.8 | 3 |
+| learned (tuner) | 72 | 70 | 97% (90% to 99%) | 0.98 | 32065 | 14 s | 0.2 | 1 |
+| complete rules | 48 | 43 | 90% (78% to 95%) | 0.98 | 20416 | 12 s | 0.5 | 0 |
 
 For each seed:
 
 | Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| seed 1: no rules | 8 | 0 | 0% (0% to 32%) | 0.29 | 146576 | 87 s | 6.9 | 7 |
-| seed 1: learned | 24 | 23 | 96% (80% to 99%) | 0.99 | 22659 | 20 s | 0.0 | 0 |
-| seed 1: oracle | 16 | 16 | 100% (81% to 100%) | 1.00 | 21226 | 21 s | 1.4 | 0 |
-| seed 2: no rules | 8 | 2 | 25% (7% to 59%) | 0.47 | 156124 | 65 s | 6.4 | 6 |
-| seed 2: learned | 24 | 23 | 96% (80% to 99%) | 0.99 | 21617 | 19 s | 0.2 | 0 |
-| seed 2: oracle | 16 | 16 | 100% (81% to 100%) | 1.00 | 19770 | 21 s | 1.0 | 0 |
-| seed 7: no rules | 8 | 1 | 13% (2% to 47%) | 0.29 | 134673 | 67 s | 5.9 | 5 |
-| seed 7: learned | 24 | 18 | 75% (55% to 88%) | 0.95 | 26829 | 26 s | 1.0 | 0 |
-| seed 7: oracle | 16 | 16 | 100% (81% to 100%) | 1.00 | 21720 | 22 s | 1.3 | 0 |
+| seed 1: no rules | 8 | 2 | 25% (7% to 59%) | 0.47 | 83812 | 26 s | 4.8 | 2 |
+| seed 1: learned | 24 | 23 | 96% (80% to 99%) | 0.99 | 20442 | 13 s | 0.1 | 0 |
+| seed 1: complete rules | 16 | 16 | 100% (81% to 100%) | 1.00 | 19923 | 12 s | 0.4 | 0 |
+| seed 2: no rules | 8 | 2 | 25% (7% to 59%) | 0.54 | 76262 | 25 s | 5.3 | 0 |
+| seed 2: learned | 24 | 23 | 96% (80% to 99%) | 0.96 | 29780 | 14 s | 0.3 | 1 |
+| seed 2: complete rules | 16 | 13 | 81% (57% to 93%) | 0.96 | 21733 | 12 s | 0.8 | 0 |
+| seed 7: no rules | 8 | 0 | 0% (0% to 32%) | 0.00 | 75108 | 22 s | 4.5 | 1 |
+| seed 7: learned | 24 | 24 | 100% (86% to 100%) | 1.00 | 45972 | 15 s | 0.1 | 0 |
+| seed 7: complete rules | 16 | 14 | 88% (64% to 97%) | 0.98 | 19593 | 12 s | 0.3 | 0 |
 
 ## 3. Pass rate for each kind of task
 
-`no rules` uses the v0 runs on all three task sets. `learned` and `oracle` use the held-out runs.
+`no rules` uses the v0 runs on all three task sets. `learned` and `complete rules` use the held-out runs.
 
-| Kind | Depot calls | no rules | learned | oracle |
+| Kind | Depot calls | no rules | learned | complete rules |
 | --- | --- | --- | --- | --- |
-| id | 1 | 7 of 9 | 9 of 9 | 6 of 6 |
-| stock | 2 | 0 of 9 | 9 of 9 | 6 of 6 |
-| price | 2 | 0 of 9 | 8 of 9 | 6 of 6 |
+| id | 1 | 5 of 9 | 9 of 9 | 6 of 6 |
+| stock | 2 | 0 of 9 | 9 of 9 | 5 of 6 |
+| price | 2 | 0 of 9 | 9 of 9 | 5 of 6 |
 | both | 3 | 0 of 9 | 9 of 9 | 6 of 6 |
-| order | 3 | 0 of 9 | 5 of 9 | 6 of 6 |
-| compare | 4 | 0 of 9 | 6 of 9 | 6 of 6 |
-| total | 4 | 0 of 9 | 9 of 9 | 6 of 6 |
-| list | 2 | 4 of 9 | 9 of 9 | 6 of 6 |
+| order | 3 | 0 of 9 | 9 of 9 | 6 of 6 |
+| compare | 4 | 0 of 9 | 8 of 9 | 6 of 6 |
+| total | 4 | 0 of 9 | 8 of 9 | 6 of 6 |
+| list | 2 | 3 of 9 | 9 of 9 | 3 of 6 |
 
 ## 4. Controls (seed 1, held-out tasks)
 
 | Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| learned rules, `tuner.enabled` false | 16 | 2 | 13% (3% to 36%) | 0.33 | 149427 | 66 s | 5.9 | 13 |
-| placebo: 10 unrelated rules | 16 | 1 | 6% (1% to 28%) | 0.32 | 148022 | 66 s | 6.7 | 13 |
-| learned rules in a full-size file | 16 | 15 | 94% (72% to 99%) | 0.99 | 24412 | 10 s | 0.0 | 0 |
-| solver litellm/deepseek-v4.1-flash, no rules | 16 | 3 | 19% (7% to 43%) | 0.44 | 108472 | 33 s | 5.3 | 7 |
-| solver litellm/deepseek-v4.1-flash, learned rules | 16 | 16 | 100% (81% to 100%) | 1.00 | 21846 | 11 s | 0.0 | 0 |
+| learned rules, `tuner.enabled` false | 16 | 3 | 19% (7% to 43%) | 0.47 | 84109 | 26 s | 4.9 | 3 |
+| placebo: 10 unrelated rules | 16 | 2 | 13% (3% to 36%) | 0.38 | 88131 | 26 s | 4.8 | 4 |
+| learned rules in a full-size file | 16 | 16 | 100% (81% to 100%) | 1.00 | 25518 | 10 s | 0.0 | 0 |
 
 ## 6. Changed server (rules of seed 1, server on seed 5)
 
 | Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| old rules (stale) | 24 | 2 | 8% (2% to 26%) | 0.38 | 81226 | 113 s | 14.5 | 3 |
-| after the tuner (v4) | 24 | 23 | 96% (80% to 99%) | 0.99 | 22544 | 13 s | 0.0 | 0 |
+| old rules (stale) | 16 | 0 | 0% (0% to 19%) | 0.13 | 43909 | 18 s | 3.6 | 0 |
+| after the tuner (v0) | 16 | 0 | 0% (0% to 19%) | 0.00 | 45189 | 19 s | 4.7 | 0 |
 
-- v0: seed (round 0), scoring score 0.300, 10 rules.
-- v1: proposer (round 1), scoring score 0.783, 10 rules.
-- v2: proposer (round 2), scoring score 1.000, 10 rules.
-- v3: proposer (round 3), scoring score 1.000, 10 rules.
-- v4: removal (round 4), scoring score 1.000, 9 rules.
+- v0: seed (round 0), scoring score 0.100, 13 rules.
 
 ## 7. General tasks with no depot
 
-The learned file of seed 1 has 3331 characters.
+The learned file of seed 1 has 2879 characters.
 
 | Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| learned rules on | 18 | 18 | 100% (82% to 100%) | 1.00 | 14266 | 10 s | 0.2 | 0 |
-| learned rules off | 18 | 18 | 100% (82% to 100%) | 1.00 | 12339 | 12 s | 0.2 | 0 |
+| learned rules on | 18 | 18 | 100% (82% to 100%) | 1.00 | 12492 | 7 s | 0.0 | 0 |
+| learned rules off | 18 | 18 | 100% (82% to 100%) | 1.00 | 10237 | 7 s | 0.1 | 0 |
 
-Runs that used the shell: 7 of 18 with the rules on, 9 of 18 with the rules off.
+Runs that used the shell: 1 of 18 with the rules on, 10 of 18 with the rules off.
+
+## 8. The one switch: rules from sessions
+
+One agent directory with only `tuner.enabled` on, on the depot of seed 1 with a quota of 12 calls. Fabric wrote the rules with no review.
+
+| Session | Task | Result | Failed depot calls | Tokens | Rules in the prompt | Edits after it |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | f1-id | pass | 2 of 3 | 35576 | 0 | 0 |
+| 2 | s2-stock | pass | 5 of 8 | 193988 | 0 | 2 |
+| 3 | f3-price | FAIL | 1 of 3 | 122653 | 2 | 0 |
+| 4 | s4-both | pass | 1 of 5 | 55931 | 2 | 0 |
+| 5 | f5-order | pass | 2 of 6 | 60946 | 2 | 0 |
+| 6 | s6-compare | pass | 0 of 6 | 22968 | 2 | 0 |
+| 7 | f7-total | pass | 2 of 8 | 36707 | 2 | 0 |
+| 8 | s8-list | pass | 1 of 3 | 42637 | 2 | 0 |
+| 9 | s1-id | pass | 0 of 1 | 12235 | 2 | 0 |
+| 10 | f2-stock | pass | 0 of 3 | 22293 | 2 | 0 |
+| 11 | s3-price | FAIL | 3 of 5 | 50454 | 2 | 1 |
+| 12 | f4-both | pass | 0 of 4 | 23430 | 3 | 0 |
+| 13 | s5-order | pass | 2 of 6 | 46498 | 3 | 0 |
+| 14 | f6-compare | pass | 0 of 6 | 23286 | 3 | 0 |
+| 15 | s7-total | pass | 0 of 6 | 22817 | 3 | 0 |
+| 16 | f8-list | pass | 4 of 6 | 28391 | 3 | 0 |
+
+- Sessions 1 to 8: 71426 mean tokens, 14 failed depot calls of 42, 7 of 8 passed, 2 edits of learned.md.
+- Sessions 9 to 16: 28676 mean tokens, 9 failed depot calls of 37, 7 of 8 passed, 1 edits of learned.md.
+
+Held-out tasks of the same seed, under the bench conditions:
+
+| Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| no rules | 8 | 2 | 25% (7% to 59%) | 0.47 | 83812 | 26 s | 4.8 | 2 |
+| rules from the sessions | 16 | 13 | 81% (57% to 93%) | 0.96 | 30487 | 14 s | 0.6 | 0 |
+| rules from the tuner run | 24 | 23 | 96% (80% to 99%) | 0.99 | 20442 | 13 s | 0.1 | 0 |
+| complete rules | 16 | 16 | 100% (81% to 100%) | 1.00 | 19923 | 12 s | 0.4 | 0 |
+
+```
+- mcp.depot.depot_search: the `q` argument must be wrapped in double brackets, with words upper case and joined by `+` (no spaces). Example: `{"q":"[[BRASS+BRACKET]]"}`. Never pass a plain or quoted phrase like `'brass bracket'`.
+- mcp.depot.depot_stock: do not reuse `depot_search`'s `[[...]]` format; all arguments are plain. `part` is the catalog id with `#` instead of `-` (`P-1011` becomes `P#1011`), `region` is a compass number (north 1, east 2, south 3, west 4), `date` is `MM/DD/YYYY`. Example: `{"part":"P#1011","region":"2","date":"01/19/2026"}`. Fields are validated one at a time, so pass the whole set in this format on the first call.
+- mcp.depot.depot_price: arguments are `part` (catalog id with `#` instead of `-`), `qty` (string of `x` then the number, e.g. `"x36"`, not `"36"` and not a number), and `cur` (must be exactly `"USD"` — not `"currency"`). Example: `{"part":"P#1012","qty":"x36","cur":"USD"}`. Pass all three in this exact form on the first call; do not guess alternate names like `quantity`.
+```
+
+## 9. The one switch after a change of the depot
+
+The same agent directory. Before session 17, the depot changed to the rules of seed 5, so the rules in learned.md became wrong.
+
+| Session | Task | Result | Failed depot calls | Tokens | Rules in the prompt | Edits after it |
+| --- | --- | --- | --- | --- | --- | --- |
+| 17 | f1-id | pass | 18 of 19 | 290873 | 3 | 1 |
+| 18 | s2-stock | FAIL | 11 of 21 | 45138 | 3 | 0 |
+| 19 | f3-price | FAIL | 7 of 17 | 45420 | 3 | 1 |
+| 20 | s4-both | pass | 6 of 15 | 200836 | 3 | 1 |
+| 21 | f5-order | pass | 9 of 14 | 270441 | 4 | 1 |
+| 22 | s6-compare | pass | 8 of 16 | 508882 | 5 | 0 |
+| 23 | f7-total | FAIL | 4 of 15 | 75936 | 5 | 0 |
+| 24 | s8-list | pass | 9 of 15 | 80210 | 5 | 0 |
+| 25 | s1-id | pass | 10 of 20 | 220921 | 5 | 0 |
+| 26 | f2-stock | FAIL | 4 of 15 | 81533 | 5 | 1 |
+| 27 | s3-price | FAIL | 4 of 11 | 90210 | 3 | 1 |
+| 28 | f4-both | FAIL | 6 of 13 | 123903 | 3 | 1 |
+| 29 | s5-order | FAIL | 6 of 13 | 196427 | 4 | 0 |
+| 30 | f6-compare | FAIL | 5 of 15 | 326921 | 4 | 1 |
+| 31 | s7-total | pass | 2 of 6 | 50453 | 4 | 1 |
+| 32 | f8-list | pass | 0 of 2 | 19145 | 4 | 0 |
+
+- Sessions 17 to 24: 189717 mean tokens, 72 failed depot calls of 132, 5 of 8 passed, 4 edits of learned.md.
+- Sessions 25 to 32: 138689 mean tokens, 37 failed depot calls of 95, 3 of 8 passed, 5 edits of learned.md.
+
+Held-out tasks on the changed depot, under the bench conditions:
+
+| Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| no rules | 8 | 0 | 0% (0% to 32%) | 0.00 | 74172 | 22 s | 2.5 | 1 |
+| rules from before the change (stale) | 16 | 0 | 0% (0% to 19%) | 0.00 | 34096 | 14 s | 3.1 | 0 |
+| rules after the sessions on the changed depot | 16 | 14 | 88% (64% to 97%) | 0.98 | 33990 | 12 s | 0.4 | 0 |
+
+```
+- Fabric tool discovery (mcp.depot.*): find these tools with `tools.list({ query: "depot" })` — the filter parameter is `query`, not `search`, and the result is a list of tool records, not an object with a `.tools` array. Inspect one with its full provider-prefixed ref, e.g. `tools.describe({ ref: "mcp.depot.depot_search" })`; a bare `depot.depot_search` fails with `Unknown Fabric provider: depot`.
+- mcp.depot.depot_search: `q` must be `q:` + the upper-case words joined by `+` + `;`, with no brackets and no spaces. Examples: `{"q":"q:COPPER;"}` and `{"q":"q:BRASS+COUPLING;"}`. Never pass a plain or quoted phrase, never wrap the words in `[ ]` or double brackets, and never omit the `q:` prefix or the trailing `;` — all fail with ERR_FORMAT. `page` must be `p` + the page number with no slash, e.g. `{"page":"p1"}`; a bare number like `"1"` or a slash form like `"1/"` fails with ERR_FORMAT. A job has a hard quota of 12 depot calls total, so send the exact accepted form on the first try instead of probing variants.
+
+- mcp.depot.depot_price: arguments are `part` (lower-case `p` then the number, the same form as depot_stock — `P-1012` or `P#1012` fails with ERR_FORMAT [part]), `qty` (string of `x` then the number, e.g. `"x36"`, not `"36"` and not a number), and `cur` (must be exactly `"USD"` — not `"currency"`). Example: `{"part":"p1012","qty":"x36","cur":"USD"}`. Pass all three in this exact form on the first call; do not guess alternate names like `quantity`.
+- mcp.depot.depot_stock: arguments are `part` (lower-case `p` then the number, e.g. `p1004` — do not reuse the `P#1004` form of depot_price), `region` (first three letters in upper case, e.g. `west` becomes `WES`), and `date` (`DD.MM.YYYY`, e.g. `2026-04-13` becomes `13.04.2026`). Example: `{"part":"p1004","region":"WES","date":"13.04.2026"}`. Add `"mode":"live"` when a live count is needed, since the default snapshot may be STALE. Send this exact form on the first call; each wrong format costs one of the 12 depot calls.
+```
 
 ## Learned rules
 
 ### Seed 1 (v3)
 
 ```
-- depot.depot_search: `q` must be a string wrapped as `[[WORD+WORD]]` — words upper case, joined with `+`, no spaces. Example: `mcp.depot.depot_search({q:'[[COPPER+FLANGE]]'})`. A bare string or a JS array is rejected.
-- depot.depot_search: if the result reports multiple pages, fetch the next page with `page` formatted as the number then a slash, e.g. `{q:'[[COPPER]]', page:'2/'}`. Never pass `page:'[[2]]'`.
-- depot tools: the job has one small shared quota (about 5 depot calls) across all depot tools. Count your calls before starting; on any `ERR_QUOTA` no reload, retry, wait, or new tool call can add calls, so get the formats right on the first try and never repeat a failed call blindly.
-- depot tools: a format error message states exactly one rule for the offending argument; read it and change only that argument. Do not re-send the same wrong shape, and do not probe by guessing several variants of the same call.
-- depot tools: call them as `mcp.depot.<tool>(args)` in fabric_exec, e.g. `await mcp.depot.depot_stock({part:'P#1002', region:'EAST', date:'2026-02-11'})`. Before calling, confirm argument shapes with `await tools.describe({ref:'mcp.depot.depot_stock'})` — `tools.describe` takes `{ref}`, not `{server}` or `{provider}`.
-- depot task answer: after the depot calls succeed, write the answer with `pi.write({path:'answer.txt', text:'<answer>'})`. `pi.read`, `pi.bash`, and `pi.grep` on files are denied by policy, so do not try to read the answer back; treat a successful `pi.write` as done.
-- depot tasks: choose the tool for the question — `depot_search` to find a part by name words, `depot_stock` for units in one region/date, `depot_price` for a price, plus `depot_reserve`/`depot_confirm` for orders. `depot_search` takes upper-case name words; every other tool has its own strict formats, so send each argument in depot form on the first call (a wrong shape is still charged to the quota, and `tools.describe` does not reveal these formats).
-- depot tools `depot_stock`/`depot_price`/`depot_reserve`/`depot_confirm`: `part` is `P#`+number (search id `P-1004` becomes `part:'P#1004'`), `region` is the compass number (north `'1'`, east `'2'`, south `'3'`, west `'4'`), `date` is `MM/DD/YYYY` (`2026-04-13` becomes `'04/13/2026'`), and `qty` is `x`+number (`18` becomes `'x18'`). Each tool needs its own required args, so send them all on the first call: `depot_stock` = part+region+date (`await mcp.depot.depot_stock({part:'P#1002', region:'2', date:'02/11/2026'})`), `depot_price` = part+qty+`cur:'USD'` (`await mcp.depot.depot_price({part:'P#1003', qty:'x12', cur:'USD'})` -> `{"total":"108.00"}`), `depot_reserve` = part+region+qty with no date.
-- depot.depot_confirm: needs `hold` and `pin` in one call. `hold` is the id exactly as `depot_reserve` returned it (`H-12303`; `H#12303` is refused), and `pin` is the digits of that hold id reversed (`H-40217` -> `pin:'71204'`). A wrong `hold` or `pin` voids the hold, so compute `pin` before calling; if the hold was voided, call `depot_reserve` again before confirming.
-- depot.depot_stock: the default response can be a STALE snapshot; when the task needs the current count, pass the live flag in the same call, e.g. `await mcp.depot.depot_stock({part:'P#1002', region:'2', date:'02/11/2026', live:'yes'})`, so you spend one call instead of two.
+- depot tools: call them directly as `mcp.depot.depot_search`, `mcp.depot.depot_stock`, `mcp.depot.depot_price`, `mcp.depot.depot_reserve`, `mcp.depot.depot_confirm`; do not spend calls or steps on `tools.search`/`tools.list`/`pi.bash` to find them.
+- depot quota: each task allows only a small number of depot calls (about 5). Errors count against the quota, so get every argument format right on the first call and never retry the same call with the same wrong format.
+- depot_search `q`: wrap the words, upper case, joined with `+` and no spaces. Example: `q: "[[COPPER+GASKET]]"`. Never pass a lowercase or space-separated `q`.
+- depot `part` ids: use `P#` plus the number. A catalog id `P-1002` must be passed as `part: "P#1002"`.
+- depot `region`: use the compass number, not the name: `"1"`=north, `"2"`=east, `"3"`=south, `"4"`=west. Example: `region: "2"` means east.
+- depot_stock/depot_price `date`: the depot wants `MM/DD/YYYY`, never `YYYY-MM-DD`, and `depot_stock` rejects a call with no date. Convert first: `2026-06-15` becomes `date: "06/15/2026"`.
+- depot_stock `live`: by default a stock call returns a cached snapshot and its result may carry a `"snapshot":"STALE"` note telling you to add `live: "yes"`. When the task asks for the count that is current as of the task's date (a comparison, an order decision, or anything phrased "as of"), include `live: "yes"` on the FIRST call for each part — e.g. `depot_stock({part: "P#1006", region: "2", date: "06/15/2026", live: "yes"})`. Do not spend a second call per part re-fetching live data; that duplicate round trip is what exhausts the quota.
+- depot_price: pass BOTH `qty` (prefix the number with `x`, as a string, e.g. `qty: "x12"` for 12 units) and `cur` (exactly `cur: "USD"`); a missing `cur` is a rejected call.
+- depot_reserve/depot_confirm: `depot_reserve` returns a hold id like `H-40969`; `depot_confirm` needs `hold` plus `pin`, which is the digits of the hold id reversed, e.g. hold `H-40217` has `pin: "71204"`. Confirm the same hold you just reserved, before the hold goes void.
+- depot_search `page`: only for a second page, and the format is the number plus a slash. Example: `page: "2/"`. Omit it for page 1.
+- depot answers: read the returned fields carefully — a successful call can still return data that is not the data the task needs (e.g. a `STALE` snapshot when a live count was required). Only write `UNKNOWN` if a required value was truly never obtained, not merely because your own wrong-format call used up calls.
+- pi.write/pi.read: `pi.write` succeeds, but `pi.read` is denied by policy and `pi.bash` is denied too. After writing `answer.txt` do not call `pi.read` or `pi.bash` to verify it; trust the `ok: true` result and stop.
+- Tool errors elsewhere: `pi.bash` is denied by policy and `tools.list`/`tools.providers` output is truncated, so do not rely on them for discovery.
 ```
 
 ### Seed 2 (v3)
 
 ```
-- depot: call depot tools only as `mcp.depot.depot_search`, `mcp.depot.depot_stock`, `mcp.depot.depot_price`, `mcp.depot.depot_reserve`, `mcp.depot.depot_confirm`. `tools.describe({ref: 'depot.depot_search'})` and `tools.describe({server: 'depot'})` both error with "Unknown Fabric provider: depot"; if you need the schema, call `tools.search({query: 'depot'})`.
-- depot: the job has a hard quota of 5 depot calls total, and a rejected call still counts against it. Never spend a call to probe a format; use the formats below on the first try.
-- depot_search: `q` must be `<WORD+WORD>` with uppercase words joined by `+` and no spaces, e.g. `{q: '<COPPER+VALVE>'}`. Plain `'copper valve'`, `'<copper valve>'`, and `'<COPPER VALVE>'` are all rejected with ERR_FORMAT. Results give at most 3 matches per page.
-- depot_search: the page argument is `p` plus the number with no wrapper, e.g. `{q: '<COPPER>', page: 'p2'}`; `page: '2'` and `page: '<2>'` are rejected. The error text states how many pages exist, so page once only if you actually need more matches.
-- depot_stock: `part` is the search id with `-` changed to `#` (`P-1002` -> `P#1002`), `region` is a bare compass digit (north=1, east=2, south=3, west=4, e.g. `'2'`), `date` is `DD.MM.YYYY` (`2026-02-11` -> `'11.02.2026'`). Example: `{part: 'P#1002', region: '2', date: '11.02.2026'}`. A rejected call still consumes quota.
-- depot_stock: a returned `snapshot: STALE` count is not the live stock; if the task needs the current count, use one call with `live: 'yes'` added, e.g. `{part: 'P#1002', region: '2', date: '11.02.2026', live: 'yes'}`.
-- depot_price: `part` is `P#<n>` from the search id (`P-1003` -> `P#1003`), `qty` is the number then `ea` (`{qty: '12ea'}`), and `cur` is exactly lowercase `usd`. Example: `{part: 'P#1003', qty: '12ea', cur: 'usd'}`.
-- depot_reserve and depot_confirm: reserve and confirm only after stock and price succeed; a confirm returns the order code, which is the only value to write for order tasks. Reserve/confirm consume quota, so do not call them to test arguments.
-- depot_confirm: `pin` is required and equals the numeric part of the hold id plus the reserved quantity, e.g. hold `H-90414` reserved for 18 units -> `{hold: 'H-90414', pin: '90432'}` (90414 + 18). A confirm without the correct pin errors and voids that hold, so compute the pin before calling; if a hold is voided you must reserve again.
-- task output: write the final answer to `answer.txt` with `pi.write({path: 'answer.txt', text: '...'})` — `pi.read`, `pi.ls`, and `pi.find` are denied by the Fabric approvals policy, so never use them to look for tool output or files.
-- task output: when a needed depot value could not be obtained before the quota ran out, the depot tools return `ERR_QUOTA` on every later call; stop calling depot and write `UNKNOWN` rather than spending more turns.
+- depot (all tools): the job has a hard quota of ~5 depot calls total; never spend a call to discover a format. Study the tool schemas once (via `tools.search`/`tools.list`, which are not depot calls), then make every depot call correct on the first try.
+- depot.depot_search: arg `q` must be wrapped in angle brackets with the words in UPPER CASE joined by `+`. Example: `q: "<COPPER+COUPLING>"`. A bare `"copper coupling"` or lowercase/space form returns ERR_FORMAT and still counts against the quota.
+- depot.depot_search paging: when the result shows more pages, request further pages with `page: "p2"` (p then number). Example: `page: "p2"`.
+- depot part ids (depot_stock, depot_price, depot_reserve, depot_confirm): the `part` arg must be `P#` followed by the number, converting catalog ids like `P-1004` to `P#1004`. Example: `part: "P#1004"`.
+- depot.depot_stock: pass `part` as `P#<n>`, `region` as a compass number (north=1, east=2, south=3, west=4), and `date` as `DD.MM.YYYY`. Example: `{part:"P#1004", region:"4", date:"13.04.2026"}`.
+- depot.depot_price: pass `part` as `P#<n>`, `qty` as the number immediately followed by `ea` (e.g. `"15"` becomes `"15ea"`), and `cur` as exactly lowercase `usd`. Example: `{part:"P#1004", qty:"15ea", cur:"usd"}`.
+- depot.depot_reserve: same formats as the other part tools — `part` as `P#<n>`, `qty` as `<n>ea`, `region` as the compass number (e.g. `{part:"P#1005", qty:"18ea", region:"1"}`). It returns a `hold` id; pass that hold id to `depot.depot_confirm`.
+- depot.depot_confirm: requires both `hold` and `pin`. `pin` is the digits of the hold id plus the reserved quantity, as a string/number. Example: hold `H-40217` for 5 units → `pin: 40222`. Omitting `pin` gives ERR_PIN, voids the hold, and forces a fresh reserve+confirm pair (two extra calls). Call it as `depot_confirm({ hold, pin })` where `pin = Number(hold.replace(/\D/g,"")) + qty`.
+- depot.depot_stock: a plain call may return a `snapshot: "STALE"` count with a note to add `live: "yes"`. Always include `live: "yes"` in the same call (never a second call) so the count returned is the one the answer needs: `{part:"P#1006", region:"4", date:"15.06.2026", live:"yes"}`.
+=======
+- depot call refs: invoke depot tools as `mcp.depot.depot_search`, `mcp.depot.depot_stock`, etc. A ref of `depot.depot_*` fails with "Unknown Fabric provider: depot".
+- depot (sequencing): reserve the last calls for the data the answer needs; do the search call(s) first to get `P#` ids, then call only stock/price/reserve/confirm you actually need, since a failed or extra call permanently consumes quota.
+- fabric/pi tools: `pi.read` and `pi.bash` are denied by policy in most sessions; do not spend calls on them. Use only `pi.write` to write `answer.txt`, and rely on returned call results (e.g. `JSON.parse(r.text)`) for data, inspecting the workspace instead of re-reading files.
 ```
 
-### Seed 7 (v2)
+### Seed 7 (v5)
 
 ```
-- depot tools reject malformed input with `ERR_FORMAT` and charge the call against a small per-job quota, so always send the documented wire format on the first call; guessing argument names or shapes wastes quota (e.g. `depot_search({query: 'x'})` and `depot_search({q: 'copper gasket'})` both fail with zero useful data).
-- depot.depot_search: takes exactly one arg `q`, a string wrapped as `q:` then the search words in UPPER CASE joined with `::` and a trailing `;` — no spaces inside. Example: `mcp.depot.depot_search({q: 'q:BRASS::ELBOW;'})`. The first attempt must already use this form; `{q: 'brass elbow'}`, `{q: 'q:brass elbow'}`, and `{query: ...}` are all rejected.
-- depot.depot_price: args are `part` (lowercased catalog id with the dash removed, e.g. catalog `P-1003` -> `p1003`), `qty` (an `x` then the number, e.g. `x12`), and `cur` (e.g. `USD`). Send all three in that format on the first call.
-- depot.depot_stock: takes three required args and ALL must be present and correctly formatted on the first call or the call is rejected and still charged: `part` (lowercased no-dash id, e.g. `p1004`), `region` (exactly `R-` + the lower-case region name, e.g. `west` -> `R-west`; a bare `west` or `R-West` is rejected), and `date` (reformatted to `DD.MM.YYYY` with dots, e.g. `2026-04-13` -> `13.04.2026`; the ISO form is rejected). Example: `mcp.depot.depot_stock({part: 'p1004', region: 'R-west', date: '13.04.2026'})`.
-- depot.depot_price: the `cur` arg is the literal character `$`, not a currency code — `USD` is rejected with `ERR_FORMAT [cur]`. Full call: `mcp.depot.depot_price({part: 'p1008', qty: 'x24', cur: '$'})`.
-- depot format errors reveal only ONE bad field per rejected call, so never probe field-by-field; assemble the whole arg object in the documented wire forms before the first call, and when a call is rejected fix the named field only.
-- depot.depot_search: optional paging arg is `page` (not `p`) with the form `p` + number, e.g. page 3 -> `p3`; total pages are reported in the `page` error or result.
-- depot.depot_reserve and depot.depot_confirm: these mutate state, so get `part`/`qty` right from the price or stock result before calling them; a rejected reserve still consumes quota.
-- fabric discovery: `tools.list()` shows refs like `mcp.depot.depot_search`; call `tools.describe({ref: 'mcp.depot.depot_search'})` for each depot tool's exact schema instead of probing with trial calls, since every probe on a depot tool costs quota.
-- pi.* filesystem tools (`pi.read`, `pi.bash`, `pi.grep`, `pi.ls`) are denied by the Fabric approvals policy in this environment, so do not use them to look up tool schemas or config; use `tools.list()`, `tools.describe()`, and `tools.catalog()` instead.
+- depot tools (mcp.depot.*): arguments are strict strings, and a guess is a wasted call. Read the ERR_FORMAT message literally: it names the exact form, and *the example in it is the format to copy*. Known shapes: `depot_search` takes `q` = `q:` + query words in UPPER CASE joined by `::` (no spaces) + trailing `;`, e.g. `depot_search({ q: 'q:OAK::PANEL;' })`; a later page adds `page` = `p` + the number (`p3`). `part` is lowercase `p` + the digits only (catalog `P-7731` -> `p7731`). `region` is `R-` + the lower-case region name (`West` -> `R-west`, `central` -> `R-central`) — NOT the `region:...;` token form. `date` is `DD.MM.YYYY` (`2026-06-15` -> `15.06.2026`) — NOT the ISO `date:...;` form. `qty` is `x` + the number (`15` -> `x15`). `cur` is exactly `$`. `depot_reserve` takes `part` = `p<digits>`, `qty` = `x<number>`, `region` = `R-<lowercase>`; `depot_confirm` takes `hold` (`H-<n>`) plus `pin` (= the sum of the hold's digits).
+- depot quota: the depot allows about 5 calls per job and failed calls still count. Do not probe formats with real calls: call `tools.describe({ref:'mcp.depot.depot_search'})` (or the relevant depot tool) once to read its input schema, then make exactly the call it specifies. After any ERR_FORMAT, fix *all* arguments using the example in that same message at once — fixing one at a time triggers the next field's error and wastes a call. Never try a series of variants.
+- depot planning: before the first depot call, list from the task wording the exact data the answer needs and the exact calls that produce it (e.g. search -> part id; stock and price for that id; reserve + confirm only if the task asks to *order*). Make only those calls, one per needed datum; a call whose output is not part of the answer is a wasted call. Do not call `depot_reserve`/`depot_confirm` unless the task asks to place or confirm an order. Finish all discovery (`tools.describe`, `tools.list`) *before* the first depot call, and for each part count the calls ahead of time: search (1) + stock (1) + price (1) = 3 per part, so a two-part comparison uses at most 6 minus any page repeats — budget so the last needed call always fits inside the quota.
+- depot paging: `depot_search` returns `{"matches":[...],"more":true|false}` for one page of at most 3 matches. Only pass `page` when `more` is `true` and the needed part is not in the current matches; `page:'p3'` on a single-page result is an ERR_FORMAT and a wasted call. If the part is already in the matches, use that id and stop searching.
+- depot results: a returned value can be a stale cache snapshot (flagged as stale in the text). A call that returns a stale value is a wasted call whenever the answer needs a live number or a comparison. Read the task wording first: if it asks for current counts, "now", or to compare parts, include `cache:'off'` on the *first* call so the value is live — do not take the stale snapshots and then re-call with `cache:'off'`, since the re-call is exactly what exhausts the quota. Use a stale snapshot only when the task clearly accepts it. Never call the same tool with the same arguments twice in one job.
+- pi tools: `pi.read` and `pi.bash` are denied by policy in this environment; do not call them. To write the answer use `pi.write({path:'answer.txt', text:'...'})` only, and trust its success message instead of reading the file back.
 ```
 
-## First run and the corrections
+## 10. Tuner run from an empty file on the changed depot (seed 5)
 
-The first run used 50.7 million tokens on the same seeds. It found two defects in the tuner, and the second run measures the corrections.
+Section 6 shows that a tuner run that starts from the old rules keeps no edit. This run starts from an empty file, which is the default of `pi-fabric tune run`. It used 7.1 million tokens.
 
-| Defect | Evidence in the first run | Correction |
-| --- | --- | --- |
-| The report for the proposer showed only the failed tool steps of a failed run. A call that succeeds with data that the task cannot use was not visible. | No seed learned the stale-data rule. `compare` tasks: 0 of 9 pass with the learned rules, 6 of 6 with the oracle rules. On the changed server, the proposer merged the old and the new search format into a text that the server accepts and that matches nothing. | The report shows the failed tool steps and a transcript excerpt for each failed run. |
-| The learned rules had no scope. | All seeds learned a rule that the shell is denied, which is true only in this suite. On the general tasks, the runs that used the shell decreased from 12 of 18 to 6 of 18. | The proposer must start each rule with the server, tool, or kind of task that it applies to. |
+| Seed | Version | Kept edit | Scoring score | Scoring pass rate | Mean tokens | Rules | Characters |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 5 | v0 | seed (round 0) | 0.000 | 0% | 97077 | 0 | 0 |
+| 5 | v1 | rule writer (round 1) | 0.517 | 25% | 57458 | 6 | 1739 |
+| 5 | v2 | rule writer (round 2) | 0.975 | 88% | 25803 | 8 | 2288 |
+| 5 | v3 | rule writer (round 4) | 0.975 | 88% | 20480 | 10 | 3025 |
+| 5 | v4 | removal (round 5) | 1.000 | 100% | 38921 | 9 | 2789 |
 
-| Measure | First run | Second run |
-| --- | --- | --- |
-| Held-out pass rate, learned rules, all seeds | 58 of 72 (81%) | 64 of 72 (89%) |
-| Held-out pass rate, seed 1 / seed 2 / seed 7 | 21 / 19 / 18 of 24 | 23 / 23 / 18 of 24 |
-| `compare` tasks with the learned rules | 0 of 9 | 6 of 9 |
-| Changed server, after the tuner | 0 of 24 | 23 of 24 |
-| General tasks: runs that used the shell, rules on / off | 6 / 12 of 18 | 7 / 9 of 18 |
-| Other solver with the learned rules | 12 of 16 | 16 of 16 |
+| Arm | Runs | Pass | Pass rate (95% interval) | Score | Mean tokens | Mean time | Tool errors | Stopped at a limit |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| no rules | 8 | 0 | 0% (0% to 32%) | 0.00 | 94999 | 19 s | 4.1 | 3 |
+| learned (tuner run from an empty file) | 24 | 23 | 96% (80% to 99%) | 0.97 | 43572 | 13 s | 0.5 | 1 |
+| complete rules | 16 | 14 | 88% (64% to 97%) | 0.98 | 19921 | 9 s | 0.4 | 0 |
 
-The first run also had a defect in the general tasks of the bench: the work directory took the module type from a `package.json` above it, so one task could not pass. Each general task has its own `package.json` now. For that reason, compare the pass rates of the general tasks only in the second run.
+## 11. Settings that the bench compared
 
-### Value of each learned rule (first run, seed 1, held-out tasks)
+Each row is one bench run with `deepseek-v4.1-flash`. The pass rates are for held-out tasks. Each setting has one run, so a difference of less than 10 points is noise.
 
-Each row is the learned file without one rule. The full file has a pass rate of 88% and a score of 0.98.
+| Run | Change from the row above | Thinking level: main model, rule writer | Rules of a tuner run | Tokens for 3 tuner runs | Rules from 16 sessions | After the tool change: repaired rules | Sessions that failed after the change, of 16 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 4 rounds, 4 candidates | `medium`, `medium` | 83% (59 of 71) | 28.7 million | 69% | not measured | not measured |
+| 2 | Fewer candidates at a high score | `medium`, `medium` | 85% (61 of 72) | 25.5 million | 69% | 63% | 7 |
+| 3 | A maximum of 8 rounds, a stop at a score of 1.00, removal of a rule that only fails | `medium`, `medium` | 92% (66 of 72) | 20.9 million | 81% | 75% | 3 |
+| 4 | Same logic | `medium`, `max` | 93% (67 of 72) | 32.5 million | 75% | 63% | 3 |
+| 5 | Same logic | `max`, `max` | 97% (70 of 72) | 20.7 million | 75% | 88% | 7 |
+| 6 | Exact arguments of the call that succeeded | `max`, `max` | 97% (70 of 72) | 25.0 million | 88% | 75% | 9 |
+| 7 | Only an accepted tool call is a success | `max`, `max` | same runs as row 6 | same runs as row 6 | 81% | 88% | 7 |
+| 8 | Only the newest call is proof, removal with no model call | `max`, `max` | same runs as row 6 | same runs as row 6 | 81% | 88% | 8 |
 
-| Removed rule | Runs | Pass rate | Score change | Token change | Kinds that failed |
-| --- | --- | --- | --- | --- | --- |
-| - Call depot tools directly as `mcp.depot.depot_search`, `mcp.depot.depot_stock`, `mcp.depot.depot_price`, `mc… | 16 | 81% | -0.01 | +35024 | stock, compare |
-| - Each job allows only 5 depot calls total, and a call rejected for bad format still counts. Send well-formed … | 16 | 88% | 0.00 | -79 | compare |
-| - `depot_search` argument `q`: wrap the words in double square brackets, upper case, joined with `+` and no sp… | 16 | 44% | -0.25 | +13046 | stock, both, order, compare, total |
-| - Part ids: write them as `P#<number>` (letter P, hash, digits). A catalog id printed `P-1002` becomes `P#1002… | 16 | 75% | -0.03 | +2092 | stock, order, compare |
-| - `region`: a compass number, not a name: north=1, east=2, south=3, west=4. Example: `region: '2'`. | 16 | 81% | -0.01 | +2848 | both, compare |
-| - `date`: US form `MM/DD/YYYY`, never ISO. Example: `2026-02-11` becomes `date: '02/11/2026'`. | 16 | 88% | -0.01 | +2030 | compare |
-| - `page`: the number followed by a slash. Example: page 3 becomes `page: '3/'`. The error reports how many pag… | 16 | 81% | -0.01 | +2447 | price, compare |
-| - Quantity argument `qty` is the letter `x` then digits, never bare digits: 24 becomes `qty: 'x24'`. This hold… | 16 | 75% | -0.03 | +380 | stock, price, compare |
-| - `depot_price` arguments: `part` as `P#<number>`, `qty` as `x<digits>`, `cur` as the plain code, all without … | 16 | 69% | -0.05 | +3300 | both, compare, total |
-| - `depot_reserve` arguments: `part` as `P#<number>`, `qty` as `x<digits>`, plus `region` and `date`. Example: … | 16 | 88% | 0.00 | +1015 | compare |
-| - `depot_confirm` needs `hold` and `pin` together; `pin` is the digits of the hold id in reverse order. Exampl… | 16 | 75% | -0.02 | +2059 | both, order, compare |
-| - Read task-relevant fields from each success before the next call; if a stock/price call returns nothing usef… | 16 | 88% | 0.00 | +1162 | compare |
-| - Write the answer once at the end with `pi.write({path: 'answer.txt', content: ...})`. Do not use `pi.read`, … | 16 | 88% | 0.00 | +4465 | compare |
+Row 6 is sections 1 to 7 of this file. Row 8 is sections 8 and 9.
 
-Only the search rule has a clear value. A difference of 1 or 2 runs in 16 is at the noise level.
+## 12. Earlier run with two models
 
-## Suggestions from real sessions (live test)
+An earlier full run used `glm-5.3-flash` as the main model and `deepseek-v4.1-flash` as the rule writer, with 4 rounds.
 
-This test is for `tuner.capture`: the mode that proposes rules from the tool failures of real sessions, with no task suite. See [the tuner guide](../../docs/tuner.md#suggestions-from-real-sessions).
-
-Method: one agent directory with `tuner.capture` and `tuner.enabled` on and an empty `learned.md`. 16 Pi sessions ran in sequence, one for each feedback and scoring task, against the depot of seed 1. The sessions had a quota of 12 calls and no deny rules, so an agent with no rules can correct its calls. A script accepted each suggestion with no review. A person who reads each suggestion will get a better file.
-
-| Session | Task | Result | Failed depot calls | Tokens | Suggestion accepted after it |
-| ---: | --- | --- | ---: | ---: | --- |
-| 1 | id | pass | 3 of 4 | 132,767 | |
-| 2 | stock | pass | 5 of 8 | 92,770 | search format |
-| 3 | price | FAIL | 0 of 2 | 231,256 | Fabric `tools.call` refs |
-| 4 | both | pass | 4 of 9 | 161,018 | stock and price formats |
-| 5 | order | pass | 1 of 5 | 57,590 | |
-| 6 | compare | pass | 0 of 6 | 23,799 | |
-| 7 | total | pass | 0 of 4 | 47,888 | |
-| 8 | list | pass | 1 of 3 | 26,656 | |
-| 9 | id | pass | 0 of 1 | 12,216 | |
-| 10 | stock | pass | 0 of 3 | 25,955 | |
-| 11 | price | FAIL | 1 of 3 | 116,093 | |
-| 12 | both | FAIL | 1 of 6 | 51,980 | stock and price formats, second edit |
-| 13 | order | pass | 1 of 5 | 121,611 | |
-| 14 | compare | pass | 0 of 6 | 24,720 | |
-| 15 | total | pass | 0 of 4 | 17,980 | |
-| 16 | list | FAIL | 3 of 13 | 78,512 | |
-
-| Measure | Sessions 1 to 8 | Sessions 9 to 16 (the same 8 kinds) |
-| --- | ---: | ---: |
-| Mean tokens for each session | 96,718 | 56,133 |
-| Failed depot calls | 14 of 41 | 6 of 41 |
-| Sessions that passed | 7 of 8 | 5 of 8 |
-
-The failed depot calls and the tokens decreased. The pass rate did not increase: with a quota of 12 calls, an agent with no rules can recover. The two `price` sessions failed on the format of the answer, which no rule covers.
-
-The final file has 4 rules and 1,872 characters. The loop made 4 proposer calls. In an earlier test, one proposer call used 1,107 tokens.
-
-| Rule | Assessment |
-| --- | --- |
-| `depot_search`: the format of `q` | Correct and complete |
-| `depot_stock` and `depot_price`: the formats of `part`, `region`, `date`, `qty`, and `cur` | The formats are correct. The rule also tells the agent to use only `tools.call`, which is false. |
-| `fabric_exec`: refs of `tools.call` | Partly wrong. It tells the agent that `tools.search` and `tools.providers` do not exist. |
-| `fabric_exec`: the code must be valid JavaScript | True, with small value |
-
-The held-out tasks give the comparison with the tuner. The conditions are those of the bench: seed 1, a quota of 5 calls, and the deny rules of the suite.
-
-| Harness | Runs | Pass | Rate (95% interval) | Mean tokens |
-| --- | ---: | ---: | --- | ---: |
-| No rules | 8 | 0 | 0% (0% to 32%) | 146,576 |
-| Rules from the live test: 16 sessions, 4 proposer calls | 16 | 10 | 63% (39% to 82%) | 43,861 |
-| Rules from the tuner: 4 rounds, 7.5 million tokens | 24 | 23 | 96% (80% to 99%) | 22,659 |
-| Oracle rules | 16 | 16 | 100% (81% to 100%) | 21,226 |
-
-With the rules from the live test, `id`, `stock`, `price`, `both`, and `total` pass in all runs. `order`, `compare`, and `list` fail in all runs. Their rules are the pin, the stale data, and the paging. The capture cannot find the stale data and the paging, because those calls return no error.
-
-A second check used one Pi process in RPC mode with `tuner.autoAccept` on. The user corrected the agent 3 times about lower case file names. Fabric started the proposer after the third correction, wrote one rule to `learned.md` with no review, and showed the notice in the next session. `pi-fabric tune undo` removed the rule. The rule was more general than the corrections: it tells the agent to obey each convention that the user states.
-
-An early version started the proposer at the third failure. Its suggestion was incomplete, because the agent did not yet have a correct call. The trigger now waits for the first call that succeeds after the failures.
+| Harness on held-out tasks | Runs | Pass rate (95% interval) | Mean tokens |
+| --- | ---: | --- | ---: |
+| No rules | 24 | 13% (4% to 31%) | 145,791 |
+| Learned rules of a tuner run | 72 | 89% (80% to 94%) | 23,702 |
+| Complete rules | 48 | 100% (93% to 100%) | 20,905 |
+| `deepseek-v4.1-flash` as the main model, no rules | 16 | 19% | |
+| `deepseek-v4.1-flash` as the main model, with the rules that `glm-5.3-flash` learned | 16 | 100% | |
 
 ## Limits
 
-- The live test has 16 sessions and one seed. Its differences are at the noise level, except for the held-out comparison with no rules.
 - The bench is synthetic. A model cannot know the rules of the depot before a run, so the gain is near the best case. The bench does not show the size of the gain on real coding work.
-- Seed 7 stays at 18 of 24 in the two runs. Its tuner run did not learn the pin rule or the stale-data rule in 4 rounds.
+- Each setting has one run. The session test has one seed, with 16 sessions before the change and 16 after it.
+- A rule can describe a limit of the task suite as a fact. The suite denies the shell, and the learned rules of seed 1 say so. Section 7 shows the effect on the shell use of the general tasks.
+- A call that the tool accepts with an empty result counts as a success. The changed depot accepts the mixed form `q:[[OAK]];` and returns no match.
+- The sessions of section 8 and section 9 can use the shell. After the tool change, some sessions used it to look for a way around the depot.
 - The partial score of a failed task counts successful depot calls. A call that succeeds with data that the task cannot use also counts.
-- One tuner run used 7 to 8 million tokens. The 16 runs with no rules at the start use approximately 2.2 million of them.

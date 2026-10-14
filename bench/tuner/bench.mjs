@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Full bench for the harness tuner on the quirk depot. One command runs:
 //   1. a tuner run for each seed (each seed is a different set of depot rules)
-//   2. held-out arms for each seed: learned rules (more runs) and oracle rules
+//   2. held-out arms for each seed: learned rules (more runs) and complete rules
 //   3. controls on the first seed: switch off, placebo rules, a full-size file,
-//      a different solver model, and a removal test for each learned rule
+//      a different main model, and a removal test for each learned rule
 //   4. a changed server: the rules of the first seed against a different seed
 //   5. general tasks that do not use the depot, with the learned rules on and off
 //   6. the one switch: real sessions with only `tuner.enabled`, where Fabric
@@ -27,7 +27,7 @@ const out = path.resolve(arg("out", "bench/results/tuner/full"));
 const seeds = arg("seeds", "1,2,7").split(",").map(Number);
 const driftSeed = Number(arg("drift-seed", "5"));
 const SOLVER = arg("model", "litellm/glm-5.3-flash");
-const PROPOSER = arg("proposer", "litellm/deepseek-v4.1-flash");
+const WRITER = arg("writer", "litellm/deepseek-v4.1-flash");
 const TRANSFER = arg("transfer-model", "litellm/deepseek-v4.1-flash");
 const rounds = arg("rounds", "4");
 const candidates = arg("candidates", "4");
@@ -90,7 +90,7 @@ const tuneRun = async (dir, tasks, extra = []) => {
   if (!fs.existsSync(path.join(runDir, "summary.md"))) {
     fs.rmSync(runDir, { recursive: true, force: true });
     say(`${path.basename(dir)}: tuner run`);
-    await tune(["run", "--tasks", tasks, "--dir", runDir, "--model", SOLVER, "--proposer", PROPOSER, "--rounds", rounds, "--candidates", candidates, ...extra], path.join(dir, "run.log"));
+    await tune(["run", "--tasks", tasks, "--dir", runDir, "--model", SOLVER, "--writer", WRITER, "--rounds", rounds, "--candidates", candidates, ...extra], path.join(dir, "run.log"));
   }
   const version = lastVersion(runDir);
   return { runDir, version, learned: fs.readFileSync(path.join(runDir, "harnesses", version, "learned.md"), "utf8") };
@@ -166,7 +166,7 @@ const report = (data) => {
   const text = [
     "# Harness tuner: full bench on the quirk depot",
     "",
-    `Solver ${SOLVER}. Proposer ${PROPOSER}. Seeds ${seeds.join(", ")}. ${rounds} rounds, ${candidates} candidates. Total ${(data.totalTokens / 1e6).toFixed(1)} million tokens (cached input included). Runs with no model reply: ${data.noModel}.`,
+    `Main model ${SOLVER}. Rule writer ${WRITER}. Seeds ${seeds.join(", ")}. ${rounds} rounds, ${candidates} candidates. Total ${(data.totalTokens / 1e6).toFixed(1)} million tokens (cached input included). Runs with no model reply: ${data.noModel}.`,
     "",
     "## 1. Tuner runs",
     "",
@@ -178,23 +178,23 @@ const report = (data) => {
     "",
     "## 2. Held-out tasks, all seeds",
     "",
-    "The tuner did not use these tasks. `no rules` is the v0 harness. `oracle` is the complete rule set from the server profile.",
+    "The tuner did not use these tasks. `no rules` is the v0 harness. `complete rules` is the rule set that a script writes from the server profile.",
     "",
     HEAD,
     line("no rules", all("heldoutNone")),
     line("learned (tuner)", all("heldoutLearned")),
-    line("oracle", all("oracle")),
+    line("complete rules", all("oracle")),
     "",
     "For each seed:",
     "",
     HEAD,
-    ...data.seeds.flatMap((seed) => [line(`seed ${seed.seed}: no rules`, seed.heldoutNone), line(`seed ${seed.seed}: learned`, seed.heldoutLearned), line(`seed ${seed.seed}: oracle`, seed.oracle)]),
+    ...data.seeds.flatMap((seed) => [line(`seed ${seed.seed}: no rules`, seed.heldoutNone), line(`seed ${seed.seed}: learned`, seed.heldoutLearned), line(`seed ${seed.seed}: complete rules`, seed.oracle)]),
     "",
     "## 3. Pass rate for each kind of task",
     "",
-    "`no rules` uses the v0 runs on all three task sets. `learned` and `oracle` use the held-out runs.",
+    "`no rules` uses the v0 runs on all three task sets. `learned` and `complete rules` use the held-out runs.",
     "",
-    "| Kind | Depot calls | no rules | learned | oracle |",
+    "| Kind | Depot calls | no rules | learned | complete rules |",
     "| --- | --- | --- | --- | --- |",
     ...kinds.map((kind) => {
       const cell = (cells) => { const s = stats(cells.filter((item) => kindOf(item) === kind)); return `${s.pass} of ${s.n}`; };
@@ -237,7 +237,7 @@ const report = (data) => {
       `One agent directory with only \`tuner.enabled\` on, on the depot of seed ${data.seeds[0].seed} with a quota of 12 calls. Fabric wrote the rules with no review.`, "",
       ...table(sessions), ...halves(sessions),
       "Held-out tasks of the same seed, under the bench conditions:", "", HEAD,
-      line("no rules", data.seeds[0].heldoutNone), line("rules from the sessions", data.live.heldout), line("rules from the tuner run", data.seeds[0].heldoutLearned), line("oracle rules", data.seeds[0].oracle), "",
+      line("no rules", data.seeds[0].heldoutNone), line("rules from the sessions", data.live.heldout), line("rules from the tuner run", data.seeds[0].heldoutLearned), line("complete rules", data.seeds[0].oracle), "",
       "```", data.live.learned.trim() || "(no rules)", "```", "");
     if (sessionsChanged) {
       text.push("## 9. The one switch after a change of the depot", "",
@@ -282,10 +282,10 @@ const controls = async (first) => ({
   "learned rules, `tuner.enabled` false": await arm(first.dir, first.tasks, "off", { learned: first.learned, off: true }),
   "placebo: 10 unrelated rules": await arm(first.dir, first.tasks, "placebo", { learned: placebo }),
   "learned rules in a full-size file": await arm(first.dir, first.tasks, "bloat", { learned: bloat(first.learned) }),
-  // The second solver is a control only when it is a different model.
+  // The second main model is a control only when it is a different model.
   ...(TRANSFER === SOLVER ? {} : {
-    [`solver ${TRANSFER}, no rules`]: await arm(first.dir, first.tasks, "transfer-none", { model: TRANSFER }),
-    [`solver ${TRANSFER}, learned rules`]: await arm(first.dir, first.tasks, "transfer-learned", { learned: first.learned, model: TRANSFER }),
+    [`main model ${TRANSFER}, no rules`]: await arm(first.dir, first.tasks, "transfer-none", { model: TRANSFER }),
+    [`main model ${TRANSFER}, learned rules`]: await arm(first.dir, first.tasks, "transfer-learned", { learned: first.learned, model: TRANSFER }),
   }),
 });
 
@@ -338,7 +338,7 @@ const live = async (first) => {
     fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
     // The same isolation as a tuner cell: only the credentials of the two model providers.
     const source = process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
-    const providers = new Set([SOLVER, PROPOSER].map((model) => model.split("/")[0]));
+    const providers = new Set([SOLVER, WRITER].map((model) => model.split("/")[0]));
     const keep = (value) => Object.fromEntries(Object.entries(value ?? {}).filter(([name]) => providers.has(name)));
     const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return undefined; } };
     const models = readJson(path.join(source, "models.json"));
@@ -346,7 +346,7 @@ const live = async (first) => {
     const auth = readJson(path.join(source, "auth.json"));
     if (auth) fs.writeFileSync(path.join(agentDir, "auth.json"), JSON.stringify(keep(auth)), { mode: 0o600 });
     const mcporter = path.join(agentDir, "mcporter.json");
-    fs.writeFileSync(path.join(agentDir, "fabric.json"), JSON.stringify({ mcp: { configPath: mcporter }, tuner: { enabled: true, proposerModel: PROPOSER } }));
+    fs.writeFileSync(path.join(agentDir, "fabric.json"), JSON.stringify({ mcp: { configPath: mcporter }, tuner: { enabled: true, writerModel: WRITER } }));
     // A real environment has no small quota, so an agent with no rules can correct its calls.
     await startServer(port, first.seed, 12);
     const { feedback, scoring } = JSON.parse(fs.readFileSync(path.join(first.tasks, "splits.json"), "utf8"));
@@ -389,7 +389,7 @@ const live = async (first) => {
           await new Promise((resolve) => setTimeout(resolve, 60_000));
           tokens = await session();
         }
-        // The proposer runs as a separate process; wait for it before the next session reads learned.md.
+        // The rule writer runs as a separate process; wait for it before the next session reads learned.md.
         for (let wait = 0; wait < 100 && fs.existsSync(path.join(tunerDir, "suggest.lock")); wait += 1) await new Promise((resolve) => setTimeout(resolve, 3_000));
         const check = spawnSync("sh", [path.join(first.tasks, task, "check.sh")], { cwd: work, env: { ...process.env, TUNER_CELL: cell, QUIRK_URL: `http://127.0.0.1:${port}` }, encoding: "utf8" });
         const depot = await (await fetch(`http://127.0.0.1:${port}/admin/cell/${cell}`)).json();
@@ -443,13 +443,14 @@ const [seedData, controlData, looData, tail, liveData] = await Promise.all([
   runs[0].then((first) => step("controls", () => controls(first))),
   Promise.all(runs.slice(0, 2)).then(([first]) => step("loo", () => leaveOneOut(first))),
   Promise.all([runs[0], runs.at(-1)]).then(async ([first]) => ({ drift: await step("drift", () => drift(first)), general: await step("general", () => general(first)) })),
-  runs[0].then((first) => step("live", () => live(first))),
+  // The sessions need only the tasks of the first seed, so they start with the tuner runs and not after them.
+  step("live", () => live({ seed: seeds[0], dir: path.join(out, `seed-${seeds[0]}`), tasks: path.join(out, `seed-${seeds[0]}`, "tasks") })),
 ]);
 const data = { seeds: seedData, controls: controlData, loo: looData, ...tail, live: liveData };
 const everyCell = [];
 JSON.stringify(data, (_key, value) => { if (value && typeof value === "object" && "task" in value && "tokens" in value) everyCell.push(value); return value; });
 const armTokens = [...new Set(everyCell)].reduce((sum, cell) => sum + cell.tokens, 0);
-// A tuner run counts its own cells and proposer calls up to the held-out step; the v0 cells are in both sums.
+// A tuner run counts its own cells and rule writer calls up to the held-out step; the v0 cells are in both sums.
 data.totalTokens = armTokens + [...seedData, ...(data.drift ? [data.drift] : [])].reduce((sum, item) => sum + item.spent, 0) - seedData.flatMap((seed) => cellsOf(seed.runDir, "v0")).reduce((sum, cell) => sum + cell.tokens, 0);
 data.noModel = [...new Set(everyCell)].filter((cell) => cell.tokens === 0).length;
 fs.writeFileSync(path.join(out, "results.json"), JSON.stringify(data, (key, value) => key === "checkOutput" ? undefined : value, 1));
