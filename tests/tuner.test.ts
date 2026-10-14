@@ -128,14 +128,14 @@ describe("tuner", () => {
     expect(rulesFor(entries, ["pi.bash"])).toEqual(entries.slice(3));
     // The same tool name on a different server is a different tool.
     expect(rulesFor(["- mcp.beta.depot_stock: part is P#1", ...entries], ["mcp.depot.depot_stock"])).toEqual(entries.slice(0, 2));
-    // The rule that only fails goes out, and the facts go in: the rejected call and the words of the tool.
+    // The rule that only fails goes out, and the facts go in: the rejected call. The words of the tool stay out of the prompt.
     const facts = applyEdits(`${entries.join("\n")}\n`, staleEdit(again, ["mcp.depot.depot_search"], [entries[0]!]));
     expect(facts).toMatchObject({ ok: true });
     const kept = facts.ok ? facts.learned : "";
     expect(kept).not.toContain("part is P#1");
     expect(kept).toContain("- pi.bash: use bun\n- mcp.depot.depot_search: the correct form is not known.");
     expect(kept).toContain("The tool rejected: `return await mcp.depot.depot_search({q:'oak 12'})`");
-    expect(kept).toContain('The tool said: "Runtime error: {"message":"ERR_FORMAT [q]: q must be wrapped as [[...]]"}"');
+    expect(kept).not.toContain("ERR_FORMAT");
     // A suggestion that waits blocks the next one, and a used target needs more failures.
     fs.writeFileSync(tunerFile("suggestion.json", agentDir), "{}");
     expect(step("s4", "return await mcp.depot.depot_search({q:'ash'})", bad)).toBe(false);

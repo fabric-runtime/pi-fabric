@@ -213,7 +213,7 @@ Two models have a part. The main model is the model of your session. The rule wr
 
 - **The main model finds the correct call. The rule writer only writes it down.** The rule writer has no tools, so a call that the tool accepted is the only proof of a format.
 - **The rule writer starts when a problem repeats:** 2 failures of one tool and then a success, 4 failures with no success, or 2 messages in which you correct the agent.
-- **A rule that fails gets a repair.** If the newest call succeeded, the rule writer corrects the rule from that call. If no call succeeded, Fabric removes the rule and writes facts in its place: the calls that the tool rejected and the text of its errors.
+- **A rule that fails gets a repair.** If the newest call succeeded, the rule writer corrects the rule from that call. If no call succeeded, Fabric removes the rule and writes facts in its place: the calls that the tool rejected. Error text of a tool does not go into learned.md.
 - **You own the rules.** They are plain text in `<agent-dir>/fabric/tuner/learned.md`, with a maximum of 8,000 characters. Fabric shows a notice for each edit, and `pi-fabric tune undo` removes the last one.
 
 Two options change this behavior: `"capture": false` stops the learning from sessions, and `"autoAccept": false` keeps each new rule as a suggestion for `pi-fabric tune review`, `accept`, and `reject`. `"writerModel"` selects the model that writes the rules, and the default is the model of your session. Fabric shows a notice when the tuner is on, when a rule update starts, and when it changes the rule file. The **Tuner** section of `/fabric settings` and the `/fabric tuner` command have the switch and the options.

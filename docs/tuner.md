@@ -167,7 +167,7 @@ Two models have a part in the flow. The main model is the model of your session,
    | Condition | What Fabric does |
    | --- | --- |
    | The newest call to the target succeeded | The rule writer corrects the rule from the exact arguments of that call. |
-   | No call succeeded after the failures | Fabric removes the rules of the tool (the rules that start with its name). In their place, it writes a note with facts: the calls that the tool rejected and the exact text of its errors. No model has a part in this step. When a call succeeds later, step 5 changes the note into a rule. |
+   | No call succeeded after the failures | Fabric removes the rules of the tool (the rules that start with its name). In their place, it writes a note with facts: the calls that the tool rejected. The error text of the tool does not go in. No model has a part in this step. When a call succeeds later, step 5 changes the note into a rule. |
 
 ```sh
 pi-fabric tune undo     # remove the last accepted edit from learned.md
@@ -190,7 +190,7 @@ pi-fabric tune reject   # discard the edit
 | The main model finds the correct call. The rule writer only writes it down. | The rule writer has no tools, so it cannot try a call. A call that the tool accepted is the only proof of a format. |
 | Only a tool call that the tool accepted is a success. | Code that catches its errors returns no error. In the bench, such code counted as a success, and the rule writer copied a wrong format from it 6 times. |
 | Only the newest call is proof. | A success from before a tool change says nothing about the tool now. In the bench, an old success with new errors gave a rule that mixed the two formats. |
-| A rule that only fails goes out, and a note with facts takes its place. Code writes the note, and no model does. | With no call that succeeded, a model can only guess, and the agent obeys a wrong guess before it reads the error. The facts are safe and useful: the next session does not try the rejected calls again, and it has the error text of the tool before its first call. |
+| A rule that only fails goes out, and a note with facts takes its place. Code writes the note, and no model does. | With no call that succeeded, a model can only guess, and the agent obeys a wrong guess before it reads the error. The facts are safe and useful: the next session does not try the rejected calls again. The error text stays out, because the prompt tells the agent to obey learned.md, and a tool must not write instructions there. The agent gets the error text from its own call. |
 | The trigger is 2 failures, and 1 failure is not sufficient. | One failure is frequently a slip of the model and not a property of the tool. Normal work has many single failures, and a rule for each one fills the file with rules for one task. No measurement compares 2 with 3. |
 | The rule writer is a separate process with a short report. | The session does not wait for it, and the session cache stays the same. A rule writer call used 1,000 to 6,000 tokens in the bench. |
 | The report has the exact arguments of the call that succeeded. | Agents frequently try many formats in one piece of code. From the code alone, the rule writer cannot see which format the tool accepted. |
@@ -429,7 +429,7 @@ The bench found these defects in the tuner, and the code now has a correction fo
 - A tuner run kept an edit at a score of 0, because the edit used fewer tokens. At a score of 0, only a higher score wins now.
 - Code that catches its errors counted as a success. Only a tool call that the tool accepted is a success now.
 - A success from before a tool change counted as proof for the failures after it. Only the newest call is proof now.
-- With only error text, the rule writer mixed the old format with the words of the error. Fabric now removes a rule that only fails and writes the rejected calls and the error text in its place, with no model call. This last step has a test and no bench run.
+- With only error text, the rule writer mixed the old format with the words of the error. Fabric now removes a rule that only fails and writes the rejected calls in its place, with no model call. This last step has a test and no bench run.
 
 ### Limits of the bench
 

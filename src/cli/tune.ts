@@ -196,7 +196,7 @@ export async function runTuneCli(argv: string[]): Promise<number> {
         // A target with an earlier rule writer call has its rules in the prompt, so its new failures show a rule that does not work.
         const repeated = new Set(targets.filter((target) => need.has(target)));
         // With no call that succeeded, a model can only guess the new form, and a wrong guess stops the agent.
-        // So Fabric removes the rules of the tool and writes what the tool said, with no model call.
+        // So Fabric removes the rules of the tool and writes the rejected calls, with no model call.
         const stale = targets.filter((target) => target !== USER_TARGET && repeated.has(target) && !fixOf(rows, target));
         const wrong = rulesFor(entriesOf(current), stale);
         if (wrong.length > 0) targets = stale;

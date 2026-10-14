@@ -134,27 +134,26 @@ export const rulesFor = (entries: string[], targets: string[]): string[] => {
 
 /**
  * The edit for targets that only fail with their rules in the prompt. It removes those rules and puts facts in
- * their place: the calls that the tool rejected and what the tool said. Code writes it, so it holds no guess.
+ * their place: the calls that the tool rejected. Code writes it, so it holds no guess. Tool text does not go in: the
+ * prompt tells the agent to obey learned.md, and a tool must not write instructions there.
  */
 export const staleEdit = (rows: CapturedStep[], targets: string[], wrong: string[]): string => {
-  // Tool text goes into the prompt as a quotation: one line, cut, and with no edit markers or code marks.
+  // A call goes into the prompt as a quotation: one line, cut, and with no edit markers or code marks.
   const quote = (text: string, max: number): string => oneLine(text.replace(/`|[<>=]{7}/g, " "), max);
   const last = (values: string[]): string[] => [...new Set(values)].slice(-3);
   const notes = targets.map((target) => {
     const failures = rows.filter((row) => row.failed && row.target === target);
     // ponytail: a long call is a program, and its start does not show the call that failed. Only short calls go in.
     const calls = last(failures.filter((row) => row.call.length <= 160).map((row) => quote(row.call, 160)));
-    const errors = last(failures.map((row) => quote(row.result, 200)));
     return [
       `- ${target}: the correct form is not known. An earlier rule failed, and Fabric removed it.`,
       ...(calls.length > 0 ? [`The tool rejected: ${calls.map((call) => `\`${call}\``).join(", ")}.`] : []),
-      `The tool said: ${errors.map((error) => `"${error}"`).join(" and ")}.`,
       "Read the error text and try a different form.",
     ].join(" ");
   });
   const block = (search: string, replace: string): string => `<<<<<<< SEARCH\n${search}${search ? "\n" : ""}=======\n${replace}${replace ? "\n" : ""}>>>>>>> REPLACE`;
   return [
-    `DIAGNOSIS: Each call to ${targets.join(", ")} failed with its rule in the prompt, and no call succeeded. Fabric removed the rule and wrote what the tool said. It wrote no new form.`,
+    `DIAGNOSIS: Each call to ${targets.join(", ")} failed with its rule in the prompt, and no call succeeded. Fabric removed the rule and wrote the rejected calls. It wrote no new form.`,
     ...wrong.map((entry) => block(entry, "")),
     ...notes.map((note) => block("", note)),
   ].join("\n");
