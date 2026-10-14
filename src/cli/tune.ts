@@ -159,8 +159,8 @@ export async function runTuneCli(argv: string[]): Promise<number> {
     // A stop from the keyboard: the task runs are in their own process groups, and a `finally` block does not run.
     let ownLock: string | undefined;
     for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => {
+      try { if (ownLock) fs.rmSync(ownLock, { force: true }); } catch {}
       stopRuns();
-      if (ownLock) fs.rmSync(ownLock, { force: true });
       process.exit(130);
     });
 

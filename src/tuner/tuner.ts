@@ -333,7 +333,8 @@ export const stopRuns = (): void => {
   for (const child of children) {
     try { process.kill(-child.pid!, "SIGKILL"); } catch { child.kill("SIGKILL"); }
   }
-  for (const agentDir of agentDirs) fs.rmSync(agentDir, { recursive: true, force: true });
+  // One folder in use (Windows) must not keep the credential copies in the other folders.
+  for (const agentDir of agentDirs) try { fs.rmSync(agentDir, { recursive: true, force: true }); } catch {}
 };
 
 const runPiOnce = (
