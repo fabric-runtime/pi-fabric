@@ -29,6 +29,42 @@ import {
 import { thinkingLabel } from "../thinking.js";
 import { INHERIT_VALUE } from "./model-picker.js";
 
+export const buildTunerSection = (
+  { config, theme, options, persist }: Pick<SettingsSectionContext<"modelSource">, "config" | "theme" | "options" | "persist">,
+): SettingItem => {
+  return setting("tuner", "Tuner", summaryFor("tuner", config), {
+    description: "Learned rules in the system prompt, and rule suggestions from the tool failures of your sessions.",
+    submenu: sectionSubmenu(
+      theme,
+      "Tuner",
+      "Learned rules for this environment. See docs/tuner.md.",
+      // A factory: the model source is discovered only when the section opens.
+      () => [
+        setting("tuner.enabled", "Enabled", config.tuner.enabled ? "true" : "false", {
+          description: "The one switch. Fabric adds <agent-dir>/fabric/tuner/learned.md to the system prompt and, with the two options below on, learns new rules from your sessions.",
+          values: BOOLEANS,
+        }),
+        setting("tuner.capture", "Learn from sessions", config.tuner.capture ? "true" : "false", {
+          description: "Option of Enabled, on by default. Record repeated tool failures and your corrections, and let the rule writer write a rule from them.",
+          values: BOOLEANS,
+        }),
+        setting("tuner.autoAccept", "Accept with no review", config.tuner.autoAccept ? "true" : "false", {
+          description: "Option of Enabled, on by default. Write each new rule to learned.md and show a notice; pi-fabric tune undo removes the last one. Off keeps each rule as a suggestion for pi-fabric tune review, accept, and reject.",
+          values: BOOLEANS,
+        }),
+        setting("tuner.writerModel", "Rule writer model", config.tuner.writerModel || INHERIT_VALUE, {
+          description: "Pi provider/model that writes the rule edits. Inherit uses the model and the thinking level of your session.",
+          submenu: modelPickerSubmenu(theme, options.modelSource, {
+            headerText: "Model that writes the tuner rules. Inherit uses the model of your session.",
+            inheritName: "Use the model and the thinking level of your session",
+          }),
+        }),
+      ],
+      persist,
+    ),
+  });
+};
+
 export const buildPrewalkSection = (
   { config, theme, options, persist }: Pick<SettingsSectionContext<"modelSource">, "config" | "theme" | "options" | "persist">,
 ): SettingItem => {

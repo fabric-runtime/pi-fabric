@@ -418,6 +418,17 @@ export interface FabricThinkingConfig {
   bounds: FabricThinkingBounds;
 }
 
+export interface FabricTunerConfig {
+  /** The one switch: add the learned rules (`<agentDir>/fabric/tuner/learned.md`) to the system prompt, and with the two defaults below also learn from sessions. */
+  enabled: boolean;
+  /** Pi `provider/model` that writes the rule edits; empty uses the model and the thinking level of the session. */
+  writerModel: string;
+  /** While enabled: record repeated tool failures and user corrections, and propose rules from them. Default true. */
+  capture: boolean;
+  /** While enabled: write each suggestion to learned.md with no review (`pi-fabric tune undo` removes the last one). Default true; false keeps suggestions for `pi-fabric tune review`. */
+  autoAccept: boolean;
+}
+
 export interface FabricConfig {
   fullCodeMode: boolean;
   executor: FabricExecutorConfig;
@@ -442,6 +453,7 @@ export interface FabricConfig {
   schema: FabricSchemaConfig;
   speculation: FabricSpeculationConfig;
   thinking: FabricThinkingConfig;
+  tuner: FabricTunerConfig;
   codePreview: CodePreviewSettings;
 }
 
@@ -647,6 +659,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     mcpAllowlist: [],
   },
   thinking: { bounds: {} },
+  tuner: { enabled: false, writerModel: "", capture: true, autoAccept: true },
   foreground: { tools: [], maxTools: 4 },
   codePreview: defaultCodePreviewSettings(),
 };
@@ -1577,6 +1590,12 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
     thinking: {
       // Bounds are a ceiling policy: malformed values fail closed.
       bounds: normalizeThinkingBounds(objectValue(input.thinking).bounds, "thinking.bounds"),
+    },
+    tuner: {
+      enabled: booleanValue(objectValue(input.tuner).enabled, DEFAULT_FABRIC_CONFIG.tuner.enabled),
+      writerModel: (stringValue(objectValue(input.tuner).writerModel) ?? "").trim().slice(0, 256),
+      capture: booleanValue(objectValue(input.tuner).capture, DEFAULT_FABRIC_CONFIG.tuner.capture),
+      autoAccept: booleanValue(objectValue(input.tuner).autoAccept, DEFAULT_FABRIC_CONFIG.tuner.autoAccept),
     },
     // Malformed entries fail config loading; semantic refusals report at runtime.
     foreground: foregroundConfigValue(input.foreground),

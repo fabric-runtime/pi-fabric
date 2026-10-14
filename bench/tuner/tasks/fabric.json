@@ -1,0 +1,17 @@
+{
+  "approvals": {
+    "actions": {
+      "pi.*": "deny",
+      "agents.*": "deny",
+      "jev.*": "deny",
+      "native.*": "deny",
+      "tasks.*": "deny",
+      "programs.*": "deny",
+      "extensions.*": "deny",
+      "sessions.*": "deny",
+      "memory.*": "deny",
+      "pi.write": "allow",
+      "mcp.$register": "deny"
+    }
+  }
+}

@@ -637,6 +637,82 @@ describe("/fabric command", () => {
     }
   });
 
+  it("completes and saves the tuner settings", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fabric-command-tuner-"));
+    try {
+      let handler: ((argumentsText: string, context: ExtensionContext) => Promise<void>) | undefined;
+      let completions: ((prefix: string) => Array<{ value: string; label: string; description?: string }> | null) | undefined;
+      const pi = {
+        registerCommand: vi.fn((_name: string, definition: { handler: typeof handler; getArgumentCompletions: typeof completions }) => {
+          handler = definition.handler;
+          completions = definition.getArgumentCompletions;
+        }),
+      } as unknown as ExtensionAPI;
+      const reloadConfig = vi.fn();
+      const notify = vi.fn();
+      const select = vi.fn().mockResolvedValue("litellm/b");
+      const state = {
+        initialized: true,
+        ensure: vi.fn().mockResolvedValue(undefined),
+        config: { tuner: { enabled: false, capture: true, autoAccept: true, writerModel: "" } },
+        reloadConfig,
+      } as unknown as FabricState;
+      const context = {
+        cwd: root,
+        hasUI: true,
+        isProjectTrusted: () => true,
+        modelRegistry: { getAvailable: () => [{ provider: "litellm", id: "b" }, { provider: "litellm", id: "a" }] },
+        ui: { notify, select },
+      } as unknown as ExtensionContext;
+      registerFabricCommand(pi, {
+        state,
+        fabricUi: {} as FabricUiController,
+        capturedTools: {} as CapturedToolCatalog,
+        applyFabricMode: vi.fn(),
+        suspendToolCapture: vi.fn(),
+      });
+
+      expect(completions!("tu")).toEqual([{ value: "tuner", label: "tuner" }]);
+      expect(completions!("tuner ")!.map((item) => item.value)).toEqual(["tuner on", "tuner off", "tuner capture", "tuner autoAccept", "tuner writerModel"]);
+      expect(completions!("tuner o")).toEqual([
+        { value: "tuner on", label: "on", description: "use the learned rules and learn new rules from your sessions" },
+        { value: "tuner off", label: "off", description: "current · no learned rules in the prompt and no capture" },
+      ]);
+      expect(completions!("tuner c")).toEqual([{ value: "tuner capture", label: "capture", description: "on · learn from tool failures and your corrections" }]);
+      expect(completions!("tuner autoAccept o")).toEqual([{ value: "tuner autoAccept on", label: "on" }, { value: "tuner autoAccept off", label: "off" }]);
+      expect(completions!("tuner writerModel ")!.map((item) => item.value)).toEqual(["tuner writerModel inherit"]);
+      expect(completions!("tuner nothing ")).toBeNull();
+
+      const saved = async () => (JSON.parse(await readFile(path.join(root, ".pi", "fabric.json"), "utf8")) as { tuner: Record<string, unknown> }).tuner;
+      // `on` opens the model dialog. A closed dialog keeps the current model.
+      select.mockResolvedValueOnce(undefined);
+      await handler!("tuner on", context);
+      expect(await saved()).toEqual({ enabled: true });
+      await handler!("tuner on", context);
+      expect(await saved()).toEqual({ enabled: true, writerModel: "litellm/b" });
+      expect(notify).toHaveBeenLastCalledWith(expect.stringMatching(/^Fabric tuner is on\. Rule writer: litellm\/b\..*next session \(\/new\)\. \(project: /), "info");
+      expect(reloadConfig).toHaveBeenCalledWith(context);
+      await handler!("tuner autoAccept off", context);
+      await handler!("tuner writerModel", context);
+      expect(select).toHaveBeenCalledWith("Tuner rule writer model", ["inherit", "litellm/a", "litellm/b"]);
+      expect(await saved()).toEqual({ enabled: true, autoAccept: false, writerModel: "litellm/b" });
+      // With a host that can show components, the Fabric model picker opens, and its Inherit row clears the value.
+      const custom = vi.fn().mockResolvedValue({ model: "Inherit" });
+      await handler!("tuner writerModel", { ...context, ui: { notify, select, custom } } as unknown as ExtensionContext);
+      expect(custom).toHaveBeenCalledTimes(1);
+      expect((await saved()).writerModel).toBe("");
+      await handler!("tuner writerModel litellm/b", context);
+      await handler!("tuner writerModel inherit", context);
+      expect((await saved()).writerModel).toBe("");
+      await handler!("tuner capture maybe", context);
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Usage: /fabric tuner"), "warning");
+      await handler!("tuner", context);
+      expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Fabric tuner: off · capture on · autoAccept on · writerModel inherit"), "info");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects arming while the prewalk master switch is disabled", async () => {
     let handler: ((argumentsText: string, context: ExtensionContext) => Promise<void>) | undefined;
     const sendUserMessage = vi.fn();

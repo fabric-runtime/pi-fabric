@@ -156,6 +156,120 @@ Fabric includes a live activity surface in Pi:
 
 See the [interface & commands reference](docs/interface.md) for every view, keybinding, and slash command.
 
+## Harness tuner
+
+The harness tuner gives your agent a memory for the rules of your tools. When the agent finds the correct way to call a tool after some failures, Fabric writes a short rule. The next session starts with that rule, so it does not make the same failures again. The model stays the same, and Fabric trains no model.
+
+One switch turns it on: `/fabric tuner on`, or `"tuner": { "enabled": true }` in `fabric.json`. The default is off. The [tuner document](docs/tuner.md) has the flow, the design decisions with their reasons, the commands, and the full benchmark.
+
+### What you get
+
+The numbers come from a benchmark on a tool with rules that its schema does not show. The tasks are held-out tasks, which the tuner did not see. The model is `deepseek-v4.1-flash` at the `max` thinking level.
+
+| Measure | Tuner off | Tuner on, rules from 16 sessions | Tuner on, rules from a tuner run |
+| ------- | --------: | -------------------------------: | -------------------------------: |
+| Tasks that pass | 17% | 81% | 97% |
+| Mean tokens for each task | 78,394 | 30,487 | 32,065 |
+| Work for you | | One command | A task suite and one command |
+
+```text
+Tasks that pass (each block is 5 points)
+
+Tuner off                      17%  ███
+Rules from 16 sessions         81%  ████████████████
+Rules from a tuner run         97%  ███████████████████
+Complete rules, from a script  90%  ██████████████████
+```
+
+### What to expect
+
+- **The first sessions on a new tool do not change.** The agent must find the correct call one time. In the benchmark, the first rules came after session 1 or 2.
+- **A new rule applies from the next session.** Start one with `/new`. Fabric does not change the prompt of the current session, because that loses the prompt cache of the provider.
+- **Later sessions fail less and cost less.** In the benchmark, the mean tokens for each session fell from 71,426 (sessions 1 to 8) to 28,676 (sessions 9 to 16).
+- **After a tool changes, the repair is slow.** Each rule must fail, the main model must find the new form, and Fabric must write the rule again. In the benchmark, 8 of the 16 sessions after the change failed.
+- **Tasks that the model does well get no gain.** On general coding tasks, all runs passed with the rules on and with the rules off.
+
+### How it works
+
+Two models have a part. The main model is the model of your session. The rule writer is a second model call that only writes rules.
+
+```text
+ SESSION 1                                    SESSION 2 (/new, or a new Pi process)
+
+ main model calls a tool      -> error        Fabric reads learned.md one time
+ main model changes the call  -> error        and adds it to the system prompt
+ main model changes the call  -> error                      |
+ main model changes the call  -> success                    v
+              |                               main model reads the rule
+              v                               first call to the tool -> success
+ capture: 2 failures and 1 success
+              |
+              v
+ rule writer: a separate process with a short report
+              |
+              v
+ learned.md gets one rule, and session 1 shows a notice
+```
+
+- **The main model finds the correct call. The rule writer only writes it down.** The rule writer has no tools, so a call that the tool accepted is the only proof of a format.
+- **The rule writer starts when a problem repeats:** 2 failures of one tool and then a success, 4 failures with no success, or 2 messages in which you correct the agent.
+- **A rule that fails gets a repair.** If the newest call succeeded, the rule writer corrects the rule from that call. If no call succeeded, Fabric removes the rule and writes facts in its place: the calls that the tool rejected. Error text of a tool does not go into learned.md.
+- **You own the rules.** They are plain text in `<agent-dir>/fabric/tuner/learned.md`, with a maximum of 8,000 characters. Fabric shows a notice for each edit, and `pi-fabric tune undo` removes the last one.
+
+Two options change this behavior: `"capture": false` stops the learning from sessions, and `"autoAccept": false` keeps each new rule as a suggestion for `pi-fabric tune review`, `accept`, and `reject`. `"writerModel"` selects the model that writes the rules, and the default is the model of your session. Fabric shows a notice when the tuner is on, when a rule update starts, and when it changes the rule file. The **Tuner** section of `/fabric settings` and the `/fabric tuner` command have the switch and the options.
+
+A second source of rules is a task suite. `pi-fabric tune run` runs your tasks, lets the rule writer edit the file, and keeps an edit only when separate scoring tasks confirm it. The idea comes from the paper [Harness Learning Enables Generalizable Test-Time Adaptation](https://arxiv.org/abs/2609.35738) (arXiv 2609.35738). Fabric uses the test-time loop of that paper with a standard model from the Pi model list.
+
+### Benchmark
+
+The benchmark is the [quirk depot](bench/tuner/README.md): an MCP server with rules that the tool schema hides (field formats, paging, old data with no error, and a reserve and confirm protocol). A seed selects the rules, so three seeds are three different tools. For example, the search text `oak panel` must be `[[OAK+PANEL]]` with seed 1.
+
+**Held-out tasks, three seeds:**
+
+| Harness | Runs | Pass rate (95% interval) | Mean tokens for each run | Mean time |
+| ------- | ---: | ------------------------ | -----------------------: | --------: |
+| No rules | 24 | 17% (7% to 36%) | 78,394 | 24 s |
+| Learned rules of a tuner run | 72 | 97% (90% to 99%) | 32,065 | 14 s |
+| Complete rules, written by a script from the server profile | 48 | 90% (78% to 95%) | 20,416 | 12 s |
+
+**Controls:**
+
+| Control or condition | Runs | Pass rate |
+| -------------------- | ---: | --------- |
+| Learned rules with `tuner.enabled` set to `false` | 16 | 19% |
+| Placebo: 10 unrelated rules | 16 | 13% |
+| Learned rules in a file of 7,900 characters | 16 | 100% |
+| General coding tasks with no depot: rules on and rules off | 18 each | 100% and 100% |
+
+**Rules from sessions.** 16 Pi sessions ran in sequence with only the switch on. The benchmark used a trigger of 3 failures, and the default is now 2. Fabric wrote 3 rules with no review, and the rule writer used 5,046 tokens in total. Then the depot changed to the rules of a different seed, and 16 more sessions ran.
+
+| Sessions | Passed | Failed depot calls | Mean tokens for each session |
+| -------- | -----: | -----------------: | ---------------------------: |
+| 1 to 8, no rules at the start | 7 of 8 | 14 of 42 | 71,426 |
+| 9 to 16 | 7 of 8 | 9 of 37 | 28,676 |
+| 17 to 24, after the tool change | 5 of 8 | 72 of 132 | 189,717 |
+| 25 to 32 | 3 of 8 | 37 of 95 | 138,689 |
+
+| Harness on held-out tasks | Before the tool change | After the tool change |
+| ------------------------- | ---------------------: | --------------------: |
+| No rules | 25% | 0% |
+| Rules from the first 16 sessions | 81% | 0% |
+| Rules after 16 more sessions on the changed tool | | 88% |
+| Rules of a tuner run on the same tool | 96% | 96% |
+
+**Settings that the benchmark compared.** Each row is one run, so a difference of less than 10 points is noise.
+
+| Setting | Held-out pass rate with the rules of a tuner run | Tokens for 3 tuner runs |
+| ------- | -----------------------------------------------: | ----------------------: |
+| 4 rounds, 4 candidates, `medium` thinking | 83% | 28.7 million |
+| Fewer candidates at a high score | 85% | 25.5 million |
+| A maximum of 8 rounds, with a stop at a score of 1.00 | 92% | 20.9 million |
+| The same, with the rule writer at `max` thinking | 93% | 32.5 million |
+| The same, with the main model and the rule writer at `max` thinking | 97% | 20.7 million |
+| The same, second run | 97% | 25.0 million |
+
+The benchmark is synthetic: a model cannot know the depot rules before a run, so the gain is near the best case. No measurement on real coding work exists yet. A rule from a session has no score, so read the notices. The capture finds only calls that fail: it cannot learn a rule where the call returns wrong data with no error. See the [full report](bench/tuner/RESULTS.md) and the [tuner document](docs/tuner.md).
+
 ## Reference
 
 - [Configuration](docs/configuration.md): `fabric.json`, code modes, tool capture, approvals, budgets, and [third-party model providers](docs/configuration.md#third-party-model-providers).
@@ -182,6 +296,7 @@ See the [interface & commands reference](docs/interface.md) for every view, keyb
 - [Tool entropy](docs/entropy.md): static capability-preserving normal forms, deterministic invocation-friction metrics, bounded repair witnesses, and offline `certify:entropy` proof checks.
 - [Speculative PTC](docs/speculation.md): pre-launching literal read calls while the program streams, with epoch + freshness guarantees.
 - [Skills](docs/skills.md): the core-first invocation policy and user-invoked advanced patterns.
+- [Harness tuner](docs/tuner.md): opt-in learned rules, with one switch. Fabric learns them from the tool failures and corrections of your sessions, and `pi-fabric tune` learns them from a task suite and keeps only the edits that scoring tasks confirm. The document has the flow, the design decisions, and the benchmark.
 
 ## Development
 

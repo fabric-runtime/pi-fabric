@@ -228,6 +228,7 @@ export const coerceValue = (id: string, value: string, config: FabricConfig): un
   // Agents inherit; prewalk asks interactively when it is armed.
   if (
     id === "approvals.model" ||
+    id === "tuner.writerModel" ||
     id === "prewalk.model" ||
     id === "agents.model" ||
     id === "agents.claude.model" ||
@@ -293,6 +294,8 @@ export const summaryFor = (id: string, config: FabricConfig): string => {
       return `${config.prewalk.enabled === false ? "off · " : ""}${config.prewalk.mode} · ${config.prewalk.model || PREWALK_MODEL_UNSET_LABEL}${config.prewalk.thinking ? ` · ${thinkingLabel(config.prewalk.thinking)}` : ""}${config.prewalk.requirePlan ? " · plan" : ""}${config.prewalk.alwaysRearm ? " · repeat" : ""}`;
     case "agents":
       return `${config.agents.runner}/${config.agents.transport}`;
+    case "tuner":
+      return !config.tuner.enabled ? "off" : ["on", ...(config.tuner.capture ? [config.tuner.autoAccept ? "learns" : "learns with review"] : [])].join(" · ");
     case "capture":
       return config.capture.enabled ? "enabled" : "disabled";
     case "ui":

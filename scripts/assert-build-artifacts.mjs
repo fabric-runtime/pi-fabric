@@ -40,6 +40,9 @@ const lazy = [
   "memory/extractive-history.js",
   "cli/mesh.js",
   "cli/decisions.js",
+  "cli/tune.js",
+  "tuner/learned.js",
+  "tuner/capture.js",
   "agents/claude-cli.js",
   "agents/compact-control.js",
   "agents/result.js",
@@ -243,7 +246,7 @@ const cliEntry = join(dist, "cli/index.js");
 if (!readFileSync(cliEntry, "utf8").startsWith("#!/usr/bin/env node\n")) {
   throw new Error("pi-fabric CLI entry lost its node shebang");
 }
-for (const file of [...staticClosure([cliEntry]), ...staticClosure([join(dist, "cli/mesh.js")]), ...staticClosure([join(dist, "cli/decisions.js")])]) {
+for (const file of [...staticClosure([cliEntry]), ...staticClosure([join(dist, "cli/mesh.js")]), ...staticClosure([join(dist, "cli/decisions.js")]), ...staticClosure([join(dist, "cli/tune.js")])]) {
   if (file === join(dist, "index.js") || readFileSync(file, "utf8").includes("src/fabric-runtime-state.ts")) {
     throw new Error(`pi-fabric CLI statically reaches the extension graph: ${file}`);
   }

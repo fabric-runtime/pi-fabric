@@ -111,6 +111,11 @@ export const FABRIC_MANAGED_HOST_VERSION = 1;
 export type { FabricManagedHostOptions } from "./managed-host.js";
 import type { FabricManagedHostOptions } from "./managed-host.js";
 
+/**
+ * Create the Pi extension initializer with runtime paths resolved from its entry URL.
+ * @param entryUrl File URL of the extension entry in the source or installed package.
+ * @returns Initializer that registers Fabric tools, commands, and lifecycle hooks.
+ */
 export function createFabricExtension(entryUrl: string) {
 // Absolute path to the Fabric skills bundled with this extension. Resolved
 // relative to the extension entry so it works both in development (src/) and
@@ -793,6 +798,45 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     return changed ? { content } : undefined;
   });
 
+  // Opt-in capture for `pi-fabric tune suggest`. A top-level result is a step.
+  // A nested call that succeeded gives the exact arguments of the correct call.
+  // A message in which the user corrects the agent is a step too.
+  const captureForTuner = async (context: ExtensionContext, event: { toolName: string; toolCallId: string; parentToolCallId?: string; input: Record<string, unknown>; text: string; isError: boolean } | { correction: string }): Promise<void> => {
+    if (!state.bootstrapped || !state.config.tuner.enabled || !state.config.tuner.capture) return;
+    try {
+      const capture = await import("./tuner/capture.js");
+      const session = context.sessionManager.getSessionId();
+      // The detached CLI reads only the global fabric.json, so it gets the effective values as flags.
+      const { autoAccept, writerModel } = state.config.tuner;
+      // Inherit: the model and the thinking level of this session.
+      // ponytail: a model that only an extension supplies gives no reply in the detached call; set tuner.writerModel then.
+      const writer = writerModel || (context.model ? `${context.model.provider}/${context.model.id}:${pi.getThinkingLevel()}` : "");
+      const record = (step: ReturnType<typeof capture.correctionOf>): void => {
+        if (!step || !capture.captureStep(step, [autoAccept ? "--auto" : "--no-auto", ...(writer ? ["--writer", writer] : [])])) return;
+        if (context.hasUI) context.ui.notify(`Fabric tuner: a rule update for ${step.target === capture.USER_TARGET ? "your corrections" : step.target} started. A notice shows the result.`, "info");
+      };
+      if ("correction" in event) record(capture.correctionOf(session, event.correction));
+      else if (event.parentToolCallId) {
+        // A nested call has the exact arguments. It waits for its fabric_exec, whose result tells if a failure came first.
+        const step = { ...capture.stepOf(session, event.toolName, event.input, event.text, event.isError), target: event.toolName };
+        if (!step.failed) capture.holdNested(event.parentToolCallId, step);
+      } else {
+        for (const step of capture.stepsOf(session, event.toolName, event.input, event.text, event.isError, capture.takeNested(event.toolCallId))) record(step);
+      }
+      const notice = context.hasUI ? capture.takeNotice() : undefined;
+      if (notice) context.ui.notify(notice, "info");
+    } catch (error) {
+      console.warn(`[pi-fabric] tuner capture: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  pi.on("tool_result", async (event, context) => {
+    await captureForTuner(context, { toolName: event.toolName, toolCallId: event.toolCallId, ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}), input: event.input, text: event.content.map((part) => part.type === "text" ? part.text : "").join(""), isError: event.isError });
+    return undefined;
+  });
+  pi.on("input", async (event, context) => {
+    if (event.source !== "extension") await captureForTuner(context, { correction: event.text });
+  });
+
   pi.on("message_end", (event) => {
     if (event.message.role !== "toolResult") return undefined;
     const message = event.message as AgentToolResultMessage & { usage?: Usage };
@@ -1025,8 +1069,18 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     const projected = extractiveHistory?.inject(context, messages) ?? messages;
     return projected !== messages || messages.length !== event.messages.length ? { messages: projected } : undefined;
   });
+  let tunerGuidance: string | undefined;
+  // A new session starts a new prompt, so it reads the rules that the tuner wrote in the meantime.
+  pi.on("session_start", () => { tunerGuidance = undefined; });
   pi.on("before_agent_start", async (event, context) => {
     const config = state.bootstrapped ? state.config : DEFAULT_FABRIC_CONFIG;
+    if (config.tuner.enabled && tunerGuidance === undefined) {
+      // Loaded at first use, and read once: the section must stay byte-stable for the whole session.
+      tunerGuidance = (await import("./tuner/learned.js")).readLearnedGuidance() ?? "";
+      // One line for each session shows that the tuner works.
+      const rules = tunerGuidance.match(/^- /gm)?.length ?? 0;
+      if (context.hasUI) context.ui.notify(`Fabric tuner: ${rules} learned rule${rules === 1 ? "" : "s"} in the prompt of this session.`, "info");
+    }
     const fullCodeMode = config.fullCodeMode;
     const schemaMode = config.schema.mode;
     const effectiveFullCodeMode = fullCodeMode || schemaMode === "enforce";
@@ -1074,6 +1128,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       overrideGuidance,
       extensionRoster,
       resolvedGuidance.appendText,
+      config.tuner.enabled ? tunerGuidance : undefined,
     ].filter((section): section is string => Boolean(section)).join("\n\n");
     // Turn-varying content (skill reference guidance) is delivered here as a
     // persistent message, not appended to the system prompt. Keeping the
