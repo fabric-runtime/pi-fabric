@@ -111,6 +111,11 @@ export const FABRIC_MANAGED_HOST_VERSION = 1;
 export type { FabricManagedHostOptions } from "./managed-host.js";
 import type { FabricManagedHostOptions } from "./managed-host.js";
 
+/**
+ * Create the Pi extension initializer with runtime paths resolved from its entry URL.
+ * @param entryUrl File URL of the extension entry in the source or installed package.
+ * @returns Initializer that registers Fabric tools, commands, and lifecycle hooks.
+ */
 export function createFabricExtension(entryUrl: string) {
 // Absolute path to the Fabric skills bundled with this extension. Resolved
 // relative to the extension entry so it works both in development (src/) and

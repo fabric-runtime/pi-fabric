@@ -77,6 +77,12 @@ const reviewText = (pending: NonNullable<ReturnType<typeof pendingSuggestion>>):
   ? `${pending.edit.diagnosis}\n\n${diffEntries(pending.current, pending.edit.learned)}\n\n${pending.evidence}\n\nRun "pi-fabric tune accept" or "pi-fabric tune reject".`
   : `The suggestion does not apply to learned.md: ${pending.edit.reason}. Run "pi-fabric tune reject".`;
 
+/**
+ * Run a tuner subcommand to evaluate tasks or manage learned rules and suggestions.
+ * @param argv Arguments after `pi-fabric tune`, including the subcommand and options.
+ * @returns CLI exit code: 0 on success, 1 when a rule edit cannot be completed,
+ * or 2 for a usage error. Errors other than usage errors propagate to the caller.
+ */
 export async function runTuneCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") {

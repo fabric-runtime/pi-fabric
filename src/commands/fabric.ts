@@ -201,6 +201,11 @@ const armPrewalk = async (
   return { ok: true };
 };
 
+/**
+ * Register /fabric commands, argument completions, and inter-extension event handlers.
+ * @param pi Pi host API used to register commands and subscribe to events.
+ * @param deps Shared Fabric state, UI, and callbacks used to apply command changes.
+ */
 export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps): void {
   const { state, fabricUi, capturedTools, applyFabricMode, suspendToolCapture } = deps;
   const unsubscribePrewalkRequests = pi.events?.on?.(FABRIC_PREWALK_REQUEST_EVENT, (value) => {
