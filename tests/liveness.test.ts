@@ -7,6 +7,7 @@ import {
   decodeOwnerIdentityLine,
   encodeOwnerIdentityLine,
   lockOwnerLiveness,
+  lockOwnerProvablyDead,
   OWNER_HEARTBEAT_INTERVAL_MS,
   OWNER_HEARTBEAT_TTL_MS,
   ownerHeartbeatFields,
@@ -156,6 +157,29 @@ describe("owner identity records", () => {
     expect(lockOwnerLiveness(42, Number.NaN, line, options)).toBe("unknown");
     expect(lockOwnerLiveness(42, NOW - 61_000, undefined, { ...options, legacyAlive: () => true })).toBe("alive");
     expect(SHORT_LOCK_MAX_HOLD_MS).toBeGreaterThan(OWNER_HEARTBEAT_TTL_MS);
+  });
+
+  it("proves a lock owner dead only in this host, PID namespace and boot", () => {
+    const line = (fields: Record<string, unknown>): string => JSON.stringify(fields);
+    const sameLine = line({ hostname: "node-a", pidNamespace: self.pidNamespace, bootId: "boot-a", startedAt: NOW - 5_000 });
+    const gone = probes({ signal: () => "dead" });
+    expect(lockOwnerProvablyDead(42, sameLine, { probes: gone })).toBe(true);
+    // The pid is alive but started at another time: it was reused.
+    expect(lockOwnerProvablyDead(42, sameLine, { probes: probes({ processStartedAt: () => NOW + 25_000 }) })).toBe(true);
+    expect(lockOwnerProvablyDead(42, sameLine, { probes: probes({ processStartedAt: () => NOW - 5_000 }) })).toBe(false);
+    expect(lockOwnerProvablyDead(42, sameLine, { probes: probes() })).toBe(false);
+    expect(lockOwnerProvablyDead(42, sameLine, { probes: probes({ signal: () => "unknown" }) })).toBe(false);
+    // Legacy owners and other hosts, namespaces or boots are never provably dead.
+    expect(lockOwnerProvablyDead(42, undefined, { probes: gone })).toBe(false);
+    expect(lockOwnerProvablyDead(42, "not json", { probes: gone })).toBe(false);
+    expect(lockOwnerProvablyDead(42, line({ hostname: "node-b", pidNamespace: self.pidNamespace, bootId: "boot-a", startedAt: 0 }), { probes: gone })).toBe(false);
+    expect(lockOwnerProvablyDead(42, line({ hostname: "node-a", pidNamespace: "pid:[foreign]", bootId: "boot-a", startedAt: 0 }), { probes: gone })).toBe(false);
+    expect(lockOwnerProvablyDead(42, line({ hostname: "node-a", startedAt: 0 }), { probes: gone })).toBe(false);
+    expect(lockOwnerProvablyDead(42, line({ hostname: "node-a", pidNamespace: self.pidNamespace, bootId: "boot-b", startedAt: 0 }), { probes: gone })).toBe(false);
+    // An unusable pid identifies no process, so it proves nothing.
+    for (const pid of [Number.NaN, 0, -1, 1.5]) {
+      expect(lockOwnerProvablyDead(pid, sameLine, { probes: gone })).toBe(false);
+    }
   });
 
   it("reads nested identity and heartbeat from JSON owner records", () => {

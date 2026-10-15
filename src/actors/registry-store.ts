@@ -5,6 +5,8 @@ import {
   writeJsonAtomic,
   encodeOwnerIdentityLine,
   lockOwnerLiveness,
+  lockOwnerProvablyDead,
+  reapLockByRenameClaim,
   SHORT_LOCK_MAX_HOLD_MS,
 } from "../core/atomic-write.js";
 
@@ -78,13 +80,26 @@ export class ActorRegistryStore {
           const firstOwner = fs.readFileSync(ownerPath, "utf8");
           const [, pidText, createdText, identityLine] = firstOwner.trim().split("\n");
           const stale = Date.now() - Number(createdText) > ACTOR_REGISTRY_STALE_LOCK_MS;
-          if (stale && lockOwnerLiveness(Number(pidText), Number(createdText), identityLine, {
-            legacyAlive: processAlive,
-            maxHoldMs: Math.max(SHORT_LOCK_MAX_HOLD_MS, ACTOR_REGISTRY_STALE_LOCK_MS),
-          }) === "dead") {
+          // A fresh lock is reaped only when its local owner is provably dead.
+          const dead = stale
+            ? lockOwnerLiveness(Number(pidText), Number(createdText), identityLine, {
+              legacyAlive: processAlive,
+              maxHoldMs: Math.max(SHORT_LOCK_MAX_HOLD_MS, ACTOR_REGISTRY_STALE_LOCK_MS),
+            }) === "dead"
+            : lockOwnerProvablyDead(Number(pidText), identityLine);
+          if (dead) {
             const secondOwner = fs.readFileSync(ownerPath, "utf8");
-            if (secondOwner === firstOwner) {
-              fs.rmSync(lockPath, { recursive: true, force: true });
+            // Claim by rename so a lock a new owner took after this check survives.
+            if (
+              secondOwner === firstOwner &&
+              reapLockByRenameClaim(lockPath, (claimed) => {
+                try {
+                  return fs.readFileSync(path.join(claimed, "owner"), "utf8") === firstOwner;
+                } catch {
+                  return false;
+                }
+              })
+            ) {
               continue;
             }
           }

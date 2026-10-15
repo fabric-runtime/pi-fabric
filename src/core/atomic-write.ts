@@ -440,6 +440,69 @@ export const lockOwnerLiveness = (
 };
 
 /**
+ * True only when a line-oriented lock owner is provably gone, whatever the
+ * lock's age: its identity line names this host, PID namespace and boot, and
+ * its pid is absent or now belongs to a process started at another time.
+ * Legacy owners, other hosts, namespaces or boots, unusable pids, and alive or
+ * unknown probes prove nothing, so callers keep their stale-age rule for them.
+ */
+export const lockOwnerProvablyDead = (
+  pid: number,
+  identityLine: string | undefined,
+  options: Pick<OwnerLivenessOptions, "probes"> = {},
+): boolean => {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  const identity = decodeOwnerIdentityLine(identityLine);
+  if (!identity) return false;
+  const self = (options.probes?.self ?? currentOwnerIdentity)();
+  if (
+    identity.hostname !== self.hostname ||
+    identity.pidNamespace !== self.pidNamespace ||
+    identity.bootId !== self.bootId
+  ) return false;
+  return ownerLiveness(
+    { ...identity, pid },
+    options.probes === undefined ? {} : { probes: options.probes },
+  ) === "dead";
+};
+
+/**
+ * Removes the lock directory `lock` only when `verify(claimed)` accepts the
+ * directory this process claimed by renaming it. Returns true when it removed
+ * the lock, false when the claim failed or held another owner's lock.
+ *
+ * Stale-lock recovery must be an exclusive claim. Stat-then-delete is
+ * TOCTOU: two reapers (or a reaper and a fresh writer that recreated the
+ * lock in between) can both pass their checks, and the slower rm then
+ * deletes a lock the faster one already replaced. rename() is the claim —
+ * only one process can move the directory, and removal targets the claimed
+ * path, never the live lock path. A claim that turns out to hold a live
+ * lock is renamed back before any destructive step; a live lock is never
+ * deleted, even if the rename-back races a fresh writer.
+ */
+export const reapLockByRenameClaim = (lock: string, verify: (claimed: string) => boolean): boolean => {
+  const claim = `${lock}.reap-${process.pid}-${randomUUID()}`;
+  try {
+    fs.renameSync(lock, claim);
+  } catch {
+    return false;
+  }
+  if (!verify(claim)) {
+    try {
+      fs.renameSync(claim, lock);
+    } catch {
+      // `lock` was recreated after the claim. Re-verify before any
+      // destructive step so a claimed live lock is only ever abandoned as
+      // garbage, never deleted.
+      if (verify(claim)) fs.rmSync(claim, { recursive: true, force: true });
+    }
+    return false;
+  }
+  fs.rmSync(claim, { recursive: true, force: true });
+  return true;
+};
+
+/**
  * Runs `refresh(now)` on an unref'd interval until the returned stop function
  * is called. Refresh failures are swallowed: a missed beat only ages the
  * record toward the TTL.

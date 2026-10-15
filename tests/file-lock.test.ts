@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { encodeOwnerIdentityLine } from "../src/core/atomic-write.js";
 import {
   FileLockTimeoutError, withExclusiveFileLock, withExclusiveFileLockAsync,
   type ExclusiveLockOptions,
@@ -46,6 +47,29 @@ describe.each(["sync", "async"] as const)("%s file-lock recovery", (mode) => {
     vi.spyOn(process, "kill").mockImplementation(() => { throw Object.assign(new Error("gone"), { code: "ESRCH" }); });
     await expect(run(options, () => "recovered")).resolves.toBe("recovered");
     expect(fs.existsSync(lock)).toBe(false);
+  });
+
+  const deadSignal = () => {
+    vi.spyOn(process, "kill").mockImplementation(() => { throw Object.assign(new Error("gone"), { code: "ESRCH" }); });
+  };
+
+  it("recovers a fresh lock at once when its local owner is provably dead", async () => {
+    const { lock, options } = setup(`token\n123456\n${Date.now()}\n${encodeOwnerIdentityLine()}\n`, false);
+    deadSignal();
+    await expect(run(options, () => "recovered")).resolves.toBe("recovered");
+    expect(fs.existsSync(lock)).toBe(false);
+  });
+
+  it.each(["legacy", "foreign namespace"])("keeps a fresh %s lock with a dead pid", async (kind) => {
+    const own = JSON.parse(encodeOwnerIdentityLine()) as Record<string, unknown>;
+    const identityLine = kind === "legacy" ? "" : `${JSON.stringify({ ...own, pidNamespace: "pid:[1]" })}\n`;
+    const owner = `token\n123456\n${Date.now()}\n${identityLine}`;
+    const { lock, options } = setup(owner, false);
+    deadSignal();
+    const operation = vi.fn(() => "wrong");
+    await expect(run(options, operation)).rejects.toBeInstanceOf(FileLockTimeoutError);
+    expect(operation).not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(lock, "owner"), "utf8")).toBe(owner);
   });
 
   it.each([`${Date.now() - 60_000}`, "invalid"])("protects a live owner with timestamp %s", async (timestamp) => {

@@ -6,7 +6,13 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { encodeOwnerIdentityLine, lockOwnerLiveness, SHORT_LOCK_MAX_HOLD_MS } from "./atomic-write.js";
+import {
+  encodeOwnerIdentityLine,
+  lockOwnerLiveness,
+  lockOwnerProvablyDead,
+  reapLockByRenameClaim,
+  SHORT_LOCK_MAX_HOLD_MS,
+} from "./atomic-write.js";
 
 const DEFAULT_LOCK_ATTEMPTS = 50;
 const DEFAULT_LOCK_DELAY_MS = 5;
@@ -69,7 +75,9 @@ const ownerCanBeReaped = (owner: string, mtimeMs: number, staleMs: number): bool
   const since = created?.trim() && Number.isSafeInteger(timestamp) && timestamp >= 0 && timestamp <= Date.now()
     ? timestamp
     : mtimeMs;
-  return Date.now() - since > staleMs && lockOwnerLiveness(Number(pid), since, identity, {
+  // A fresh lock is reaped only when its local owner is provably dead.
+  if (Date.now() - since <= staleMs) return lockOwnerProvablyDead(Number(pid), identity);
+  return lockOwnerLiveness(Number(pid), since, identity, {
     legacyAlive: processAlive,
     maxHoldMs: Math.max(SHORT_LOCK_MAX_HOLD_MS, staleMs),
   }) === "dead";
@@ -194,36 +202,6 @@ export const withExclusiveFileLockAsync = async <T>(
   }
 };
 
-// Stale-lock recovery must be an exclusive claim. Stat-then-delete is
-// TOCTOU: two reapers (or a reaper and a fresh writer that recreated the
-// lock in between) can both pass their checks, and the slower rm then
-// deletes a lock the faster one already replaced. rename() is the claim —
-// only one process can move the directory, and removal targets the claimed
-// path, never the live lock path. A claim that turns out to hold a live
-// lock is renamed back before any destructive step; a live lock is never
-// deleted, even if the rename-back races a fresh writer.
-const reapStaleLock = (lock: string, verify: (claimed: string) => boolean): boolean => {
-  const claim = `${lock}.reap-${process.pid}-${randomUUID()}`;
-  try {
-    fs.renameSync(lock, claim);
-  } catch {
-    return false;
-  }
-  if (!verify(claim)) {
-    try {
-      fs.renameSync(claim, lock);
-    } catch {
-      // `lock` was recreated after the claim. Re-verify before any
-      // destructive step so a claimed live lock is only ever abandoned as
-      // garbage, never deleted.
-      if (verify(claim)) fs.rmSync(claim, { recursive: true, force: true });
-    }
-    return false;
-  }
-  fs.rmSync(claim, { recursive: true, force: true });
-  return true;
-};
-
 export const withExclusiveFileLock = <T>(
   options: ExclusiveLockOptions,
   operation: () => T,
@@ -258,7 +236,7 @@ export const withExclusiveFileLock = <T>(
           const secondOwner = fs.readFileSync(ownerPath, "utf8");
           if (
             secondOwner === firstOwner &&
-            reapStaleLock(lock, (claimed) => {
+            reapLockByRenameClaim(lock, (claimed) => {
               try {
                 const owner = fs.readFileSync(path.join(claimed, "owner"), "utf8");
                 return owner === firstOwner &&
@@ -279,7 +257,7 @@ export const withExclusiveFileLock = <T>(
           const first = fs.statSync(lock);
           if (
             Date.now() - first.mtimeMs > staleMs &&
-            reapStaleLock(lock, (claimed) => {
+            reapLockByRenameClaim(lock, (claimed) => {
               try {
                 try {
                   fs.readFileSync(path.join(claimed, "owner"), "utf8");
