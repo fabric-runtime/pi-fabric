@@ -848,7 +848,8 @@ export const createFabricExecTool = (
       // keep the same coercion here for direct internal invocations.
       const joined = Array.isArray(params.code) ? params.code.join("\n") : params.code;
       const code = state.config.executor.kernel === "python" ? joined : repairFabricGuestCode(joined);
-      const repeat = repeatGuard.observe(code);
+      const strings = resolveFabricExecPayloads(params);
+      const repeat = repeatGuard.observe(code, strings);
       if (repeat.blocked) {
         return {
           content: [{ type: "text", text: fabricRepeatBlockText(repeat.count) }],
@@ -857,7 +858,6 @@ export const createFabricExecTool = (
         };
       }
       const runDisplay = normalizeRunDisplay(params.display);
-      const strings = resolveFabricExecPayloads(params);
       const tokenBudget = "tokenBudget" in params && typeof params.tokenBudget === "number"
         ? params.tokenBudget : undefined;
       const result = await state.execution.execute({
