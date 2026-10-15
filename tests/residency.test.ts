@@ -1037,3 +1037,177 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
     await state.participants.close();
   });
 });
+
+const hostedRunnerModule = path.resolve("tests/fixtures/resident-hosted-runner.mjs");
+const crashingHostPath = path.resolve("tests/fixtures/fake-resident-host-crash.mjs");
+
+const readOwnerPid = (config: ResidentHostConfig): number | undefined => {
+  try {
+    return (JSON.parse(fs.readFileSync(path.join(config.residencyRoot, "owner.json"), "utf8")) as ResidentHostOwner).pid;
+  } catch {
+    return undefined;
+  }
+};
+
+const processAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** A durable agent record left non-terminal, as a host that died mid-run leaves it. */
+const seedRunningDurableAgent = (state: RootHarness, options: { hosted: boolean }): string => {
+  const id = "b".repeat(32);
+  const runDirectory = path.join(state.config.residencyRoot, "runs", id);
+  const agentsPath = path.join(state.config.residencyRoot, "agents");
+  fs.mkdirSync(runDirectory, { recursive: true });
+  fs.mkdirSync(agentsPath, { recursive: true });
+  const record = {
+    id, name: "orphaned durable worker", status: "running", text: "", task: "work",
+    runner: options.hosted ? "seeded-hosted" : "pi", transport: "process", cwd: state.root, startedAt: 1, updatedAt: 1,
+    turns: 0, toolCalls: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+    ...(options.hosted ? { hosted: { locator: { runDirectory } } } : {}),
+  };
+  fs.writeFileSync(path.join(runDirectory, "status.json"), JSON.stringify(record));
+  fs.writeFileSync(path.join(agentsPath, `${id}.json`), JSON.stringify({
+    format: RESIDENT_HOST_FORMAT, rootId: state.identity.id, id, runDirectory, handle: record, createdAt: 1, updatedAt: 1,
+  }));
+  return id;
+};
+
+// These run a real resident host, so they need the build output and a POSIX host.
+const skipRealResidentHost = (skip: (condition: boolean, note?: string) => void): void => {
+  skip(!hasResidentHost, "needs dist/residency/launcher.js; run `bun run build` first");
+  skip(process.platform === "win32", "POSIX-only: on Windows spawnDetached does not detach the resident host, and the resident-host suites here are not verified there");
+};
+
+describe("durable wait after the resident host dies", () => {
+  it("restarts the resident host once for concurrent waiters and returns the re-attached result", { timeout: 60_000 }, async ({ skip }) => {
+    skipRealResidentHost(skip);
+    const state = await rootHarness("resident-wait-dead-host");
+    // The repository's own pi, with a scratch agent directory.
+    state.config.piBinary = path.resolve("node_modules/.bin/pi");
+    state.config.agents.timeoutMs = 120_000;
+    vi.stubEnv("PI_CODING_AGENT_DIR", path.join(state.root, "pi-agent"));
+    const fixture = await import(hostedRunnerModule) as { RESIDENT_HOSTED_RUNNER_ID: string; HOSTED_EVENTS_FILE: string; unregister: () => void };
+    const client = new ResidencyClient({
+      config: state.config,
+      mesh: state.mesh,
+      participants: state.participants,
+      mainAgent: state.mainAgent,
+      hostPath,
+    });
+    try {
+      const handle = await client.spawnAgent({
+        task: "settles only after a re-attach",
+        runner: fixture.RESIDENT_HOSTED_RUNNER_ID,
+        residency: "durable",
+      });
+      const eventsFile = path.join(state.config.residencyRoot, "runs", handle.id, fixture.HOSTED_EVENTS_FILE);
+      await waitFor(() => fs.existsSync(eventsFile));
+      const firstHost = readOwnerPid(state.config);
+      expect(firstHost).toBeTypeOf("number");
+      process.kill(firstHost!, "SIGKILL");
+      await waitFor(() => !processAlive(firstHost!));
+      expect(client.statusAgent(handle.id).status).toBe("running");
+
+      const launcherStarts = (): number => fs.readFileSync(path.join(state.config.residencyRoot, "launcher.log"), "utf8")
+        .split("\n").filter((line) => line.includes('"launcher-started"')).length;
+      expect(launcherStarts()).toBe(1);
+
+      // Two concurrent waiters; bounded so a wait that never restarts the host fails instead of hanging.
+      const results = await Promise.all([
+        client.waitAgent(handle.id, AbortSignal.timeout(40_000)),
+        client.waitAgent(handle.id, AbortSignal.timeout(40_000)),
+      ]);
+
+      for (const result of results) {
+        expect(result).toMatchObject({ id: handle.id, status: "completed", text: "finished after re-attach" });
+      }
+      // The waiters shared one restart.
+      expect(launcherStarts()).toBe(2);
+      const secondHost = readOwnerPid(state.config);
+      expect(secondHost).toBeTypeOf("number");
+      expect(secondHost).not.toBe(firstHost);
+      expect(fs.readFileSync(eventsFile, "utf8").trim().split("\n")).toEqual([
+        `start ${firstHost}`,
+        `attach ${secondHost}`,
+      ]);
+    } finally {
+      fixture.unregister();
+      await client.close();
+      await state.participants.close();
+    }
+  });
+
+  it("fails the wait with the start error when the resident host cannot start", { timeout: 30_000 }, async ({ skip }) => {
+    skipRealResidentHost(skip);
+    const state = await rootHarness("resident-wait-unstartable-host");
+    state.config.piBinary = path.join(state.root, "missing-pi-binary");
+    const id = seedRunningDurableAgent(state, { hosted: true });
+    const client = new ResidencyClient({
+      config: state.config,
+      mesh: state.mesh,
+      participants: state.participants,
+      mainAgent: state.mainAgent,
+      hostPath,
+    });
+    try {
+      await expect(client.waitAgent(id, AbortSignal.timeout(20_000)))
+        .rejects.toThrow(/Fabric resident host failed to start: .*missing-pi-binary/);
+    } finally {
+      await client.close();
+      await state.participants.close();
+    }
+  });
+});
+
+describe("durable wait against a resident host that keeps dying", () => {
+  it("fails at once, without starting a host, for a run a new host cannot re-attach", { timeout: 30_000 }, async () => {
+    const state = await rootHarness("resident-wait-unadoptable-run");
+    const id = seedRunningDurableAgent(state, { hosted: false });
+    const client = new ResidencyClient({
+      config: state.config,
+      mesh: state.mesh,
+      participants: state.participants,
+      mainAgent: state.mainAgent,
+      hostPath: crashingHostPath,
+    });
+    fs.writeFileSync(path.join(state.config.residencyRoot, "fake-host.json"), JSON.stringify({ hostId: client.hostId }));
+    try {
+      await expect(client.waitAgent(id, AbortSignal.timeout(20_000)))
+        .rejects.toThrow(`Durable Fabric agent ${id} (runner pi) cannot finish: its resident host ${client.hostId} stopped, and a new host re-attaches only hosted runs`);
+      expect(fs.existsSync(path.join(state.config.residencyRoot, "launches.log"))).toBe(false);
+      expect(client.statusAgent(id).status).toBe("running");
+    } finally {
+      await client.close();
+      await state.participants.close();
+    }
+  });
+
+  it("restarts the host a bounded number of times, then fails the wait", { timeout: 30_000 }, async () => {
+    const state = await rootHarness("resident-wait-crashing-host");
+    const id = seedRunningDurableAgent(state, { hosted: true });
+    const client = new ResidencyClient({
+      config: state.config,
+      mesh: state.mesh,
+      participants: state.participants,
+      mainAgent: state.mainAgent,
+      hostPath: crashingHostPath,
+    });
+    fs.writeFileSync(path.join(state.config.residencyRoot, "fake-host.json"), JSON.stringify({ hostId: client.hostId }));
+    try {
+      await expect(client.waitAgent(id, AbortSignal.timeout(20_000)))
+        .rejects.toThrow(/resident host .* stopped 3 times/);
+      const launches = fs.readFileSync(path.join(state.config.residencyRoot, "launches.log"), "utf8").trim().split("\n");
+      expect(launches).toHaveLength(3);
+      expect(client.statusAgent(id).status).toBe("running");
+    } finally {
+      await client.close();
+      await state.participants.close();
+    }
+  });
+});

@@ -39,6 +39,9 @@ import {
 const STARTUP_TIMEOUT_MS = 30_000;
 const COMMAND_TIMEOUT_MS = 30_000;
 const STATUS_POLL_MS = 100;
+// One wait restarts a dead resident host at most this many times, so a host
+// that keeps dying fails the wait instead of spinning launchers.
+const MAX_WAIT_HOST_STARTS = 3;
 const AGENT_ID_PATTERN = /^[a-f0-9]{32}$/;
 
 const delay = (ms: number): Promise<void> =>
@@ -54,6 +57,17 @@ const readJson = <T>(filePath: string): T | undefined => {
   } catch {
     return undefined;
   }
+};
+
+const untilAborted = <T>(promise: Promise<T>, signal: AbortSignal | undefined, aborted: () => Error): Promise<T> => {
+  if (!signal) return promise;
+  promise.catch(() => undefined);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(aborted());
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 };
 
 const terminal = (status: string): status is AgentRunResult["status"] =>
@@ -118,6 +132,7 @@ export class ResidencyClient {
   #modelGuidanceJson: string | undefined;
   #drainingDeliveries = false;
   #closed = false;
+  #hostStart: Promise<ResidentHostOwner> | undefined;
 
   constructor(readonly options: ResidencyClientOptions) {
     this.hostId = residentHostId(options.config.rootId);
@@ -174,6 +189,15 @@ export class ResidencyClient {
     atomicWrite(this.#configPath, this.options.config);
     const existing = this.#liveOwner();
     if (existing) return existing;
+    // Concurrent callers in this process share one launch. Across processes the
+    // host's start lock admits one owner; a losing launcher exits quietly.
+    this.#hostStart ??= this.#startHost().finally(() => {
+      this.#hostStart = undefined;
+    });
+    return this.#hostStart;
+  }
+
+  async #startHost(): Promise<ResidentHostOwner> {
     fs.rmSync(this.#errorPath, { force: true });
     await spawnDetached(
       this.#hostPath,
@@ -312,12 +336,38 @@ export class ResidencyClient {
   }
 
   async waitAgent(id: string, signal?: AbortSignal): Promise<AgentRunResult> {
+    const aborted = (): Error => new Error(`Waiting for durable Fabric agent ${id} was aborted`);
+    let hostStarts = 0;
     while (true) {
-      if (signal?.aborted) throw new Error(`Waiting for durable Fabric agent ${id} was aborted`);
+      if (signal?.aborted) throw aborted();
       const status = this.statusAgent(id);
       if (terminal(status.status) && "startedAt" in status) {
         this.acknowledgeCompletion(id);
         return status as AgentRunResult;
+      }
+      // Only the resident host settles its runs. With no live owner nothing will,
+      // so restart it: the new host re-attaches the run. Re-read the status first
+      // in case the host settled the run and exited between the two reads.
+      if (!this.#liveOwner()) {
+        const current = this.statusAgent(id);
+        if (terminal(current.status) && "startedAt" in current) continue;
+        // A new host re-attaches only hosted runs (AgentManager.recoverHostedRuns).
+        // Nothing settles any other run once its host is gone, so fail now.
+        if (!("hosted" in current && current.hosted)) {
+          throw new Error(
+            `Durable Fabric agent ${id} (runner ${current.runner}) cannot finish: its resident host ${this.hostId} stopped, and a new host re-attaches only hosted runs`,
+          );
+        }
+        if (hostStarts >= MAX_WAIT_HOST_STARTS) {
+          throw new Error(
+            `Fabric resident host ${this.hostId} stopped ${hostStarts} times while durable Fabric agent ${id} was unfinished`,
+          );
+        }
+        hostStarts += 1;
+        // A start failure rejects the wait. An aborted wait stops waiting; the
+        // host start itself runs on and the next host idles out if unused.
+        await untilAborted(this.ensureHost(), signal, aborted);
+        continue;
       }
       await sleepUnlessAborted(STATUS_POLL_MS, signal).catch(() => undefined);
     }

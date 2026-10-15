@@ -66,7 +66,8 @@ Old leaf-adapter locators/journals are not silently migrated into worker stores.
 Worker retries retain the original prompt identity, so a completed journal can
 restore its answer even if the parent died before saving completion. Automatic
 reattachment after the owning Fabric/resident process restarts currently covers
-hosted adapters, not this built-in worker. Recovery of completed conversations
+hosted adapters, not this built-in worker; `agents.wait` on such a run fails at
+once when its resident host is gone. Recovery of completed conversations
 with additional steering/follow-up user messages also remains incomplete: strict
 transcript correlation fails closed to avoid attributing a stale answer.
 Control acknowledgements do not provide an end-to-end exactly-once delivery
