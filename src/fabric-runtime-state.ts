@@ -18,7 +18,10 @@ import { DEFAULT_SHELL_HANG_MS, FabricShellJobStore } from "./core/shell-jobs.js
 import { GlobalActorRegistry } from "./actors/global-registry.js";
 import { buildActorContext } from "./actors/context.js";
 import { actorDeliveryNotice } from "./actors/delivery-policy.js";
-import { prepareFabricActorHostPayload } from "./actors/host-event-payload.js";
+import {
+  prepareFabricActorContextPayload,
+  prepareFabricActorHostPayload,
+} from "./actors/host-event-payload.js";
 import type { JevObservationHost } from "./jev/observation.js";
 import { resolveJevModelRoute } from "./jev/routes.js";
 import type { FabricActorHostEvent } from "./actors/types.js";
@@ -1308,20 +1311,17 @@ export class FabricRuntimeState {
       payload,
       this.#config.mesh.eventContextChars,
     );
-    const preparedContext = prepareFabricActorHostPayload(
+    const preparedContext = prepareFabricActorContextPayload(
       { digest, transcript },
       this.#config.mesh.eventContextChars,
-    ).payload;
-    const safeContext = isPlainObject(preparedContext)
-      ? preparedContext
-      : { digest: {}, transcript: [String(preparedContext)] };
+    );
     return observed + this.#actors.dispatchObservedHostEvent(
       event,
       {
         event,
         session: { id: context.sessionManager.getSessionId(), cwd: context.cwd },
-        digest: safeContext.digest ?? {},
-        transcript: safeContext.transcript ?? [],
+        digest: preparedContext.digest,
+        transcript: preparedContext.transcript,
         signal: {
           payload: prepared.payload,
           ...(prepared.media.length > 0 ? { media: prepared.media } : {}),

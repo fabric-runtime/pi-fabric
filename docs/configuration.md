@@ -731,7 +731,7 @@ Registry writes take a stale-safe lock and merge only actors owned by the writer
 call override → session binding → project default → Fabric default
 ```
 
-`mesh.eventContextChars` bounds the sanitized JSON context attached to each host-event activation. Fabric extracts images first. It stores redacted image descriptors in the mailbox and registry, then sends the raw images to the actor out of band. The character limit never truncates image base64 because base64 is not part of that JSON context.
+`mesh.eventContextChars` bounds the sanitized JSON context attached to each host-event activation. Over the limit, Fabric drops the oldest transcript lines first and keeps the digest. It shortens the digest, and marks it `truncated: true`, only when the digest alone exceeds the limit. Fabric extracts images first. It stores redacted image descriptors in the mailbox and registry, then sends the raw images to the actor out of band. The character limit never truncates image base64 because base64 is not part of that JSON context.
 
 `mesh.peerNotices` (default `true`) tells a root session's model when another root Pi session joins or leaves the project. The notice is appended to the transcript and never changes the system prompt. See [peer presence notices](agents.md#peer-presence-notices).
 
