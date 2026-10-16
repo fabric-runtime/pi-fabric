@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { GUEST_TYPE_DECLARATIONS, guestTypeDeclarations } from "../src/runtime/guest-types.js";
 import {
@@ -256,5 +257,63 @@ return out;
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.line).toBe(1);
     expect(result.errors[0]?.message).toContain("Cannot find name");
+  });
+
+  // The checker reports diagnostics for the guest file only, so a syntax
+  // error in the declarations stays hidden behind parser recovery.
+  const declarationSyntaxErrors = (declarations: string): string[] => {
+    const fileName = "/__pi_fabric_globals.d.ts";
+    const sourceFile = ts.createSourceFile(fileName, declarations, ts.ScriptTarget.ES2022, true);
+    const program = ts.createProgram({
+      rootNames: [fileName],
+      options: { noLib: true, noResolve: true },
+      host: {
+        ...ts.createCompilerHost({}),
+        fileExists: (name) => name === fileName,
+        readFile: (name) => (name === fileName ? declarations : undefined),
+        getSourceFile: (name) => (name === fileName ? sourceFile : undefined),
+      },
+    });
+    return program.getSyntacticDiagnostics(sourceFile).map((diagnostic) => {
+      const { line } = sourceFile.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+      return `${line + 1}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`;
+    });
+  };
+
+  it("renders guest declarations without syntax errors in both modes", () => {
+    expect(declarationSyntaxErrors(guestTypeDeclarations(true))).toEqual([]);
+    expect(declarationSyntaxErrors(guestTypeDeclarations(false))).toEqual([]);
+  });
+
+  it("types tools.call and tools.list results", () => {
+    for (const fullCodeMode of [true, false]) {
+      const declarations = guestTypeDeclarations(fullCodeMode);
+      const accepted = typeCheckFabricCode(
+        `
+const result: unknown = await tools.call({ ref: "tasks.list", args: {} });
+const page = await tools.list({ provider: "pi", limit: 10, envelope: true });
+if (Array.isArray(page)) return page.map((action) => action.ref);
+const total: number = page.total;
+const truncated: boolean = page.truncated;
+const kind: "pi-fabric.action-list" = page.kind;
+return { result, total, truncated, kind, refs: page.actions.map((action) => action.ref) };
+`,
+        declarations,
+        true,
+      );
+      expect(accepted.errors).toEqual([]);
+
+      const rejected = typeCheckFabricCode(
+        `
+await tools.call({ args: {} });
+await tools.list({ envelope: "yes" });
+const page = await tools.list({ envelope: true });
+if (!Array.isArray(page)) { const total: string = page.total; }
+`,
+        declarations,
+        true,
+      );
+      expect(rejected.errors.map((error) => error.line)).toEqual([2, 3, 5]);
+    }
   });
 });

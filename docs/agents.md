@@ -52,6 +52,10 @@ Use `agents.models({ runner: "pi" })` and copy the returned `key` verbatim, or u
 
 `provider/model` selectors prefer an exact visible match. A near-miss ID resolves to the closest available model on the **same provider**, using Fabric's existing similarity ranking; ties prefer recent usage, then canonical key order. For example, `openai-codex/gpt-6-sol` resolves to `openai-codex/gpt-5.6-sol` when that is the closest visible model. The returned handle's `model` and the worker's `requestedModel` contain the canonical selection. Unknown providers and names without sufficient resemblance still fail before launch. Model IDs containing `/` stay provider-scoped. Configured aliases keep their ordered, exact-target fallback chains.
 
+### Child system prompt
+
+`systemPrompt` on `agents.run` or `agents.spawn` adds text to the child's system prompt. Fabric joins it ahead of any model guidance, and Pi and Claude children append the result to their system prompt with `--append-system-prompt`. A Veda child receives it as a `<system_instructions>` block in its prompt. A blank value is ignored, and durable `agents.spawn` refuses it.
+
 For independent launches, await `Promise.allSettled` and inspect every result. An uncaught `Promise.all` rejection ends the Fabric program and can abort sibling calls still in flight; it does not prove every requested model was unavailable. Already completed calls are not rolled back, so retain successful handles and retry only failed launches.
 
 ```ts

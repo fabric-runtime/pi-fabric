@@ -85,6 +85,8 @@ interface FabricAgentRequest {
   /** Narrow the host-issued scope; omitted inherits it. Refused when this session is unscoped. */
   scope?: { grants: { resource: string; actions: ("read" | "write" | "execute")[] }[] };
   schema?: Record<string, unknown>;
+  /** Appended to the child's system prompt (Veda receives it as a <system_instructions> block); blank is ignored and durable spawn refuses it. */
+  systemPrompt?: string;
   prompt?: string;
   instructions?: string;
   timeout_ms?: number;
@@ -384,7 +386,6 @@ interface FabricCapabilityCatalog {
   complete: boolean;
   reasons: string[];
 }
-interface FabricToolsApi {
 interface FabricActionListEnvelope {
   kind: "pi-fabric.action-list";
   version: 1;

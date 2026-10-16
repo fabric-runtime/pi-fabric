@@ -96,6 +96,18 @@ describe("agent kernel public contracts", () => {
     }
   });
 
+  // The manager joins systemPrompt ahead of component guidance (see the
+  // agent-manager guidance test); the help must not say it goes below.
+  it.each(["run", "spawn"])("describes where agents.%s places systemPrompt", (name) => {
+    const schema = AGENTS_ACTION_DESCRIPTORS.find((action) => action.name === name)!.inputSchema as {
+      properties: { systemPrompt: { description: string } };
+    };
+    const description = schema.properties.systemPrompt.description;
+    expect(description).toContain("ahead of any component guidance");
+    expect(description).not.toContain("below component guidance");
+    expect(description).toContain("<system_instructions>");
+  });
+
   it.each(["ask", "tell"])("does not expose an activation-time language switch on %s", (name) => {
     const schema = AGENTS_ACTION_DESCRIPTORS.find((action) => action.name === name)!.inputSchema;
     expect(Value.Check(schema, { id: "actor", message: "task", kernel: "python" })).toBe(false);
