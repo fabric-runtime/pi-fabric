@@ -42,6 +42,7 @@ const primaryEntryPoints = [
 // path lets a session that loaded the previous index resolve delayed modules
 // after the installed package is replaced, while preserving lazy evaluation.
 const lazyEntryPoints = [
+  "src/extension-copy.ts",
   "src/durable/worker-host.ts",
   "src/type-error-guidance.ts",
   "src/native-discovery.ts",

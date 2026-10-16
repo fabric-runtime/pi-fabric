@@ -229,4 +229,4 @@ git diff | pi -p --no-session -t read,grep "Review this diff for concrete defect
 pi -p --no-session --mode json -e <path-to-pi-fabric> "Map the persistence layer."
 ```
 
-`--no-session` keeps the run ephemeral. `-t` restricts the tool allowlist. `--mode json` emits a structured event stream for scripting through `| jq`. `-e <pi-fabric>` loads Fabric so the agent can use `fabric_exec`. The process exits non-zero on failure. Run `pi --help` for the full flag list.
+`--no-session` keeps the run ephemeral. `-t` restricts the tool allowlist. `--mode json` emits a structured event stream for scripting through `| jq`. `-e <pi-fabric>` loads Fabric so the agent can use `fabric_exec`. If your settings also install Fabric, the `-e` copy wins and the settings copy stays inactive. The process exits non-zero on failure. Run `pi --help` for the full flag list.
