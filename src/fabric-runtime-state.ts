@@ -220,6 +220,7 @@ export class FabricRuntimeState {
   #stopComponentWatch: (() => void) | undefined;
   readonly #componentTransitionSignatures = new Map<string, string>();
   readonly #componentTransitionPublications = new Set<Promise<void>>();
+  #componentPublishFailureLogged = false;
   #sessionCapabilityLease: FabricCapabilityViewLease | undefined;
   #unsubscribeCapturedCatalog: (() => void) | undefined;
   #cwd: string | undefined;
@@ -1364,9 +1365,25 @@ export class FabricRuntimeState {
         JSON.stringify(component.guidance ?? []),
       ].join("\u0001");
       if (this.#componentTransitionSignatures.get(component.id) === signature) continue;
+      // Recorded up front so a re-report while this publish is in flight is
+      // not published twice; forgotten again on failure so the next report
+      // of the same state retries instead of treating it as delivered.
       this.#componentTransitionSignatures.set(component.id, signature);
       const publication = this.publishHostLifecycle("component.state", component)
-        .catch(() => undefined);
+        .then(() => {
+          this.#componentPublishFailureLogged = false;
+        }, (error: unknown) => {
+          if (this.#componentTransitionSignatures.get(component.id) === signature) {
+            this.#componentTransitionSignatures.delete(component.id);
+          }
+          // A broken mesh fails every re-report of every waiting component, so
+          // log once per failure streak; a successful publish ends the streak.
+          if (this.#componentPublishFailureLogged) return;
+          this.#componentPublishFailureLogged = true;
+          console.warn(
+            `[pi-fabric] Component ${component.id} state publish failed (${error instanceof Error ? error.message : String(error)}); the next report retries. Further failures are not logged until a publish succeeds.`,
+          );
+        });
       this.#componentTransitionPublications.add(publication);
       void publication.finally(() => this.#componentTransitionPublications.delete(publication));
     }
@@ -1510,6 +1527,7 @@ export class FabricRuntimeState {
     this.#componentSupervisor = undefined;
     this.#componentLoader = undefined;
     this.#componentTransitionSignatures.clear();
+    this.#componentPublishFailureLogged = false;
     this.#componentTransitionPublications.clear();
     this.#sessionCapabilityLease = undefined;
     this.#unsubscribeCapturedCatalog?.();
@@ -1529,17 +1547,17 @@ export class FabricRuntimeState {
   // Activity-only sessions (mesh disabled) silently skip this.
   #publishCompactEvent(kind: string, data: CompactPendingIntent | CompactLastCommit): void {
     if (!this.#mesh || !this.#identity || !this.#config?.mesh.enabled) return;
-    try {
-      void this.#mesh.publish({
-        topic: "fabric.compact",
-        kind,
-        from: this.#identity,
-        data,
-      });
-    } catch {
-      // Best-effort: a full event log or an oversized payload must not break
-      // the host compaction path.
-    }
+    // Best-effort: a full event log or an oversized payload must not break
+    // the host compaction path. MeshStore.publish is async, so every failure
+    // arrives as a rejection and must be handled here.
+    void this.#mesh.publish({
+      topic: "fabric.compact",
+      kind,
+      from: this.#identity,
+      data,
+    }).catch((error: unknown) => {
+      console.warn(`[pi-fabric] fabric.compact ${kind} publish failed (${error instanceof Error ? error.message : String(error)}).`);
+    });
   }
 
   #refreshRepairCatalog(): void {
@@ -1619,6 +1637,7 @@ export class FabricRuntimeState {
     this.#componentSupervisor = undefined;
     this.#componentLoader = undefined;
     this.#componentTransitionSignatures.clear();
+    this.#componentPublishFailureLogged = false;
     this.#componentTransitionPublications.clear();
     this.#sessionCapabilityLease = undefined;
     this.#unsubscribeCapturedCatalog?.();
