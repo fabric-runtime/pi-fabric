@@ -3,7 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GlobalActorRegistry } from "../src/actors/global-registry.js";
+import { ActorStoreReadError } from "../src/actors/store-read.js";
 import type { FabricActorRequest } from "../src/actors/types.js";
+
+// Mode 000 does not stop the read on Windows or for root.
+const unreadableFileSkip =
+  process.platform === "win32"
+    ? "Windows does not deny reads by POSIX mode bits"
+    : process.getuid?.() === 0
+      ? "root reads a mode-000 file"
+      : undefined;
 
 const dirs: string[] = [];
 
@@ -200,5 +209,114 @@ describe("GlobalActorRegistry", () => {
     // are ambiguous. (Random 32-hex ids rarely share a longer prefix, so the
     // empty query deterministically exercises the ambiguity branch.)
     expect(() => registry.resolve("")).toThrow(/Ambiguous/);
+  });
+});
+
+describe("GlobalActorRegistry read failures", () => {
+  const registryFile = (agentDir: string): string =>
+    path.join(agentDir, "fabric", "actors", "global-actors.json");
+  const savedTemplate = {
+    id: "c".repeat(32),
+    name: "saved",
+    instructions: "Saved before the failed read.",
+    createdAt: 1,
+  };
+  const writeRaw = (agentDir: string, raw: string): string => {
+    const file = registryFile(agentDir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, raw);
+    return file;
+  };
+  const expectEveryMutationRefused = (registry: GlobalActorRegistry): void => {
+    expect(() => registry.list()).toThrow(ActorStoreReadError);
+    expect(() => registry.resolve("saved")).toThrow(ActorStoreReadError);
+    expect(() => registry.create(baseRequest)).toThrow(ActorStoreReadError);
+    expect(() => registry.update("saved", { instructions: "Overwrite." })).toThrow(ActorStoreReadError);
+    expect(() => registry.remove("saved")).toThrow(ActorStoreReadError);
+  };
+
+  it.each([
+    ["truncated JSON", `{"format":1,"actors":[${JSON.stringify(savedTemplate)}`],
+    ["a non-object document", "[]"],
+    ["a non-array actors field", '{"format":1,"actors":{}}'],
+  ])("refuses to read or save over %s", (_label, raw) => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-global-actors-"));
+    dirs.push(agentDir);
+    const file = writeRaw(agentDir, raw);
+    const registry = new GlobalActorRegistry(agentDir, 64 * 1024);
+    expect(registry.loadError).toBeInstanceOf(ActorStoreReadError);
+    expect(registry.loadError?.message).toContain(file);
+    expectEveryMutationRefused(registry);
+    expect(fs.readFileSync(file, "utf8")).toBe(raw);
+  });
+
+  it(
+    "refuses to save over a registry it has no permission to read",
+    ({ skip }) => {
+      skip(unreadableFileSkip !== undefined, unreadableFileSkip);
+      const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-global-actors-"));
+      dirs.push(agentDir);
+      const raw = JSON.stringify({ format: 1, actors: [savedTemplate] });
+      const file = writeRaw(agentDir, raw);
+      fs.chmodSync(file, 0o000);
+      try {
+        const registry = new GlobalActorRegistry(agentDir, 64 * 1024);
+        expect((registry.loadError?.cause as NodeJS.ErrnoException | undefined)?.code).toBe("EACCES");
+        expectEveryMutationRefused(registry);
+      } finally {
+        fs.chmodSync(file, 0o600);
+      }
+      expect(fs.readFileSync(file, "utf8")).toBe(raw);
+    },
+  );
+
+  it("refuses to save when the registry path is a directory", () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-global-actors-"));
+    dirs.push(agentDir);
+    const file = registryFile(agentDir);
+    fs.mkdirSync(path.join(file, "keep"), { recursive: true });
+    const registry = new GlobalActorRegistry(agentDir, 64 * 1024);
+    expect((registry.loadError?.cause as NodeJS.ErrnoException | undefined)?.code).toBe("EISDIR");
+    expectEveryMutationRefused(registry);
+    expect(fs.readdirSync(file)).toEqual(["keep"]);
+  });
+
+  it("loads a missing registry as empty and saves the first template", () => {
+    const { agentDir, registry } = setup();
+    expect(registry.loadError).toBeUndefined();
+    expect(registry.list()).toEqual([]);
+    registry.create(baseRequest);
+    const saved = JSON.parse(fs.readFileSync(registryFile(agentDir), "utf8")) as { actors: Array<{ name: string }> };
+    expect(saved.actors.map((actor) => actor.name)).toEqual(["reviewer"]);
+  });
+
+  it("reads the registry again once the failure is repaired", () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-global-actors-"));
+    dirs.push(agentDir);
+    writeRaw(agentDir, "{");
+    const registry = new GlobalActorRegistry(agentDir, 64 * 1024);
+    expect(() => registry.list()).toThrow(ActorStoreReadError);
+    writeRaw(agentDir, JSON.stringify({ format: 1, actors: [savedTemplate] }));
+    expect(registry.list().map((actor) => actor.name)).toEqual(["saved"]);
+    expect(registry.loadError).toBeUndefined();
+  });
+
+  it("keeps records that fail validation when it rewrites the registry", () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-global-actors-"));
+    dirs.push(agentDir);
+    const badId = { ...savedTemplate, id: "not-a-hex-id", name: "bad-id" };
+    const oversized = { ...savedTemplate, id: "d".repeat(32), name: "oversized", instructions: "x".repeat(200) };
+    const notAnObject = "legacy-entry";
+    const file = writeRaw(agentDir, JSON.stringify({ format: 1, actors: [savedTemplate, badId, oversized, notAnObject] }));
+    const registry = new GlobalActorRegistry(agentDir, 100);
+    expect(registry.list().map((actor) => actor.name)).toEqual(["saved"]);
+
+    registry.create({ ...baseRequest, instructions: "Short." });
+
+    const saved = JSON.parse(fs.readFileSync(file, "utf8")) as { actors: unknown[] };
+    expect(saved.actors).toEqual(expect.arrayContaining([badId, oversized, notAnObject]));
+    expect(saved.actors).toHaveLength(5);
+    expect(new GlobalActorRegistry(agentDir, 64 * 1024).list().map((actor) => actor.name).sort())
+      .toEqual(["oversized", "reviewer", "saved"]);
   });
 });

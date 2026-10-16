@@ -7,6 +7,7 @@ import {
   lockOwnerLiveness,
   SHORT_LOCK_MAX_HOLD_MS,
 } from "../core/atomic-write.js";
+import { ActorStoreReadError, readStoreJson } from "./store-read.js";
 
 const ACTOR_REGISTRY_LOCK_TIMEOUT_MS = 5_000;
 const ACTOR_REGISTRY_STALE_LOCK_MS = 30_000;
@@ -19,6 +20,14 @@ const errorCode = (error: unknown): string | undefined =>
     ? String((error as NodeJS.ErrnoException).code)
     : undefined;
 
+export type ActorRegistryRecord = Record<string, unknown> & { id: string };
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const isActorRegistryRecord = (entry: unknown): entry is ActorRegistryRecord =>
+  isObject(entry) && typeof entry.id === "string";
+
 /** Disk protocol shared by registry merges and fenced lineage adoption. */
 export class ActorRegistryStore {
   readonly #registryPath: string;
@@ -29,23 +38,24 @@ export class ActorRegistryStore {
     this.#registryPath = path.join(actorRoot, "actors.json");
   }
 
-  records(): Array<Record<string, unknown> & { id: string }> {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(this.#registryPath, "utf8")) as {
-        actors?: unknown;
-      };
-      if (!Array.isArray(parsed.actors)) return [];
-      return parsed.actors.flatMap((record) =>
-        typeof record === "object" &&
-        record !== null &&
-        !Array.isArray(record) &&
-        typeof (record as { id?: unknown }).id === "string"
-          ? [record as Record<string, unknown> & { id: string }]
-          : [],
-      );
-    } catch {
-      return [];
+  /**
+   * Every entry in actors.json, including entries without a valid identity, so
+   * a rewrite can keep them. A missing file reads as empty; any other read or
+   * parse failure throws ActorStoreReadError, and callers must not write.
+   */
+  entries(): unknown[] {
+    const parsed = readStoreJson(this.#registryPath);
+    if (parsed === undefined) return [];
+    const actors = isObject(parsed) ? parsed.actors : undefined;
+    if (!Array.isArray(actors)) {
+      throw new ActorStoreReadError(this.#registryPath, "expected an object with an actors array");
     }
+    return actors;
+  }
+
+  /** The entries that carry a string id. Throws like entries(). */
+  records(): ActorRegistryRecord[] {
+    return this.entries().filter(isActorRegistryRecord);
   }
 
   /** The callback must be synchronous: release precedes promise assimilation. */
@@ -125,7 +135,7 @@ export class ActorRegistryStore {
   }
 
   /** Call within withLock for read-modify-write operations. */
-  write(actors: readonly Record<string, unknown>[]): void {
+  write(actors: readonly unknown[]): void {
     writeJsonAtomic(this.#registryPath, { format: 1, actors }, { space: 2 });
   }
 }

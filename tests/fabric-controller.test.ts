@@ -3,6 +3,7 @@ import type { TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { FabricActivityRun } from "../src/activity/types.js";
 import { FabricActivityStore } from "../src/activity/store.js";
+import { ActorStoreReadError } from "../src/actors/store-read.js";
 import type { FabricState } from "../src/fabric-state.js";
 import { FabricUiController } from "../src/ui/controller.js";
 import type { FabricDashboard } from "../src/ui/dashboard.js";
@@ -228,6 +229,61 @@ describe("FabricUiController dashboard wiring", () => {
         "Global actor event subscriptions updated",
         "info",
       );
+    } finally {
+      dashboard?.dispose();
+      controller.stop();
+    }
+  });
+
+  it("reports an unreadable template library on import instead of throwing from the key handler", async () => {
+    const state = stubState();
+    vi.mocked(state.globalActors.list).mockReturnValue([
+      {
+        id: "g-actor-1",
+        name: "global-reviewer",
+        instructions: "Review when asked.",
+        runner: "pi",
+        events: ["turn_end"],
+        topics: [],
+        delivery: "mailbox",
+        responseMode: "directive",
+        triggerTurn: false,
+        coalesce: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ] as never);
+    // The library became unreadable after the dashboard listed it.
+    const readError = new ActorStoreReadError("/project/global-actors.json", "invalid JSON");
+    vi.mocked(state.globalActors.resolve).mockImplementation(() => {
+      throw readError;
+    });
+    const create = vi.fn();
+    Object.assign(state.actors, { create });
+    const controller = new FabricUiController(state);
+    const tui = { requestRender: vi.fn() } as unknown as TUI;
+    let dashboard: FabricDashboard | undefined;
+    const context = {
+      mode: "tui",
+      modelRegistry: { getAvailable: () => [] },
+      ui: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        custom: vi.fn(async (factory: any) => {
+          dashboard = factory(tui, theme, {}, () => {}) as FabricDashboard;
+        }),
+        notify: vi.fn(),
+        setWidget: vi.fn(),
+      },
+    } as unknown as ExtensionContext;
+
+    try {
+      await controller.openDashboard(context);
+      // Select the global template and press p to import it.
+      dashboard!.handleInput("l");
+      dashboard!.handleInput("j");
+      expect(() => dashboard!.handleInput("p")).not.toThrow();
+      expect(create).not.toHaveBeenCalled();
+      expect(context.ui.notify).toHaveBeenCalledWith(readError.message, "error");
     } finally {
       dashboard?.dispose();
       controller.stop();

@@ -41,7 +41,7 @@ import { isFabricThinking, type FabricThinking } from "../thinking.js";
 import { resolveActorDeliveryPolicy } from "./delivery-policy.js";
 import { evaluateActorValidWhile, validateActorValidWhile } from "./predicate.js";
 import { ActorBindingStore } from "./binding-store.js";
-import { ActorRegistryStore } from "./registry-store.js";
+import { ActorRegistryStore, isActorRegistryRecord } from "./registry-store.js";
 import type { FabricMessageSender, FabricScope } from "../protocol.js";
 import { launchScope, normalizeScope, processSender, senderStamp, senderTrusted } from "../scope.js";
 
@@ -1824,14 +1824,21 @@ export class ActorManager {
         this.#ownershipDecision(actor.id),
       );
       const replaced = new Set([...removedIds, ...owned.map((actor) => actor.id)]);
-      const preserved = this.#registry.records().filter((record) => !replaced.has(record.id));
+      // entries() throws on any failure but a missing file, so a failed read
+      // never rewrites the registry with only this host's actors. Entries
+      // that fail validation are kept as written.
+      const preserved = this.#registry
+        .entries()
+        .filter((entry) => !isActorRegistryRecord(entry) || !replaced.has(entry.id));
       const actors = [...preserved, ...owned.map((actor) => this.#serializedActor(actor))];
       this.#registry.write(actors);
       this.#registryFingerprint = this.#registry.fingerprint();
       for (const id of removedIds) this.#persistedRoots.delete(id);
       for (const actor of owned) this.#persistedRoots.set(actor.id, actor.rootId);
       for (const record of preserved) {
-        if (typeof record.rootId === "string") this.#persistedRoots.set(record.id, record.rootId);
+        if (isActorRegistryRecord(record) && typeof record.rootId === "string") {
+          this.#persistedRoots.set(record.id, record.rootId);
+        }
       }
     });
     // The locked merge can preserve a remote owner write that raced this host.
@@ -2186,7 +2193,8 @@ export class ActorManager {
     try {
       const expectedRootId = actor.rootId;
       const adopted = await this.#registry.withLock(() => {
-        const records = this.#registry.records();
+        const entries = this.#registry.entries();
+        const records = entries.filter(isActorRegistryRecord);
         const current = records.find((record) => record.id === actor.id);
         // A racing adopter rewrote the lineage since we loaded it; they win.
         if (!current || current.rootId !== expectedRootId) return false;
@@ -2207,7 +2215,9 @@ export class ActorManager {
         actor.rootId = this.#rootId;
         actor.adoptedAt = Date.now();
         actor.updatedAt = Date.now();
-        const preserved = records.filter((record) => record.id !== actor.id);
+        const preserved = entries.filter(
+          (entry) => !isActorRegistryRecord(entry) || entry.id !== actor.id,
+        );
         this.#registry.write([...preserved, this.#serializedActor(actor)]);
         this.#registryFingerprint = this.#registry.fingerprint();
         return true;

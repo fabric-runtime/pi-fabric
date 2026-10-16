@@ -119,5 +119,10 @@ export class ActorDirectory extends ActorManager {
   override get halted(): boolean { return super.halted && this.#secondary.halted; }
   override haltAll(): { halted: number } { const first = super.haltAll(); const second = this.#secondary.haltAll(); return { halted: first.halted + second.halted }; }
   override remove(...args: Parameters<ActorManager["remove"]>): ReturnType<ActorManager["remove"]> { return this.#isPrimary(args[0]) ? super.remove(...args) : this.#secondary.remove(...args); }
-  override async close(): Promise<void> { await Promise.all([super.close(), this.#secondary.close()]); }
+  override async close(): Promise<void> {
+    // Both scopes finish closing before a failure from either is reported.
+    const [primary, secondary] = await Promise.allSettled([super.close(), this.#secondary.close()]);
+    if (primary.status === "rejected") throw primary.reason;
+    if (secondary.status === "rejected") throw secondary.reason;
+  }
 }

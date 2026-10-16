@@ -8,6 +8,7 @@ import {
   SHORT_LOCK_MAX_HOLD_MS,
 } from "../core/atomic-write.js";
 import { isFabricThinking, type FabricThinking } from "../thinking.js";
+import { ActorStoreReadError, readStoreJson } from "./store-read.js";
 
 export interface ActorSessionBindingRecord {
   model?: string;
@@ -18,7 +19,14 @@ export interface ActorSessionBindingRecord {
 interface ActorSessionBindingFile {
   format: 1;
   sessionId: string;
-  bindings: Record<string, ActorSessionBindingRecord>;
+  /** Valid bindings plus entries this version could not load, kept as written. */
+  bindings: Record<string, unknown>;
+}
+
+interface ActorBindingSnapshot {
+  bindings: Map<string, ActorSessionBindingRecord>;
+  /** Entries that failed validation, keyed by actor id, to write back unchanged. */
+  unloaded: Map<string, unknown>;
 }
 
 const BINDING_LOCK_TIMEOUT_MS = 5_000;
@@ -38,9 +46,20 @@ const errorCode = (error: unknown): string | undefined =>
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Session-scoped model and thinking overrides for actors, shared on disk by
+ * every store for the same session.
+ *
+ * Only a missing file reads as empty. When the file exists but cannot be read
+ * or parsed, mutations throw ActorStoreReadError and leave the file alone,
+ * get() keeps answering from the last good read, and readError reports the
+ * failure until a later read succeeds. Entries that fail validation are kept
+ * as written unless a mutation replaces that actor's binding.
+ */
 export class ActorBindingStore {
   readonly #bindings = new Map<string, ActorSessionBindingRecord>();
   #fingerprint: string | undefined;
+  #readError: ActorStoreReadError | undefined;
   readonly filePath: string | undefined;
 
   constructor(
@@ -49,6 +68,11 @@ export class ActorBindingStore {
   ) {
     this.filePath = root ? path.join(root, "bindings", bindingFileName(sessionId)) : undefined;
     this.#sync(true);
+  }
+
+  /** The error from the latest failed read, or undefined after a good read. */
+  get readError(): ActorStoreReadError | undefined {
+    return this.#readError;
   }
 
   get(actorId: string): ActorSessionBindingRecord | undefined {
@@ -79,14 +103,14 @@ export class ActorBindingStore {
   }
 
   async delete(actorId: string): Promise<boolean> {
-    return this.#mutate((bindings) => bindings.delete(actorId));
+    return this.#mutate(actorId, (bindings) => bindings.delete(actorId));
   }
 
   async #update(
     actorId: string,
     mutate: (binding: ActorSessionBindingRecord) => void,
   ): Promise<ActorSessionBindingRecord | undefined> {
-    return this.#mutate((bindings) => {
+    return this.#mutate(actorId, (bindings) => {
       const binding = bindings.get(actorId) ?? { updatedAt: Date.now() };
       mutate(binding);
       if (!binding.model && !binding.thinking) {
@@ -99,16 +123,29 @@ export class ActorBindingStore {
     });
   }
 
-  async #mutate<T>(operation: (bindings: Map<string, ActorSessionBindingRecord>) => T): Promise<T> {
+  async #mutate<T>(
+    actorId: string,
+    operation: (bindings: Map<string, ActorSessionBindingRecord>) => T,
+  ): Promise<T> {
     if (!this.filePath) {
       const result = operation(this.#bindings);
       return result;
     }
     return this.#withLock(() => {
-      const bindings = this.#read();
-      const result = operation(bindings);
-      this.#save(bindings);
-      this.#replace(bindings);
+      // #read throws on any failure but a missing file, so a failed read
+      // never writes an empty or partial map over the file.
+      let snapshot: ActorBindingSnapshot;
+      try {
+        snapshot = this.#read();
+      } catch (error) {
+        if (error instanceof ActorStoreReadError) this.#readError = error;
+        throw error;
+      }
+      this.#readError = undefined;
+      const result = operation(snapshot.bindings);
+      snapshot.unloaded.delete(actorId);
+      this.#save(snapshot);
+      this.#replace(snapshot.bindings);
       this.#fingerprint = this.#currentFingerprint();
       return result;
     });
@@ -117,36 +154,47 @@ export class ActorBindingStore {
   #sync(force = false): void {
     if (!this.filePath) return;
     const fingerprint = this.#currentFingerprint();
-    if (!force && fingerprint === this.#fingerprint) return;
-    this.#replace(this.#read());
+    if (!force && !this.#readError && fingerprint === this.#fingerprint) return;
+    try {
+      this.#replace(this.#read().bindings);
+    } catch (error) {
+      if (!(error instanceof ActorStoreReadError)) throw error;
+      // Keep the last good bindings and retry on the next access.
+      this.#readError = error;
+      return;
+    }
+    this.#readError = undefined;
     this.#fingerprint = fingerprint;
   }
 
-  #read(): Map<string, ActorSessionBindingRecord> {
-    const bindings = new Map<string, ActorSessionBindingRecord>();
-    if (!this.filePath) return bindings;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
-    } catch {
-      return bindings;
+  #read(): ActorBindingSnapshot {
+    const snapshot: ActorBindingSnapshot = { bindings: new Map(), unloaded: new Map() };
+    if (!this.filePath) return snapshot;
+    const parsed = readStoreJson(this.filePath);
+    if (parsed === undefined) return snapshot;
+    if (!isObject(parsed) || parsed.format !== 1 || !isObject(parsed.bindings)) {
+      throw new ActorStoreReadError(
+        this.filePath,
+        "expected a format 1 object with a bindings object",
+      );
     }
-    if (!isObject(parsed) || parsed.format !== 1 || parsed.sessionId !== this.sessionId) {
-      return bindings;
+    if (parsed.sessionId !== this.sessionId) {
+      throw new ActorStoreReadError(this.filePath, "the file belongs to another session");
     }
-    if (!isObject(parsed.bindings)) return bindings;
     for (const [actorId, value] of Object.entries(parsed.bindings)) {
-      if (!isObject(value) || typeof value.updatedAt !== "number") continue;
-      const model = typeof value.model === "string" ? value.model.trim() : "";
-      const thinking = isFabricThinking(value.thinking) ? value.thinking : undefined;
-      if (!model && !thinking) continue;
-      bindings.set(actorId, {
+      const model = isObject(value) && typeof value.model === "string" ? value.model.trim() : "";
+      const thinking = isObject(value) && isFabricThinking(value.thinking) ? value.thinking : undefined;
+      if (!isObject(value) || typeof value.updatedAt !== "number" || (!model && !thinking)) {
+        snapshot.unloaded.set(actorId, value);
+        continue;
+      }
+      snapshot.bindings.set(actorId, {
         ...(model ? { model } : {}),
         ...(thinking ? { thinking } : {}),
         updatedAt: value.updatedAt,
       });
     }
-    return bindings;
+    return snapshot;
   }
 
   #replace(bindings: Map<string, ActorSessionBindingRecord>): void {
@@ -156,15 +204,16 @@ export class ActorBindingStore {
     }
   }
 
-  #save(bindings: Map<string, ActorSessionBindingRecord>): void {
+  #save({ bindings, unloaded }: ActorBindingSnapshot): void {
     if (!this.filePath) return;
     const value: ActorSessionBindingFile = {
       format: 1,
       sessionId: this.sessionId,
       bindings: Object.fromEntries(
-        [...bindings.entries()]
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([actorId, binding]) => [actorId, { ...binding }]),
+        [
+          ...[...bindings.entries()].map(([actorId, binding]): [string, unknown] => [actorId, { ...binding }]),
+          ...unloaded.entries(),
+        ].sort(([left], [right]) => left.localeCompare(right)),
       ),
     };
     writeJsonAtomic(this.filePath, value, { space: 2, newline: true });

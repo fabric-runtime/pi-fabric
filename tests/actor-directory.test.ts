@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActorDirectory } from "../src/actors/directory.js";
+import { ActorManager } from "../src/actors/manager.js";
 import { AgentManager } from "../src/agents/manager.js";
 import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
 import { MeshStore, type MeshIdentity } from "../src/mesh/store.js";
@@ -56,6 +57,42 @@ afterEach(async () => {
 });
 
 describe("ActorDirectory", () => {
+  it("finishes closing both scopes before it reports a failed close", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-actor-directory-"));
+    roots.push(root);
+    const { directory } = open(root, "alpha");
+    let releaseSecondary!: () => void;
+    const secondaryGate = new Promise<void>((resolve) => {
+      releaseSecondary = resolve;
+    });
+    let secondaryClosed = false;
+    // The directory is the primary scope; the session scope is a plain ActorManager.
+    const close = vi
+      .spyOn(ActorManager.prototype, "close")
+      .mockImplementation(async function (this: ActorManager) {
+        if (this instanceof ActorDirectory) throw new Error("primary close failed");
+        await secondaryGate;
+        secondaryClosed = true;
+      });
+    try {
+      let settled = false;
+      const outcome = directory.close().then(
+        () => undefined,
+        (error: unknown) => error,
+      ).finally(() => {
+        settled = true;
+      });
+      for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+      expect(settled).toBe(false);
+
+      releaseSecondary();
+      expect(await outcome).toMatchObject({ message: "primary close failed" });
+      expect(secondaryClosed).toBe(true);
+    } finally {
+      close.mockRestore();
+    }
+  });
+
   it("runs project and session actor registries concurrently", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-actor-directory-"));
     roots.push(root);

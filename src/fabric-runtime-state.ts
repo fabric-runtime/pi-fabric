@@ -842,6 +842,13 @@ export class FabricRuntimeState {
       },
     );
     this.#globalActors = new GlobalActorRegistry(resolveAgentDir(), this.#config.mesh.maxEventBytes);
+    const globalActorsError = this.#globalActors.loadError;
+    if (globalActorsError) {
+      // Global actor actions also fail with this error until the file reads again.
+      const detail = `${globalActorsError.message}. Global actor templates are unavailable until the file is repaired.`;
+      console.warn(`[pi-fabric] ${detail}`);
+      if (context.hasUI) context.ui.notify(`Pi Fabric: ${detail}`, "warning");
+    }
     this.#residency = ownsPersistentActorRegistry
       ? new ResidencyClient({
           config: {
@@ -1482,7 +1489,7 @@ export class FabricRuntimeState {
     await this.#lifecycle?.close();
     await this.#control?.close();
     await this.#residency?.close();
-    await this.#actors?.close();
+    const actorsFailure = await this.#closeActors();
     await this.#agents?.close();
     await this.shellJobs.close();
     try {
@@ -1522,6 +1529,20 @@ export class FabricRuntimeState {
     this.#externalProviders.clear();
     this.prewalk.cancel();
     this.prewalkDrift.clear();
+    if (actorsFailure) throw actorsFailure.error;
+  }
+
+  // ActorManager.close() rejects when it cannot read the shared actor registry,
+  // because saving then would overwrite other hosts' rows. Teardown must still
+  // release everything after the actors, so callers report this failure once
+  // the rest of teardown has run.
+  async #closeActors(): Promise<{ error: unknown } | undefined> {
+    try {
+      await this.#actors?.close();
+      return undefined;
+    } catch (error) {
+      return { error };
+    }
   }
 
   // Publish a best-effort mesh event to the durable `fabric.compact` topic so
@@ -1593,7 +1614,7 @@ export class FabricRuntimeState {
     await this.#lifecycle?.close();
     await this.#control?.close();
     await this.#residency?.close();
-    await this.#actors?.close();
+    const actorsFailure = await this.#closeActors();
     await this.#agents?.close();
     const externalNames = new Set(this.#externalProviders.keys());
     try {
@@ -1623,6 +1644,12 @@ export class FabricRuntimeState {
     this.#sessionCapabilityLease = undefined;
     this.#unsubscribeCapturedCatalog?.();
     this.#unsubscribeCapturedCatalog = undefined;
+    if (actorsFailure) {
+      // Reinitialization goes on: the new generation reads the registry again,
+      // and its own saves keep refusing until the file is repaired.
+      const error = actorsFailure.error;
+      console.warn(`[pi-fabric] ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 

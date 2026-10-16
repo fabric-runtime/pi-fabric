@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import type { FabricCapabilityRequirement } from "../components/types.js";
 import { writeJsonAtomic } from "../core/atomic-write.js";
 import type { FabricAgentTransport } from "../config.js";
 import { isFabricThinking, type FabricThinking } from "../thinking.js";
 import { resolveActorDeliveryPolicy } from "./delivery-policy.js";
+import { ActorStoreReadError, readStoreJson } from "./store-read.js";
 import { FABRIC_ACTOR_HOST_EVENTS } from "./types.js";
 import type {
   FabricActorDelivery,
@@ -56,7 +56,8 @@ const TRANSPORTS = new Set<FabricAgentTransport>([
 
 interface RegistryFile {
   format: 1;
-  actors: GlobalActorDefinition[];
+  /** Valid definitions plus entries this version could not load, kept as written. */
+  actors: unknown[];
 }
 
 const atomicWrite = (filePath: string, value: unknown): void => {
@@ -98,23 +99,37 @@ const resolveDefinition = (
  * to pick up templates added by other Pi sessions. Writes are atomic (write
  * to a temp file then rename) so concurrent sessions cannot corrupt the
  * store, though truly simultaneous edits are last-write-wins.
+ *
+ * Only a missing file loads as empty. If the file exists but cannot be read
+ * or parsed, every operation retries the read and throws the read error
+ * instead of acting on an empty library, so a save cannot erase the file.
+ * Entries that fail validation are kept as written on every save.
  */
 export class GlobalActorRegistry {
   readonly #actors = new Map<string, GlobalActorDefinition>();
+  #unloaded: unknown[] = [];
+  #loadError: ActorStoreReadError | undefined;
   readonly #path: string;
   readonly #maxBytes: number;
 
   constructor(agentDir: string, maxInstructionsBytes: number) {
     this.#path = path.join(agentDir, "fabric", "actors", "global-actors.json");
     this.#maxBytes = maxInstructionsBytes;
-    this.#load();
+    this.#tryLoad();
+  }
+
+  /** The error from the latest failed read, or undefined after a good read. */
+  get loadError(): ActorStoreReadError | undefined {
+    return this.#loadError;
   }
 
   list(): GlobalActorDefinition[] {
+    this.#requireLoaded();
     return [...this.#actors.values()].map(clone);
   }
 
   resolve(idOrName: string): GlobalActorDefinition | undefined {
+    this.#requireLoaded();
     const found = resolveDefinition(this.#actors, idOrName);
     return found ? clone(found) : undefined;
   }
@@ -126,6 +141,7 @@ export class GlobalActorRegistry {
    * definition.
    */
   create(def: FabricActorRequest, overwrite = false): GlobalActorDefinition {
+    this.#requireLoaded();
     const validated = this.#validate(def);
     const existing = [...this.#actors.values()].find((actor) => actor.name === validated.name);
     if (existing) {
@@ -160,6 +176,7 @@ export class GlobalActorRegistry {
    * changed field.
    */
   update(idOrName: string, patch: Partial<FabricActorRequest>): GlobalActorDefinition {
+    this.#requireLoaded();
     const existing = resolveDefinition(this.#actors, idOrName);
     if (!existing) throw new Error(`Unknown global actor: ${idOrName}`);
     const merged: FabricActorRequest = {
@@ -215,6 +232,7 @@ export class GlobalActorRegistry {
   }
 
   remove(idOrName: string): { removed: boolean } {
+    this.#requireLoaded();
     const existing = resolveDefinition(this.#actors, idOrName);
     if (!existing) return { removed: false };
     this.#actors.delete(existing.id);
@@ -330,103 +348,129 @@ export class GlobalActorRegistry {
     };
   }
 
-  #load(): void {
-    let parsed: unknown;
+  /** Retry a failed read; throw if the file still cannot be read. */
+  #requireLoaded(): void {
+    if (!this.#loadError) return;
+    this.#tryLoad();
+    if (this.#loadError) throw this.#loadError;
+  }
+
+  #tryLoad(): void {
+    this.#actors.clear();
+    this.#unloaded = [];
     try {
-      parsed = JSON.parse(fs.readFileSync(this.#path, "utf8"));
+      this.#load();
+      this.#loadError = undefined;
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
-      return;
-    }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
-    const records = (parsed as { actors?: unknown }).actors;
-    if (!Array.isArray(records)) return;
-    for (const value of records) {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
-      const record = value as Partial<GlobalActorDefinition>;
-      if (
-        typeof record.id !== "string" ||
-        !/^[a-f0-9]{32}$/.test(record.id) ||
-        typeof record.name !== "string" ||
-        !ACTOR_NAME_PATTERN.test(record.name) ||
-        typeof record.instructions !== "string" ||
-        Buffer.byteLength(record.instructions, "utf8") > this.#maxBytes ||
-        typeof record.createdAt !== "number"
-      ) {
-        continue;
-      }
-      const events = Array.isArray(record.events)
-        ? record.events.filter((event): event is FabricActorHostEvent => HOST_EVENTS.has(event))
-        : [];
-      const topics = Array.isArray(record.topics)
-        ? record.topics.filter(
-            (topic): topic is string => typeof topic === "string" && TOPIC_PATTERN.test(topic),
-          )
-        : [];
-      const delivery: FabricActorDelivery =
-        record.delivery === "steer" || record.delivery === "followUp" || record.delivery === "nextTurn"
-          ? record.delivery
-          : "mailbox";
-      const responseMode: FabricActorResponseMode =
-        record.responseMode === "directive" ? "directive" : "text";
-      const triggerTurn =
-        (delivery === "steer" || delivery === "followUp") && record.triggerTurn === true;
-      const coalesce = record.coalesce !== false;
-      const residency = record.residency === "durable" ? "durable" : "session";
-      const runner = record.runner === "claude" || record.runner === "pi-durable" ? record.runner : "pi";
-      if (record.kernel !== undefined && record.kernel !== "inherit" && record.kernel !== "typescript" && record.kernel !== "python") continue;
-      if (record.kernel && record.kernel !== "inherit" && ((runner !== "pi" && runner !== "pi-durable") || record.extensions === false)) continue;
-      const thinking: FabricThinking | undefined = isFabricThinking(record.thinking)
-        ? record.thinking
-        : undefined;
-      const tools = Array.isArray(record.tools)
-        ? record.tools.filter((tool): tool is string => typeof tool === "string")
-        : undefined;
-      const transport: FabricAgentTransport | undefined =
-        record.transport !== undefined && TRANSPORTS.has(record.transport) ? record.transport : undefined;
-      const timeoutMs = typeof record.timeoutMs === "number" ? record.timeoutMs : undefined;
-      const extensions = typeof record.extensions === "boolean" ? record.extensions : undefined;
-      let requires: FabricCapabilityRequirement[] | undefined;
-      try {
-        requires = normalizeRequirements(record.requires);
-      } catch {
-        continue;
-      }
-      const validWhile = record.validWhile?.version === 1 &&
-        typeof record.validWhile.source === "string" &&
-        record.validWhile.source.length <= 16_000
-        ? clone(record.validWhile)
-        : undefined;
-      const def: GlobalActorDefinition = {
-        id: record.id,
-        name: record.name,
-        instructions: record.instructions,
-        events,
-        topics,
-        delivery,
-        responseMode,
-        triggerTurn,
-        coalesce,
-        residency,
-        runner,
-        ...(record.kernel ? { kernel: record.kernel } : {}),
-        createdAt: record.createdAt,
-        updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : record.createdAt,
-        ...(typeof record.model === "string" && record.model ? { model: record.model } : {}),
-        ...(thinking ? { thinking } : {}),
-        ...(tools ? { tools } : {}),
-        ...(transport ? { transport } : {}),
-        ...(timeoutMs ? { timeoutMs } : {}),
-        ...(extensions !== undefined ? { extensions } : {}),
-        ...(requires && requires.length > 0 ? { requires } : {}),
-        ...(validWhile ? { validWhile } : {}),
-      };
-      this.#actors.set(def.id, def);
+      if (!(error instanceof ActorStoreReadError)) throw error;
+      this.#actors.clear();
+      this.#unloaded = [];
+      this.#loadError = error;
     }
   }
 
+  #load(): void {
+    const parsed = readStoreJson(this.#path);
+    if (parsed === undefined) return;
+    const records = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as { actors?: unknown }).actors
+      : undefined;
+    if (!Array.isArray(records)) {
+      throw new ActorStoreReadError(this.#path, "expected an object with an actors array");
+    }
+    for (const value of records) {
+      if (!this.#loadRecord(value)) this.#unloaded.push(value);
+    }
+  }
+
+  /** Load one entry; false when it fails validation and must be kept as written. */
+  #loadRecord(value: unknown): boolean {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const record = value as Partial<GlobalActorDefinition>;
+    if (
+      typeof record.id !== "string" ||
+      !/^[a-f0-9]{32}$/.test(record.id) ||
+      typeof record.name !== "string" ||
+      !ACTOR_NAME_PATTERN.test(record.name) ||
+      typeof record.instructions !== "string" ||
+      Buffer.byteLength(record.instructions, "utf8") > this.#maxBytes ||
+      typeof record.createdAt !== "number"
+    ) {
+      return false;
+    }
+    const events = Array.isArray(record.events)
+      ? record.events.filter((event): event is FabricActorHostEvent => HOST_EVENTS.has(event))
+      : [];
+    const topics = Array.isArray(record.topics)
+      ? record.topics.filter(
+          (topic): topic is string => typeof topic === "string" && TOPIC_PATTERN.test(topic),
+        )
+      : [];
+    const delivery: FabricActorDelivery =
+      record.delivery === "steer" || record.delivery === "followUp" || record.delivery === "nextTurn"
+        ? record.delivery
+        : "mailbox";
+    const responseMode: FabricActorResponseMode =
+      record.responseMode === "directive" ? "directive" : "text";
+    const triggerTurn =
+      (delivery === "steer" || delivery === "followUp") && record.triggerTurn === true;
+    const coalesce = record.coalesce !== false;
+    const residency = record.residency === "durable" ? "durable" : "session";
+    const runner = record.runner === "claude" || record.runner === "pi-durable" ? record.runner : "pi";
+    if (record.kernel !== undefined && record.kernel !== "inherit" && record.kernel !== "typescript" && record.kernel !== "python") return false;
+    if (record.kernel && record.kernel !== "inherit" && ((runner !== "pi" && runner !== "pi-durable") || record.extensions === false)) return false;
+    const thinking: FabricThinking | undefined = isFabricThinking(record.thinking)
+      ? record.thinking
+      : undefined;
+    const tools = Array.isArray(record.tools)
+      ? record.tools.filter((tool): tool is string => typeof tool === "string")
+      : undefined;
+    const transport: FabricAgentTransport | undefined =
+      record.transport !== undefined && TRANSPORTS.has(record.transport) ? record.transport : undefined;
+    const timeoutMs = typeof record.timeoutMs === "number" ? record.timeoutMs : undefined;
+    const extensions = typeof record.extensions === "boolean" ? record.extensions : undefined;
+    let requires: FabricCapabilityRequirement[] | undefined;
+    try {
+      requires = normalizeRequirements(record.requires);
+    } catch {
+      return false;
+    }
+    const validWhile = record.validWhile?.version === 1 &&
+      typeof record.validWhile.source === "string" &&
+      record.validWhile.source.length <= 16_000
+      ? clone(record.validWhile)
+      : undefined;
+    const def: GlobalActorDefinition = {
+      id: record.id,
+      name: record.name,
+      instructions: record.instructions,
+      events,
+      topics,
+      delivery,
+      responseMode,
+      triggerTurn,
+      coalesce,
+      residency,
+      runner,
+      ...(record.kernel ? { kernel: record.kernel } : {}),
+      createdAt: record.createdAt,
+      updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : record.createdAt,
+      ...(typeof record.model === "string" && record.model ? { model: record.model } : {}),
+      ...(thinking ? { thinking } : {}),
+      ...(tools ? { tools } : {}),
+      ...(transport ? { transport } : {}),
+      ...(timeoutMs ? { timeoutMs } : {}),
+      ...(extensions !== undefined ? { extensions } : {}),
+      ...(requires && requires.length > 0 ? { requires } : {}),
+      ...(validWhile ? { validWhile } : {}),
+    };
+    this.#actors.set(def.id, def);
+    return true;
+  }
+
   #save(): void {
-    const file: RegistryFile = { format: 1, actors: [...this.#actors.values()] };
+    if (this.#loadError) throw this.#loadError;
+    const file: RegistryFile = { format: 1, actors: [...this.#actors.values(), ...this.#unloaded] };
     atomicWrite(this.#path, file);
   }
 }

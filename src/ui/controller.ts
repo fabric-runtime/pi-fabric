@@ -604,17 +604,22 @@ export class FabricUiController {
       }
     };
     const onImportActor = (globalActorId: string): void => {
-      const def = this.state.globalActors.resolve(globalActorId);
-      if (!def) return;
-      this.state.actors
-        .create(this.state.globalActors.toRequest(def))
-        .then((actor) => {
-          context.ui.notify(`Imported global actor "${def.name}" as ${actor.name}`, "info");
-          this.#refresh();
-        })
-        .catch((error) =>
-          context.ui.notify(error instanceof Error ? error.message : String(error), "error"),
-        );
+      try {
+        // resolve() rereads the template library and throws while it cannot be read.
+        const def = this.state.globalActors.resolve(globalActorId);
+        if (!def) return;
+        this.state.actors
+          .create(this.state.globalActors.toRequest(def))
+          .then((actor) => {
+            context.ui.notify(`Imported global actor "${def.name}" as ${actor.name}`, "info");
+            this.#refresh();
+          })
+          .catch((error) =>
+            context.ui.notify(error instanceof Error ? error.message : String(error), "error"),
+          );
+      } catch (error) {
+        context.ui.notify(error instanceof Error ? error.message : String(error), "error");
+      }
     };
     const onExportActor = (actorId: string): void => {
       try {

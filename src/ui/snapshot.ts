@@ -4,6 +4,7 @@ import type { FabricActivityRun } from "../activity/types.js";
 import type { FabricState } from "../fabric-state.js";
 import type { MeshEvent, MeshStateEntry } from "../mesh/store.js";
 import type { AgentHandleInfo, AgentRunRecord } from "../agents/types.js";
+import type { GlobalActorDefinition } from "../actors/types.js";
 import { safeText } from "./format.js";
 import {
   activeStatuses,
@@ -116,7 +117,14 @@ export const createDashboardSnapshot = (
   const actorRecords = state.actors.list();
   const main = state.mainAgentInfo(context);
   const peers = typeof state.peerInfos === "function" ? state.peerInfos() : [];
-  const globalActors = state.globalActors.list();
+  // An unreadable registry is reported at startup and by every global actor
+  // action; the dashboard shows no templates rather than failing to render.
+  let globalActors: GlobalActorDefinition[];
+  try {
+    globalActors = state.globalActors.list();
+  } catch {
+    globalActors = [];
+  }
   const componentGraph = typeof state.componentGraph === "function"
     ? state.componentGraph() : { components: [], edges: [], cycles: [] };
   const meshEntries = state.config.mesh.enabled ? state.mesh.list("", 200) : [];

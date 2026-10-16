@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { GlobalActorRegistry } from "../src/actors/global-registry.js";
 import type { FabricActivityRun } from "../src/activity/types.js";
 import type { FabricState } from "../src/fabric-state.js";
 import type { AgentRunRecord } from "../src/agents/types.js";
@@ -423,5 +427,25 @@ describe("dashboard snapshot agent ownership", () => {
       }),
     ]);
     expect(snapshot.agents[0]).not.toHaveProperty("runner");
+  });
+});
+
+describe("dashboard snapshot global actors", () => {
+  it("renders without templates when the global actor registry cannot be read", () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-dashboard-global-"));
+    try {
+      const file = path.join(agentDir, "fabric", "actors", "global-actors.json");
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{"format":1,"actors":[');
+      const globalActors = new GlobalActorRegistry(agentDir, 64 * 1024);
+      const state = { ...fakeState([], []), globalActors } as unknown as FabricState;
+
+      const snapshot = createDashboardSnapshot(state, []);
+
+      expect(snapshot.main).toMatchObject({ id: "session:test" });
+      expect(snapshot.globalActors).toEqual([]);
+    } finally {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+    }
   });
 });
