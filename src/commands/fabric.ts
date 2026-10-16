@@ -15,8 +15,12 @@ import { safeText } from "../ui/format.js";
 import { FabricModelSelector } from "../ui/fabric-model-selector.js";
 import { buildModelSource } from "../ui/model-picker.js";
 import {
+  FABRIC_DECISION_REQUEST_EVENT,
+  FABRIC_DECISIONS_CAPABILITY_EVENT,
   FABRIC_PEER_AWAIT_SETTLE_EVENT,
   FABRIC_PEER_CARDS_EVENT,
+  readFabricDecisionRequestV1,
+  readFabricDecisionsCapabilityRequestV1,
   FABRIC_PREWALK_REQUEST_EVENT,
   readFabricPeerAwaitSettleRequestV1,
   readFabricPeerCardsRequestV1,
@@ -24,6 +28,7 @@ import {
   type FabricPrewalkRequestResultV1,
 } from "../protocol.js";
 import { awaitPeerSettle, buildPeerCards } from "../topology/peer-settle.js";
+import type { FabricDecisionsTarget } from "../decisions/events.js";
 import type { RepairStatus } from "../repairs/types.js";
 import { setActiveCompiledSurface } from "../entropy/active.js";
 import { formatForeground } from "../core/foreground-tools.js";
@@ -250,6 +255,42 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
     pi.on("session_shutdown", () => {
       unsubscribePeerCards?.();
       unsubscribePeerAwait?.();
+    });
+  }
+
+  // Durable decisions channel (used by question tools with no screen): hand a
+  // question to a person through the project's decision store.
+  const resolveDecisions = async (context: ExtensionContext): Promise<FabricDecisionsTarget> => {
+    await state.ensure(context);
+    if (!state.config.mesh.enabled) return { reason: "Fabric mesh is disabled; durable decisions are unavailable" };
+    const store = state.decisionStore();
+    return store ? { store } : { reason: "Durable decisions are unavailable in this Fabric host" };
+  };
+  const unsubscribeDecisionsCapability = pi.events?.on?.(FABRIC_DECISIONS_CAPABILITY_EVENT, (value) => {
+    const request = readFabricDecisionsCapabilityRequestV1(value);
+    if (!request || !request.claim()) return;
+    // Loaded on first use so the decision store stays out of the startup graph.
+    void import("../decisions/events.js").then(
+      ({ answerFabricDecisionsCapability }) => answerFabricDecisionsCapability(request, resolveDecisions),
+      (error: unknown) => request.respond({ ok: false, error: `Fabric decisions unavailable: ${String(error)}` }),
+    );
+  });
+  // Aborted at session shutdown, so a request still waiting does not outlive
+  // the session that took it; the abort cancels its stored decision.
+  const decisionRequests = new AbortController();
+  const unsubscribeDecisionRequest = pi.events?.on?.(FABRIC_DECISION_REQUEST_EVENT, (value) => {
+    const request = readFabricDecisionRequestV1(value);
+    if (!request || !request.claim()) return;
+    void import("../decisions/events.js").then(
+      ({ answerFabricDecisionRequest }) => answerFabricDecisionRequest(request, resolveDecisions, decisionRequests.signal),
+      (error: unknown) => request.respond({ ok: false, error: `Fabric decisions unavailable: ${String(error)}` }),
+    );
+  });
+  if (unsubscribeDecisionsCapability || unsubscribeDecisionRequest) {
+    pi.on("session_shutdown", () => {
+      unsubscribeDecisionsCapability?.();
+      unsubscribeDecisionRequest?.();
+      decisionRequests.abort();
     });
   }
 

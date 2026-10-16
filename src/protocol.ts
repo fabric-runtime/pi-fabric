@@ -286,6 +286,124 @@ export const readFabricPeerAwaitSettleRequestV1 = (
   return value as FabricPeerAwaitSettleRequestV1;
 };
 
+export const FABRIC_DECISIONS_CAPABILITY_EVENT = "pi-fabric:decisions:capability:v1";
+export const FABRIC_DECISION_REQUEST_EVENT = "pi-fabric:decisions:request:v1";
+
+export type FabricDecisionInputV1 = "text" | "confirm" | "select" | "editor";
+
+export type FabricDecisionsCapabilityResultV1 =
+  | {
+      ok: true;
+      available: true;
+      inputs: FabricDecisionInputV1[];
+      maxOptions: number;
+      maxTitleChars: number;
+      maxBodyChars: number;
+      maxTextChars: number;
+      minTimeoutMs: number;
+      maxTimeoutMs: number;
+    }
+  | { ok: true; available: false; reason: string }
+  | { ok: false; error: string };
+
+/**
+ * Host-local request: does this session offer user-held durable decisions?
+ * An unclaimed request means no compatible Fabric runtime is installed.
+ */
+export interface FabricDecisionsCapabilityRequestV1 {
+  version: 1;
+  context: ExtensionContext;
+  claim: () => boolean;
+  respond: (result: FabricDecisionsCapabilityResultV1) => void;
+}
+
+/** One question for a person. Fabric always holds it for `"user"` and never applies a default. */
+export interface FabricDecisionQuestionV1 {
+  title: string;
+  body?: string;
+  /** Defaults to `"select"` with options, else `"text"`. `"confirm"` supplies yes/no. */
+  input?: FabricDecisionInputV1;
+  options?: Array<{ id: string; label: string }>;
+  /** Omit to wait until a person answers or cancels, or the request signal aborts. */
+  timeoutMs?: number;
+}
+
+export interface FabricDecisionAnswerV1 {
+  optionId?: string;
+  text?: string;
+  answeredBy: string;
+  via: string;
+  at: number;
+}
+
+/** Only `answered` carries an answer; `cancelled` and `expired` never do. */
+export type FabricDecisionResultV1 =
+  | { ok: true; id: string; status: "answered"; answer: FabricDecisionAnswerV1 }
+  | { ok: true; id: string; status: "cancelled" | "expired" }
+  | { ok: false; error: string; id?: string };
+
+/**
+ * Host-local request: raise a user-held question decision and respond once it
+ * settles. Aborting `signal` cancels the decision and responds `ok: false`.
+ */
+export interface FabricDecisionRequestV1 {
+  version: 1;
+  context: ExtensionContext;
+  question: FabricDecisionQuestionV1;
+  signal?: AbortSignal;
+  /**
+   * Names the asking extension, for example its package name. Recorded as
+   * `raisedBy.participantId: "extension:<source>"`. Must match
+   * `[A-Za-z0-9@][A-Za-z0-9@._/-]{0,63}`; omit it to record the session.
+   */
+  source?: string;
+  /** Called once the decision is stored, before waiting starts. */
+  onRaised?: (id: string) => void;
+  claim: () => boolean;
+  respond: (result: FabricDecisionResultV1) => void;
+}
+
+export const readFabricDecisionsCapabilityRequestV1 = (
+  value: unknown,
+): FabricDecisionsCapabilityRequestV1 | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 1 ||
+    typeof record.context !== "object" ||
+    record.context === null ||
+    typeof record.claim !== "function" ||
+    typeof record.respond !== "function"
+  ) {
+    return undefined;
+  }
+  return value as FabricDecisionsCapabilityRequestV1;
+};
+
+export const readFabricDecisionRequestV1 = (
+  value: unknown,
+): FabricDecisionRequestV1 | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const signal = record.signal as AbortSignal | undefined;
+  if (
+    record.version !== 1 ||
+    typeof record.context !== "object" ||
+    record.context === null ||
+    typeof record.question !== "object" ||
+    record.question === null ||
+    Array.isArray(record.question) ||
+    typeof record.claim !== "function" ||
+    typeof record.respond !== "function" ||
+    (signal !== undefined && (typeof signal !== "object" || signal === null || typeof signal.aborted !== "boolean")) ||
+    (record.source !== undefined && typeof record.source !== "string") ||
+    (record.onRaised !== undefined && typeof record.onRaised !== "function")
+  ) {
+    return undefined;
+  }
+  return value as FabricDecisionRequestV1;
+};
+
 /** Identifies host-side tool lifecycle events replayed for a nested Fabric call. */
 export const FABRIC_NESTED_TOOL_CALL_ID_PREFIX = "fabric_";
 

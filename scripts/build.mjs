@@ -54,6 +54,7 @@ const lazyEntryPoints = [
   "src/compaction/owner.ts",
   "src/compaction/orphan-repair.ts",
   "src/decisions/command.ts",
+  "src/decisions/events.ts",
   "src/programs/host.ts",
   "src/core/provider-operations.ts",
   "src/agents/claude-cli.ts",

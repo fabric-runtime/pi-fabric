@@ -22,7 +22,7 @@ const clip = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 
 /** Raise a decision and wait for it; an aborted wait cancels the decision. */
-const raiseAndWait = async (
+export const raiseAndWait = async (
   store: DecisionStore,
   input: DecisionRaiseInput,
   raisedBy: Partial<DecisionRecord["raisedBy"]>,

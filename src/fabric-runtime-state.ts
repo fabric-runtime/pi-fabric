@@ -332,6 +332,11 @@ export class FabricRuntimeState {
     return this.#participants?.peers() ?? [];
   }
 
+  /** The project decision store, or undefined when the mesh is disabled. */
+  decisionStore(): DecisionStore | undefined {
+    return this.#decisions;
+  }
+
   componentGraph(): FabricComponentGraph {
     return this.#componentLoader?.graph() ?? { components: [], edges: [], cycles: [] };
   }

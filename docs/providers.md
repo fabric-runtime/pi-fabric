@@ -176,6 +176,10 @@ pi.events.emit(FABRIC_PROGRAM_RUN_EVENT, {
 
 The run has the same semantics as `/fabric run`: the session's root capability view, the configured approval policy, a `pi-fabric-program-run` transcript message, and `invokedBy: "host"` in the trace. `reply` is called exactly once with `{ ok: true, program, value, logs }` or `{ ok: false, error, program? }`.
 
+## Decision request events
+
+An extension with no screen to ask on, such as a question tool in a headless session, can hand a question to a person. `pi-fabric:decisions:capability:v1` (`FABRIC_DECISIONS_CAPABILITY_EVENT`) reports whether user-held decisions are available and their limits. `pi-fabric:decisions:request:v1` (`FABRIC_DECISION_REQUEST_EVENT`) raises a `kind: "question"` decision held by `"user"` and responds once a person answers or cancels it, or it expires. Both use the claim/respond shape and are exported from `pi-fabric/protocol`. See [Extension questions](decisions.md#extension-questions) for the fields and guarantees.
+
 ## Managed embedded hosts
 
 Trusted embedding code can opt into a closed-world provider authority:
