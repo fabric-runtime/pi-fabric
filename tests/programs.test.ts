@@ -1,15 +1,16 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { normalizeFabricConfig, type FabricConfig } from "../src/config.js";
 import { ActionRegistry } from "../src/core/action-registry.js";
 import { FabricExecutionService } from "../src/execution-service.js";
+import piFabric from "../src/index.js";
 import { handleFabricProgramRunEvent, PROGRAM_RUN_MESSAGE_TYPE, runFabricProgramsCommand, type ProgramHostDeps } from "../src/programs/host.js";
 import { hostProgramRunSource, programSourceWithInput, pythonLiteral } from "../src/programs/source.js";
 import { canonicalProgramJson, programDigest, ProgramStore, programsDirectory } from "../src/programs/store.js";
-import type { FabricActionDescriptor, FabricProgramRunReplyV1 } from "../src/protocol.js";
+import { FABRIC_PROGRAM_RUN_EVENT, snapshotFabricProgramRunRequestV1, type FabricActionDescriptor, type FabricProgramRunReplyV1 } from "../src/protocol.js";
 import { ProgramsProvider } from "../src/providers/programs-provider.js";
 import { availablePythonBackends } from "./fixtures/python-backends.js";
 import { rmTempSync } from "./fixtures/temp-cleanup.js";
@@ -29,6 +30,10 @@ const temp = (): string => {
   roots.push(root);
   return root;
 };
+
+// The listener snapshots a request at the event boundary; tests do the same.
+const handle = (request: unknown, deps: Parameters<typeof handleFabricProgramRunEvent>[1]): Promise<void> =>
+  handleFabricProgramRunEvent(snapshotFabricProgramRunRequestV1(request)!, deps);
 
 const demoDescriptor = (name: string): FabricActionDescriptor => ({
   name, description: `demo ${name}`, risk: "read",
@@ -311,7 +316,7 @@ describe("host program runs", () => {
     const { deps, sendMessage } = hostDeps(f);
     const replies: FabricProgramRunReplyV1[] = [];
     {
-      await handleFabricProgramRunEvent({ ref: "hello", input: { who: "host" }, reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
+      await handle({ ref: "hello", input: { who: "host" }, reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
       expect(replies).toHaveLength(1);
       expect(replies[0]).toMatchObject({ ok: true, program: expect.stringMatching(/^hello@[0-9a-f]{64}$/), value: { greeting: "hi host" } });
       expect(sendMessage).toHaveBeenCalledOnce();
@@ -321,17 +326,314 @@ describe("host program runs", () => {
       const operation = message.details.trace.operations.find((entry: { ref: string }) => entry.ref === "fabric.program.run");
       expect(operation.args).toEqual({ program: replies[0]!.ok ? replies[0]!.program : "", invokedBy: "host" });
 
-      await handleFabricProgramRunEvent({ ref: "missing", reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
+      await handle({ ref: "missing", reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
       expect(replies[1]).toMatchObject({ ok: false, error: expect.stringMatching(/Unknown program/) });
-      await handleFabricProgramRunEvent({ ref: 7, reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
+      await handle({ ref: 7, reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
       expect(replies[2]).toMatchObject({ ok: false, error: expect.stringMatching(/ref must be/) });
-      await handleFabricProgramRunEvent({ ref: "hello", reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: undefined });
+      await handle({ ref: "hello", reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: undefined });
       expect(replies[3]).toMatchObject({ ok: false, error: expect.stringMatching(/No active Pi session/) });
       const aborted = new AbortController();
       aborted.abort();
-      await handleFabricProgramRunEvent({ ref: "hello", input: { who: "x" }, signal: aborted.signal, reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
+      await handle({ ref: "hello", input: { who: "x" }, signal: aborted.signal, reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, { ...deps, context: f.context });
       expect(replies[4]).toMatchObject({ ok: false });
     }
+  });
+
+  describe("program run event listener", () => {
+    const boot = async () => {
+      const listeners = new Map<string, (value: unknown) => unknown>();
+      const handlers = new Map<string, Array<(...args: never[]) => unknown>>();
+      const pi = {
+        events: {
+          emit: vi.fn(),
+          on: vi.fn((channel: string, handler: (value: unknown) => unknown) => {
+            listeners.set(channel, handler);
+            return () => listeners.delete(channel);
+          }),
+        },
+        getActiveTools: vi.fn(() => ["fabric_exec"]),
+        getAllTools: vi.fn(() => [{ name: "fabric_exec" }]),
+        on: vi.fn((event: string, handler: (...args: never[]) => unknown) => {
+          handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+        }),
+        registerCommand: vi.fn(),
+        registerMessageRenderer: vi.fn(),
+        registerTool: vi.fn(),
+        setActiveTools: vi.fn(),
+      } as unknown as ExtensionAPI;
+      await piFabric(pi);
+      const listener = listeners.get(FABRIC_PROGRAM_RUN_EVENT)!;
+      const shutdown = async () => { for (const handler of handlers.get("session_shutdown") ?? []) await handler(); };
+      return { listener, shutdown };
+    };
+    // Resolves with the reply, or rejects after the bound: a lost reply is a failure, not a hang.
+    const nextReply = (timeoutMs = 10_000) => {
+      let calls = 0;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let resolveReply!: (result: FabricProgramRunReplyV1) => void;
+      const done = new Promise<FabricProgramRunReplyV1>((resolve, reject) => {
+        resolveReply = resolve;
+        timer = setTimeout(() => reject(new Error(`no reply within ${timeoutMs} ms`)), timeoutMs);
+      }).finally(() => clearTimeout(timer));
+      const reply = (result: FabricProgramRunReplyV1): void => { calls++; resolveReply(result); };
+      return { reply, done, calls: () => calls };
+    };
+    // Lets any further, unexpected reply arrive before a test counts replies.
+    const drained = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+    it("still answers once, on the original reply, when the caller deletes or replaces it after emitting", async () => {
+      const { listener, shutdown } = await boot();
+      try {
+        for (const [name, tamper] of [
+          ["delete", (request: Record<string, unknown>) => { delete request.reply; }],
+          ["replace", (request: Record<string, unknown>) => { request.reply = vi.fn(); }],
+          ["clear every field", (request: Record<string, unknown>) => { for (const key of Object.keys(request)) delete request[key]; }],
+        ] as const) {
+          const answered = nextReply();
+          const request: Record<string, unknown> = { ref: "hello", reply: answered.reply };
+          listener(request);
+          tamper(request);
+          expect(await answered.done, name).toMatchObject({ ok: false, error: expect.stringMatching(/No active Pi session/) });
+          await drained();
+          expect(answered.calls(), name).toBe(1);
+          if (typeof request.reply === "function") {
+            expect(request.reply as ReturnType<typeof vi.fn>, name).not.toHaveBeenCalled();
+          }
+        }
+      } finally {
+        await shutdown();
+      }
+    });
+
+    describe("a ref request keeps the first release's replies, validation order and reply call", () => {
+      // The strings and the order are copied from the handler before this change, not computed.
+      const refError = "Invalid program run request: ref must be a non-empty string";
+      const cases: Array<[string, Record<string, unknown>, string]> = [
+        ["no ref", {}, refError],
+        ["numeric ref", { ref: 7 }, refError],
+        ["null ref", { ref: null }, refError],
+        ["empty ref", { ref: "" }, refError],
+        ["oversized ref", { ref: "r".repeat(130) }, refError],
+        ["ref error before requirePromoted", { ref: 7, requirePromoted: "yes" }, refError],
+        ["ref error before signal", { ref: 7, signal: {} }, refError],
+        ["no ref error before signal", { signal: {} }, refError],
+        ["requirePromoted", { ref: "hello", requirePromoted: "yes" }, "Invalid program run request: requirePromoted must be a boolean"],
+        ["requirePromoted before signal", { ref: "hello", requirePromoted: 1, signal: {} }, "Invalid program run request: requirePromoted must be a boolean"],
+        ["signal", { ref: "hello", signal: {} }, "Invalid program run request: signal must be an AbortSignal"],
+        ["valid ref, no session", { ref: "hello" }, "No active Pi session to run the program in"],
+      ];
+      const expectEachCase = async (extra: Record<string, unknown>): Promise<void> => {
+        const { listener, shutdown } = await boot();
+        try {
+          for (const [name, fields, error] of cases) {
+            const seen: Array<{ self: unknown; result: FabricProgramRunReplyV1 }> = [];
+            const answered = nextReply();
+            listener({
+              ...fields,
+              ...extra,
+              // A plain function: `this` is what the caller's reply was invoked with.
+              reply: function (this: unknown, result: FabricProgramRunReplyV1) { seen.push({ self: this, result }); answered.reply(result); },
+            });
+            await answered.done;
+            expect(seen, name).toEqual([{ self: undefined, result: { ok: false, error } }]);
+          }
+        } finally {
+          await shutdown();
+        }
+      };
+      it("through the listener", () => expectEachCase({}));
+
+      it("reaches the saved-program run unchanged, calling reply directly", async () => {
+        const f = fixture();
+        await f.store.save({ name: "hello", code: "return { greeting: 'hi ' + input.who };" }, "typescript");
+        const { deps } = hostDeps(f);
+        const seen: unknown[] = [];
+        await handle({ ref: "hello", input: { who: "host" }, reply: function (this: unknown) { seen.push(this); } }, { ...deps, context: f.context });
+        expect(seen).toEqual([undefined]);
+      });
+    });
+
+    it("runs what the request said when it was read, whatever the caller does to it afterwards", async () => {
+      const f = fixture();
+      await f.store.save({ name: "hello", code: "return { who: input.who };" }, "typescript");
+      await f.store.save({ name: "evil", code: "return { who: 'EVIL' };" }, "typescript");
+      const answered = nextReply();
+      const request: Record<string, unknown> = { ref: "hello", input: { who: "original" }, reply: answered.reply };
+      const snapshot = snapshotFabricProgramRunRequestV1(request)!;
+      request.ref = "evil";
+      request.input = { who: "EVIL" };
+      request.signal = AbortSignal.abort();
+      delete request.reply;
+      await handleFabricProgramRunEvent(snapshot, { ...hostDeps(f).deps, context: f.context });
+      expect(await answered.done).toMatchObject({ ok: true, program: expect.stringMatching(/^hello@/), value: { who: "original" } });
+      expect(answered.calls()).toBe(1);
+    });
+
+    it("runs the input's contents as they were when the request was read", async () => {
+      const f = fixture();
+      await f.store.save({ name: "hello", code: "return input;" }, "typescript");
+      const answered = nextReply();
+      const input = { who: "original", tags: ["a"], nested: { n: 1 } };
+      const snapshot = snapshotFabricProgramRunRequestV1({ ref: "hello", input, reply: answered.reply })!;
+      input.who = "EVIL";
+      input.tags.push("EVIL");
+      input.nested.n = 2;
+      await handleFabricProgramRunEvent(snapshot, { ...hostDeps(f).deps, context: f.context });
+      expect(await answered.done).toMatchObject({ ok: true, value: { who: "original", tags: ["a"], nested: { n: 1 } } });
+    });
+
+    it("refuses input that was not JSON when read, even if the caller makes it JSON afterwards", async () => {
+      const f = fixture();
+      await f.store.save({ name: "hello", code: "return input;" }, "typescript");
+      const answered = nextReply();
+      const input: Record<string, unknown> = { n: 1n };
+      const snapshot = snapshotFabricProgramRunRequestV1({ ref: "hello", input, reply: answered.reply })!;
+      input.n = 1;
+      await handleFabricProgramRunEvent(snapshot, { ...hostDeps(f).deps, context: f.context });
+      expect(await answered.done).toEqual({ ok: false, program: expect.stringMatching(/^hello@/), error: "Program input must be JSON-compatible" });
+    });
+
+    it("reads requirePromoted before the input's toJSON can change it", async () => {
+      const f = fixture();
+      await f.store.save({ name: "hello", code: "return 1;" }, "typescript");
+      const answered = nextReply();
+      const request: Record<string, unknown> = { ref: "hello", requirePromoted: true, reply: answered.reply };
+      request.input = { toJSON: () => { request.requirePromoted = false; return { who: "x" }; } };
+      const snapshot = snapshotFabricProgramRunRequestV1(request)!;
+      await handleFabricProgramRunEvent(snapshot, { ...hostDeps(f).deps, context: f.context });
+      expect(await answered.done).toMatchObject({ ok: false, error: expect.stringMatching(/no promoted version/) });
+    });
+
+    describe("a named field whose getter throws", () => {
+      const boom = (): never => { throw new Error("getter boom"); };
+      // Adds (or replaces) an own, enumerable accessor that throws when read.
+      const unreadable = (request: Record<string, unknown>, ...fields: string[]): Record<string, unknown> => {
+        for (const field of fields) Object.defineProperty(request, field, { get: boom, enumerable: true, configurable: true });
+        return request;
+      };
+      const refused = (field: string) => `Invalid program run request: ${field} could not be read`;
+      const refError = "Invalid program run request: ref must be a non-empty string";
+      const sessionless = "No active Pi session to run the program in";
+      const named = ["ref", "input", "requirePromoted", "signal"] as const;
+
+      const everyRefField: Array<[string, string]> = [
+        ["ref", refused("ref")],
+        ["requirePromoted", refused("requirePromoted")],
+        ["signal", refused("signal")],
+        // Checked after the session, as input was read before this change: no session is reported first.
+        ["input", sessionless],
+      ];
+      it.each(everyRefField)("%s on a ref request: nothing escapes the listener and the request is answered exactly once", async (field, error) => {
+        const { listener, shutdown } = await boot();
+        try {
+          const answered = nextReply();
+          const request = unreadable({ ref: "hello", reply: answered.reply }, field);
+          expect(() => listener(request)).not.toThrow();
+          expect(await answered.done).toEqual({ ok: false, error });
+          await drained();
+          expect(answered.calls()).toBe(1);
+        } finally {
+          await shutdown();
+        }
+      });
+
+      it("names the unreadable field and runs nothing, for every field of a ref request", async () => {
+        const f = fixture();
+        await f.store.save({ name: "hello", code: "return 1;" }, "typescript");
+        const { deps, sendMessage } = hostDeps(f);
+        const executed = vi.spyOn(f.service, "execute");
+        for (const field of named) {
+          const replies: FabricProgramRunReplyV1[] = [];
+          const request = unreadable({ ref: "hello", reply: (result: FabricProgramRunReplyV1) => replies.push(result) }, field);
+          await handle(request, { ...deps, context: f.context });
+          expect(replies, field).toEqual([{ ok: false, error: refused(field) }]);
+        }
+        expect(executed).not.toHaveBeenCalled();
+        expect(f.demo).not.toHaveBeenCalled();
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("gives the reviewer's probe, a numeric ref with a throwing input, exactly the one reply given before this change", async () => {
+        const { listener, shutdown } = await boot();
+        try {
+          const answered = nextReply();
+          const request = { ref: 7, get input(): never { throw new Error("x"); }, reply: answered.reply };
+          expect(() => listener(request)).not.toThrow();
+          expect(await answered.done).toEqual({ ok: false, error: "Invalid program run request: ref must be a non-empty string" });
+          await drained();
+          expect(answered.calls()).toBe(1);
+        } finally {
+          await shutdown();
+        }
+      });
+
+      describe("keeps the error given before this change where there was one", () => {
+        // Strings and order copied from the handler before this change. It read ref, then
+        // requirePromoted, then signal, then checked the session, and read input last.
+        const cases: Array<[string, Record<string, unknown>, string[], string]> = [
+          ...(["input", "requirePromoted", "signal"] as const).map(
+            (field): [string, Record<string, unknown>, string[], string] => [`numeric ref, then ${field}`, { ref: 7 }, [field], refError]),
+          ["empty ref, then input", { ref: "" }, ["input"], refError],
+          ["oversized ref, then signal", { ref: "r".repeat(130) }, ["signal"], refError],
+          ["invalid requirePromoted before an unreadable signal", { ref: "hello", requirePromoted: "yes" }, ["signal"], "Invalid program run request: requirePromoted must be a boolean"],
+          ["valid ref and no session, but an unreadable requirePromoted: reached first, as it was read before this change", { ref: "hello" }, ["requirePromoted"], refused("requirePromoted")],
+          ["unreadable requirePromoted before an invalid signal", { ref: "hello", signal: {} }, ["requirePromoted"], refused("requirePromoted")],
+          ["invalid signal before an unreadable input", { ref: "hello", signal: {} }, ["input"], "Invalid program run request: signal must be an AbortSignal"],
+          ["unreadable signal before an unreadable input", { ref: "hello" }, ["signal", "input"], refused("signal")],
+          ["valid ref and no session, then input", { ref: "hello" }, ["input"], sessionless],
+        ];
+        it.each(cases)("%s", async (_name, fields, broken, error) => {
+          const { listener, shutdown } = await boot();
+          try {
+            const answered = nextReply();
+            expect(() => listener(unreadable({ ...fields, reply: answered.reply }, ...broken))).not.toThrow();
+            expect(await answered.done).toEqual({ ok: false, error });
+            await drained();
+            expect(answered.calls()).toBe(1);
+          } finally {
+            await shutdown();
+          }
+        });
+      });
+
+      it("stays silent, throwing nothing, when reply cannot be read; a reply that is no function still throws", async () => {
+        const { listener, shutdown } = await boot();
+        try {
+          expect(() => listener(unreadable({ ref: "hello" }, "reply"))).not.toThrow();
+          // The documented synchronous throw for a payload without a reply function is unchanged.
+          expect(() => listener({ ref: "hello", reply: 5 })).toThrow("Invalid Pi Fabric program run request");
+          expect(() => listener({ ref: "hello" })).toThrow("Invalid Pi Fabric program run request");
+          // The listener is still alive and answers the next request.
+          const barrier = nextReply();
+          listener({ ref: "hello", reply: barrier.reply });
+          expect(await barrier.done).toMatchObject({ ok: false });
+        } finally {
+          await shutdown();
+        }
+      });
+
+      it("reads reply and every named field exactly once, a throwing one included", async () => {
+        const f = fixture();
+        const reads: Record<string, number> = {};
+        const answered = nextReply();
+        const request: Record<string, unknown> = {};
+        const values: Record<string, unknown> = { reply: answered.reply, ref: "hello" };
+        for (const field of ["reply", ...named]) {
+          Object.defineProperty(request, field, {
+            enumerable: true,
+            get() {
+              reads[field] = (reads[field] ?? 0) + 1;
+              if (field === "input") throw new Error("getter boom");
+              return values[field];
+            },
+          });
+        }
+        const snapshot = snapshotFabricProgramRunRequestV1(request)!;
+        await handleFabricProgramRunEvent(snapshot, { ...hostDeps(f).deps, context: f.context });
+        expect(await answered.done).toEqual({ ok: false, error: refused("input") });
+        expect(reads).toEqual(Object.fromEntries(["reply", ...named].map((field) => [field, 1])));
+      });
+    });
   });
 
   it("lists, promotes, retires and runs through the slash command", async () => {

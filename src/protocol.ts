@@ -75,6 +75,98 @@ export interface FabricProgramRunRequestV1 {
   reply: (result: FabricProgramRunReplyV1) => void;
 }
 
+/** The request fields Fabric reads, once, when a program run event arrives. */
+export type FabricProgramRunFieldV1 = "ref" | "input" | "requirePromoted" | "signal";
+
+/**
+ * Everything a program run listener keeps of a request. Read once, at the event
+ * boundary and before the listener's first await, so a caller that deletes or
+ * replaces a field afterwards cannot change what runs or lose its reply.
+ */
+export interface FabricProgramRunSnapshotV1 {
+  readonly ref: unknown;
+  /** A JSON copy of the caller's `input`, never the caller's object. */
+  readonly input: unknown;
+  readonly requirePromoted: unknown;
+  readonly signal: unknown;
+  /**
+   * Fields whose getter threw when read. Each is `undefined` above; the handler
+   * refuses the request by name instead of letting the throw escape.
+   */
+  readonly unreadable: ReadonlySet<FabricProgramRunFieldV1>;
+  /** Calls the caller's `reply` at most once, directly, and never throws. */
+  readonly respond: (result: FabricProgramRunReplyV1) => void;
+}
+
+/**
+ * Reads `reply` and each named field once, and never lets a getter's throw out.
+ * Returns undefined when `reply` cannot be read, because nobody can be told.
+ * Throws when `reply` reads as something other than a function, as the event
+ * has always done for a payload without a `reply` function.
+ */
+// Stands in for input that is not JSON. It is not JSON either, so the run
+// refuses it with the error it always gave.
+const NOT_JSON_INPUT = Symbol("not JSON");
+
+/**
+ * A JSON copy of `input`, so a caller that changes the input's contents after
+ * emitting cannot change what runs.
+ */
+const copyProgramRunInput = (input: unknown): unknown => {
+  if (input === undefined) return undefined;
+  try {
+    const text = JSON.stringify(input);
+    if (text !== undefined) return JSON.parse(text) as unknown;
+  } catch {
+    // Not JSON-compatible.
+  }
+  return NOT_JSON_INPUT;
+};
+
+export const snapshotFabricProgramRunRequestV1 = (value: unknown): FabricProgramRunSnapshotV1 | undefined => {
+  const request = value as Record<string, unknown> | null | undefined;
+  let reply: unknown;
+  try {
+    reply = request?.reply;
+  } catch {
+    return undefined;
+  }
+  if (typeof reply !== "function") throw new Error("Invalid Pi Fabric program run request");
+  const unreadable = new Set<FabricProgramRunFieldV1>();
+  const read = (field: FabricProgramRunFieldV1): unknown => {
+    try {
+      return request![field];
+    } catch {
+      unreadable.add(field);
+      return undefined;
+    }
+  };
+  let replied = false;
+  const respond = (result: FabricProgramRunReplyV1): void => {
+    if (replied) return;
+    replied = true;
+    try {
+      reply(result);
+    } catch {
+      // A throwing listener must not turn into an unhandled rejection.
+    }
+  };
+  // Read the plain fields before `input`: copying `input` runs its `toJSON`
+  // and getters, which must not be able to change what else the request says.
+  const ref = read("ref");
+  const requirePromoted = read("requirePromoted");
+  const signal = read("signal");
+  const input = copyProgramRunInput(read("input"));
+  return Object.freeze({
+    ref,
+    input,
+    requirePromoted,
+    signal,
+    unreadable,
+    respond,
+  });
+};
+
 export const FABRIC_PROVIDER_REGISTER_EVENT = "pi-fabric:provider:register:v1";
 export const FABRIC_PROVIDER_DISCOVER_EVENT = "pi-fabric:provider:discover:v1";
 export const FABRIC_PROVIDER_WITHDRAW_EVENT = "pi-fabric:provider:withdraw:v1";

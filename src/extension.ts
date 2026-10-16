@@ -90,6 +90,7 @@ import {
   FABRIC_TOOL_PLACEMENT_EVENT,
   readFabricProviderWithdrawalV1,
   readFabricToolPlacementRequestV1,
+  snapshotFabricProgramRunRequestV1,
   type FabricComponentRegistration,
   type FabricProviderRegistration,
   type FabricToolPlacementMode,
@@ -323,11 +324,15 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   // Host program runs (daemons, embedders) use the live session's context.
   let programRunContext: ExtensionContext | undefined;
   const unsubscribeProgramRun = pi.events.on(FABRIC_PROGRAM_RUN_EVENT, (value: unknown) => {
-    const reply = (value as { reply?: unknown } | null)?.reply;
-    if (typeof reply !== "function") throw new Error("Invalid Pi Fabric program run request");
+    // Read the request once, here: after the first await the caller may have
+    // changed or deleted anything on it, including `reply`.
+    // A getter that throws is recorded, never rethrown: the handler refuses it by name.
+    const request = snapshotFabricProgramRunRequestV1(value);
+    // No readable `reply`: the request cannot be answered.
+    if (!request) return;
     void import("./programs/host.js").then(
-      ({ handleFabricProgramRunEvent }) => handleFabricProgramRunEvent(value, { state, pi, context: programRunContext }),
-      (error: unknown) => reply({ ok: false, error: `Fabric program host unavailable: ${String(error)}` }),
+      ({ handleFabricProgramRunEvent }) => handleFabricProgramRunEvent(request, { state, pi, context: programRunContext }),
+      (error: unknown) => request.respond({ ok: false, error: `Fabric program host unavailable: ${String(error)}` }),
     );
   });
 

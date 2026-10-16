@@ -114,7 +114,9 @@ pi.events.emit(FABRIC_PROGRAM_RUN_EVENT, {
 });
 ```
 
-The reply arrives exactly once. A payload without a `reply` function throws synchronously. Other invalid fields, a missing session, an unknown ref, and a failed run all reply `{ ok: false, error }`. The event runs in the live session that Fabric saw at `session_start`.
+The reply arrives exactly once. A payload without a `reply` function makes the listener throw synchronously; Pi's event bus catches and logs that throw, and other listeners still run. A `reply` property whose getter throws cannot be answered: Fabric neither replies nor throws. Other invalid fields, a missing session, an unknown ref, and a failed run all reply `{ ok: false, error }`. The event runs in the live session that Fabric saw at `session_start`.
+
+Fabric reads `reply` and the named fields (`ref`, `input`, `requirePromoted`, `signal`) once, when the event arrives, and ignores every other field. Fabric keeps a JSON copy of `input`, not the caller's object, and makes it last, so a `toJSON` or getter inside `input` cannot change the other fields. A caller that deletes or changes the request or its `input` afterwards changes nothing, and the reply still arrives on the original `reply`. A named field whose getter throws never escapes the listener. Fabric replies once `{ ok: false, error: "Invalid program run request: <field> could not be read" }`, and nothing runs. The refusal comes at the place that field's check would have come: `ref`, then `requirePromoted`, then `signal`, then the session, then `input`. An earlier check that fails keeps its own error. A getter that throws is read once and is not read again.
 
 ## Mesh-triggered runs
 

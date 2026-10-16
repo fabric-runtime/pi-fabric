@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { FabricState } from "../fabric-state.js";
-import type { FabricProgramRunReplyV1, FabricProgramRunRequestV1 } from "../protocol.js";
+import type { FabricProgramRunFieldV1, FabricProgramRunReplyV1, FabricProgramRunSnapshotV1 } from "../protocol.js";
 import { hostProgramRunSource } from "./source.js";
 import {
   MAX_PROGRAM_REF_CHARS,
@@ -119,46 +119,51 @@ const isAbortSignal = (value: unknown): value is AbortSignal =>
   typeof value === "object" && value !== null && typeof (value as AbortSignal).aborted === "boolean" &&
   typeof (value as AbortSignal).addEventListener === "function";
 
-/** `pi-fabric:program:run:v1`; replies exactly once, never throws. */
+/**
+ * `pi-fabric:program:run:v1`; replies exactly once, never throws. It reads only
+ * the snapshot the listener took at the event boundary, never the caller's object.
+ */
 export const handleFabricProgramRunEvent = async (
-  value: unknown,
+  request: FabricProgramRunSnapshotV1,
   deps: ProgramHostDeps & { context: ExtensionContext | undefined },
 ): Promise<void> => {
-  const request = value as Partial<FabricProgramRunRequestV1>;
-  if (typeof request?.reply !== "function") return;
-  const respond = request.reply;
-  let replied = false;
-  const once = (result: FabricProgramRunReplyV1): void => {
-    if (replied) return;
-    replied = true;
-    try {
-      respond(result);
-    } catch {
-      // A throwing listener must not turn into an unhandled rejection.
-    }
+  const { ref, input, requirePromoted, signal, unreadable, respond } = request;
+  const refuse = (reason: string): void => respond({ ok: false, error: `Invalid program run request: ${reason}` });
+  // A named field whose getter threw is refused by name, at the point its check
+  // would have run. Before this change such a getter escaped the handler with no reply.
+  const refuseUnreadable = (...fields: FabricProgramRunFieldV1[]): boolean => {
+    const field = fields.find((name) => unreadable.has(name));
+    if (field === undefined) return false;
+    refuse(`${field} could not be read`);
+    return true;
   };
-  if (typeof request.ref !== "string" || !request.ref || request.ref.length > MAX_PROGRAM_REF_CHARS) {
-    once({ ok: false, error: "Invalid program run request: ref must be a non-empty string" });
-    return;
+  try {
+    // The checks, texts and order are the ones this event has always had.
+    if (refuseUnreadable("ref")) return;
+    if (typeof ref !== "string" || !ref || ref.length > MAX_PROGRAM_REF_CHARS) {
+      return refuse("ref must be a non-empty string");
+    }
+    if (refuseUnreadable("requirePromoted")) return;
+    if (requirePromoted !== undefined && typeof requirePromoted !== "boolean") {
+      return refuse("requirePromoted must be a boolean");
+    }
+    if (refuseUnreadable("signal")) return;
+    if (signal !== undefined && !isAbortSignal(signal)) return refuse("signal must be an AbortSignal");
+    if (!deps.context) {
+      respond({ ok: false, error: "No active Pi session to run the program in" });
+      return;
+    }
+    // Last, as `input` was read last before this change: nothing runs on a request that could not be read in full.
+    if (refuseUnreadable("input")) return;
+    respond(await runHostProgram(deps, deps.context, {
+      ref,
+      ...(input !== undefined ? { input } : {}),
+      ...(requirePromoted ? { requirePromoted: true } : {}),
+      ...(signal ? { signal } : {}),
+    }));
+  } catch (error) {
+    respond({ ok: false, error: errorText(error) });
   }
-  if (request.requirePromoted !== undefined && typeof request.requirePromoted !== "boolean") {
-    once({ ok: false, error: "Invalid program run request: requirePromoted must be a boolean" });
-    return;
-  }
-  if (request.signal !== undefined && !isAbortSignal(request.signal)) {
-    once({ ok: false, error: "Invalid program run request: signal must be an AbortSignal" });
-    return;
-  }
-  if (!deps.context) {
-    once({ ok: false, error: "No active Pi session to run the program in" });
-    return;
-  }
-  once(await runHostProgram(deps, deps.context, {
-    ref: request.ref,
-    ...(request.input !== undefined ? { input: request.input } : {}),
-    ...(request.requirePromoted ? { requirePromoted: true } : {}),
-    ...(request.signal ? { signal: request.signal } : {}),
-  }));
 };
 
 const summaryLine = (program: FabricProgramSummary): string =>
