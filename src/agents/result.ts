@@ -52,7 +52,8 @@ export function validateAgentResult<T extends { status: string; text: string; va
   if (record.status !== "completed" || !schema) return record;
   let parsed = false;
   try {
-    const value = record.value ?? parseStructuredValue(record.text);
+    // An explicit null is a value; only a missing one falls back to the text.
+    const value = record.value !== undefined ? record.value : parseStructuredValue(record.text);
     parsed = true;
     if (!Value.Check(schema, value)) {
       const errors = [...Value.Errors(schema, value)].slice(0, 5).map((error) => error.message).join("; ");

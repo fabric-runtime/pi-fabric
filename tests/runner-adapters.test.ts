@@ -274,6 +274,115 @@ describe("hosted runners", () => {
     expect(fs.readFileSync(path.join(manager.runDirectory(result.id)!, "events.jsonl"), "utf8")).toContain("thinking");
   });
 
+  describe("structured output against the run's schema", () => {
+    const schema = {
+      type: "object",
+      properties: { item: { type: "object", properties: { n: { type: "number" } }, required: ["n"] } },
+      required: ["item"],
+    };
+    const finishing = (id: string, structured: unknown, output = "") => {
+      const fake = fakeHosted(id, {
+        onStart: (reporter) => reporter.finish({ status: "completed", output, structured }),
+      });
+      register(fake.adapter);
+      return fake;
+    };
+
+    it("completes a valid structured value unchanged", async () => {
+      finishing("valid-shape", { item: { n: 7 } }, "done");
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Valid", runner: "valid-shape", schema });
+      expect(result).toMatchObject({ status: "completed", text: "done", value: { item: { n: 7 } } });
+      expect(result.error).toBeUndefined();
+      expect(readStatus(manager, result.id)).toMatchObject({ status: "completed", value: { item: { n: 7 } } });
+    });
+
+    it("fails a nested schema violation with the structured-output error", async () => {
+      finishing("nested-violation", { item: { n: "not a number" } }, "done");
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Invalid", runner: "nested-violation", schema });
+      expect(result.status).toBe("failed");
+      expect(result.error).toMatch(/^Structured agent output was invalid: .*number.* \(output: done\)$/);
+      expect(readStatus(manager, result.id)).toMatchObject({
+        status: "failed",
+        error: expect.stringMatching(/^Structured agent output was invalid: /),
+      });
+    });
+
+    it("leaves a run without a schema unchanged", async () => {
+      finishing("no-schema", { item: { n: "not a number" } }, "plain prose, not JSON");
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Free", runner: "no-schema" });
+      expect(result).toMatchObject({
+        status: "completed",
+        text: "plain prose, not JSON",
+        value: { item: { n: "not a number" } },
+      });
+      expect(result.error).toBeUndefined();
+    });
+
+    it("names the size limit when an oversized value was truncated", async () => {
+      // Valid for the schema, but its JSON is just over 1 MiB (1,048,576 bytes).
+      finishing("oversized", { item: { n: 1 }, pad: "x".repeat(1024 * 1024) }, "done");
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Big", runner: "oversized", schema });
+      expect(result.status).toBe("failed");
+      expect(result.error).toBe(
+        "Structured agent output was invalid: structured value was truncated at the 1048576-byte limit",
+      );
+      expect(result.value).toEqual({ fabricTruncated: true });
+    });
+
+    it("parses text-only output as the value when it is valid JSON for the schema", async () => {
+      finishing("text-json", undefined, '{"item":{"n":3}}');
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Text", runner: "text-json", schema });
+      expect(result).toMatchObject({ status: "completed", value: { item: { n: 3 } } });
+      expect(result.error).toBeUndefined();
+    });
+
+    it("fails text-only prose when the run has a schema", async () => {
+      finishing("text-prose", undefined, "the answer is three");
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Prose", runner: "text-prose", schema });
+      expect(result.status).toBe("failed");
+      expect(result.error).toMatch(/^Structured agent output was invalid: .* \(output: the answer is three\)$/);
+    });
+
+    it("bounds a value parsed from oversized text output", async () => {
+      // Valid JSON for the schema, but just over 1 MiB (1,048,576 bytes).
+      finishing("text-oversized", undefined, JSON.stringify({ item: { n: 1 }, pad: "x".repeat(1024 * 1024) }));
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Big text", runner: "text-oversized", schema });
+      expect(result.status).toBe("failed");
+      expect(result.error).toBe(
+        "Structured agent output was invalid: value parsed from the output was truncated at the 1048576-byte limit",
+      );
+      expect(result.value).toEqual({ fabricTruncated: true });
+      expect(readStatus(manager, result.id)).toMatchObject({ status: "failed", value: { fabricTruncated: true } });
+    });
+
+    it("keeps an explicit null structured value instead of parsing the text", async () => {
+      finishing("null-structured", null, '{"item":{"n":3}}');
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({
+        task: "Null", runner: "null-structured", schema: { anyOf: [{ type: "null" }, schema] },
+      });
+      expect(result.status).toBe("completed");
+      expect(result.value).toBeNull();
+    });
+
+    it.each(["failed", "stopped"] as const)("does not validate a %s report", async (status) => {
+      const id = `reported-${status}`;
+      register(fakeHosted(id, {
+        onStart: (reporter) => reporter.finish({ status, output: "halted", structured: { item: { n: "bad" } } }),
+      }).adapter);
+      const manager = managerFor(tempRoot());
+      const result = await manager.run({ task: "Halt", runner: id, schema });
+      expect(result).toMatchObject({ status, error: "halted", value: { item: { n: "bad" } } });
+    });
+  });
+
   it("hands hosted runners the narrowed host scope", async () => {
     const scopeHolder = globalThis as unknown as Record<symbol, unknown>;
     const holderKey = Symbol.for("pi-fabric:scope:v1");

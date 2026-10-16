@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { writeJsonAtomic } from "../core/atomic-write.js";
+import { validateAgentResult } from "./result.js";
 import type {
   FabricHostedLiveness,
   FabricHostedReporter,
@@ -426,22 +427,45 @@ export class HostedRun {
     const status = result.status === "failed" || result.status === "stopped" ? result.status : "completed";
     const output = typeof result.output === "string" ? result.output : "";
     let value: unknown;
+    let truncated: string | undefined;
     if (result.structured !== undefined) {
       try {
         const serialized = JSON.stringify(result.structured);
-        value = serialized !== undefined && Buffer.byteLength(serialized) <= MAX_STRUCTURED_BYTES
-          ? JSON.parse(serialized)
-          : { fabricTruncated: true };
+        if (serialized !== undefined && Buffer.byteLength(serialized) <= MAX_STRUCTURED_BYTES) {
+          value = JSON.parse(serialized);
+        } else {
+          truncated = `structured value was truncated at the ${MAX_STRUCTURED_BYTES}-byte limit`;
+        }
       } catch {
-        value = { fabricTruncated: true };
+        truncated = "structured value could not be serialized as JSON and was truncated";
       }
+      if (truncated) value = { fabricTruncated: true };
     }
-    this.#settle({
+    const settled: { status: AgentRunRecord["status"]; text: string; value?: unknown; error?: string } = {
       status,
       text: output,
       ...(value !== undefined ? { value } : {}),
       ...(status === "completed" ? {} : { error: output.slice(0, MAX_ERROR_CHARS) || `Hosted run ${status}` }),
-    });
+    };
+    // The same check a Fabric worker applies: a completed run with a schema
+    // must return a matching value, or it fails as invalid structured output.
+    // A truncated value cannot carry what the schema asks for, so name the cause.
+    if (truncated && status === "completed" && this.context.schema) {
+      settled.status = "failed";
+      settled.error = `Structured agent output was invalid: ${truncated}`;
+    } else {
+      const fromText = settled.value === undefined;
+      validateAgentResult(settled, this.context.schema);
+      // A value parsed from the text output gets the same size limit as a
+      // structured one, so a large JSON answer is not persisted in full.
+      if (fromText && settled.status === "completed" && settled.value !== undefined &&
+          Buffer.byteLength(JSON.stringify(settled.value) ?? "") > MAX_STRUCTURED_BYTES) {
+        settled.status = "failed";
+        settled.value = { fabricTruncated: true };
+        settled.error = `Structured agent output was invalid: value parsed from the output was truncated at the ${MAX_STRUCTURED_BYTES}-byte limit`;
+      }
+    }
+    this.#settle(settled);
   }
 
   #fail(failure: Parameters<FabricHostedReporter["fail"]>[0]): void {

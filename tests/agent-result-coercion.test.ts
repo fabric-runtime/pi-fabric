@@ -107,4 +107,13 @@ describe("validateAgentResult directive prose coercion", () => {
     expect(record.status).toBe("completed");
     expect(record.value).toEqual({ action: "message", message: "ok" });
   });
+
+  it("checks an explicit null value instead of parsing the text", () => {
+    const record = validateAgentResult(
+      { ...rec('{"action":"silent"}'), value: null },
+      directive,
+    );
+    expect(record.status).toBe("failed");
+    expect(record.error).toMatch(/^Structured agent output was invalid: /);
+  });
 });
