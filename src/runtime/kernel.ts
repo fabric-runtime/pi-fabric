@@ -43,10 +43,17 @@ export interface FabricSandboxOptions {
   transpiledSourceMap?: string;
 }
 
+/** Runs a host-side wait for a person with the program deadline paused.
+ * The deadline resumes with its saved budget when the wait settles. */
+export type FabricHumanWait = <T>(wait: () => Promise<T>) => Promise<T>;
+
 export type FabricHostCall = (
   ref: string,
   args: Record<string, unknown>,
   signal: AbortSignal,
+  /** Supplied by runtimes so the host can pause the deadline for a human
+   * step inside an ordinary call, such as an approval prompt. */
+  humanWait?: FabricHumanWait,
 ) => Promise<unknown>;
 
 export interface FabricKernelRuntime {

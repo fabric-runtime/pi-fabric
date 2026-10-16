@@ -1034,7 +1034,7 @@ export class QuickJsRuntime {
           const waitsForHuman = options.isHumanWaitHostCall?.(reference, args) === true;
           if (waitsForHuman) humanWait.enter();
           const task = runAbortable(hostAbortController.signal, () =>
-            hostCall(reference, args, hostAbortController.signal),
+            hostCall(reference, args, hostAbortController.signal, (wait) => humanWait.run(wait)),
           )
             .finally(() => {
               if (waitsForHuman) humanWait.leave();

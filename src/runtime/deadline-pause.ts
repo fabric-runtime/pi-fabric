@@ -40,6 +40,16 @@ export class HumanWaitDeadlinePause {
     this.#clock.resume(this.#remainingMs);
   }
 
+  /** Pause for the duration of one host-side wait, such as an approval prompt. */
+  async run<T>(wait: () => Promise<T>): Promise<T> {
+    this.enter();
+    try {
+      return await wait();
+    } finally {
+      this.leave();
+    }
+  }
+
   /** While paused, a host-call floor raises the budget left after the wait. */
   raise(floorMs: number): void {
     this.#remainingMs = Math.max(this.#remainingMs, Math.max(1, Math.floor(floorMs)));

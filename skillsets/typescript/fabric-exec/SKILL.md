@@ -102,7 +102,7 @@ All calls return promises. Fields ending in `?` are optional; `unknown` marks pr
 | `thinking.set({level,scope?,turns?,reason?})` | status plus `clamped:true,requested` when clamped; `scope` `"turn"` (default, reverts at agent_end) / `"turns"` (needs `turns` 1–20) / `"session"` |
 | `thinking.reset()` | status after restoring the baseline level |
 | `decisions.raise({title,kind?,body?,options?,input?,holder?,timeoutMs?\|deadline?,onExpire?,defaultOptionId?,escalation?})` | `{id}`; durable pending approval/question/escalation in the mesh; `holder` `"user"` (default, humans only) / `"root"` / `"supervisor:<id>"`; `onExpire:"escalate"` with `escalation:{chain?,hopTimeoutMs?,onFinal?}` moves it up the chain (default supervisor→root→user) per expired hop |
-| `decisions.wait({id,timeoutMs?})` | the record once answered/expired/cancelled (still `open` on timeout): `{status,answer?:{optionId?,text?,answeredBy,via,at},...}` |
+| `decisions.wait({id,timeoutMs?})` | the record once answered/expired/cancelled (still `open` on timeout): `{status,answer?:{optionId?,text?,answeredBy,via,at},...}`; the program deadline pauses while it waits, so pass `timeoutMs` (or raise with a deadline) to bound it |
 | `decisions.list({status?,holder?,limit?}?)` | records newest first; read-only |
 | `decisions.answer({id,optionId?,text?})` / `decisions.escalate({id,reason?})` / `decisions.cancel({id})` | the updated record; refused for `"user"` holders, other participants' holds, and decisions raised in the same call; `escalate` hands it to the next chain holder now |
 | `programs.save({name,code?,kind?,kernel?,jevProgram?,description?,inputSchema?})` | `{ref:"name@digest12",digest}`; always a candidate; identical content returns the same ref |

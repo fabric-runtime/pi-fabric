@@ -161,7 +161,7 @@ export class MontyRuntime implements FabricKernelRuntime {
         }
         const waitsForHuman = options.isHumanWaitHostCall?.(ref, args) === true;
         if (waitsForHuman) humanWait.enter();
-        const task = runAbortable(hostAbort.signal, () => hostCall(ref, args, hostAbort.signal));
+        const task = runAbortable(hostAbort.signal, () => hostCall(ref, args, hostAbort.signal, (wait) => humanWait.run(wait)));
         tasks.add(task);
         try { return montyInput(normalizeMontyValue(await task, true)); }
         catch (error) {

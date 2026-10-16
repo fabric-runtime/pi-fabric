@@ -64,6 +64,7 @@ import {
 import { fabricExecTitleHintCached } from "./ui/fabric-title-hint.js";
 import type {
   FabricHostCall,
+  FabricHumanWait,
   FabricKernel,
   FabricKernelRuntime,
   FabricSandboxResult,
@@ -621,8 +622,12 @@ export class FabricExecutionService {
       ref: string,
       args: Record<string, unknown>,
       callContext: typeof baseContext & { signal: AbortSignal; nativeToolResult?: boolean },
+      humanWait?: FabricHumanWait,
     ): Promise<unknown> => {
       const traceOperation = traceRecorder.issueCall(ref, args);
+      // An approval prompt waits for a person, so the program deadline pauses
+      // while it is open. An explicit hard timeout still bounds everything.
+      const approvalWait = options.hardTimeoutMs === undefined ? humanWait : undefined;
       try {
         guardFullCodeRef(ref);
         guardAgentCall(ref);
@@ -668,11 +673,11 @@ export class FabricExecutionService {
           : {}),
         approve: async (action, preparedArgs) => {
           if (action.ref === "schema.commit") {
-            await approval.approve({ ...action, risk: "write" }, preparedArgs);
-            await approval.approve({ ...action, risk: "execute" }, preparedArgs);
+            await approval.approve({ ...action, risk: "write" }, preparedArgs, approvalWait);
+            await approval.approve({ ...action, risk: "execute" }, preparedArgs, approvalWait);
             return;
           }
-          await approval.approve(action, preparedArgs);
+          await approval.approve(action, preparedArgs, approvalWait);
         },
         audits,
         // Native images/state must stay intact; final output has its own bounds.
@@ -781,10 +786,10 @@ export class FabricExecutionService {
         }
         // Guest span ids restart in each program; keep them distinct per run.
         const spanPrefix = `program-${nestedRuns}:`;
-        const nestedBridge: FabricHostCall = (ref, args, callSignal) =>
+        const nestedBridge: FabricHostCall = (ref, args, callSignal, humanWait) =>
           (ref === "fabric.$spanStart" || ref === "fabric.$spanEnd") && typeof args.id === "string"
-            ? bridge(ref, { ...args, id: `${spanPrefix}${args.id}` }, callSignal)
-            : bridge(ref, args, callSignal);
+            ? bridge(ref, { ...args, id: `${spanPrefix}${args.id}` }, callSignal, humanWait)
+            : bridge(ref, args, callSignal, humanWait);
         const result = await runtime.execute(source, nestedBridge, {
           ...sandboxBase,
           timeoutMs: codeUsesOrchestration(source) ? orchestrationTimeoutMs : this.config.executor.timeoutMs,
@@ -822,14 +827,14 @@ export class FabricExecutionService {
     try {
       sandboxResult = await runtime.execute(
         code,
-        hostCall = async (ref, args, runtimeSignal) => {
+        hostCall = async (ref, args, runtimeSignal, humanWait) => {
           const callContext = { ...baseContext, signal: runtimeSignal };
           switch (ref) {
             case "fabric.$nativeTool": {
               if (!args.args || typeof args.args !== "object" || Array.isArray(args.args)) throw new Error("Native tools take one argument object");
               const {api, entries} = await nativeCatalog(callContext);
               const tool = api.resolveNativeTool(entries, args.name);
-              return invokeAction(tool.ref, args.args as Record<string, unknown>, {...callContext, nativeToolResult: true});
+              return invokeAction(tool.ref, args.args as Record<string, unknown>, {...callContext, nativeToolResult: true}, humanWait);
             }
             case "fabric.$piAllTools":
             case "fabric.$piSearch":
@@ -1090,7 +1095,7 @@ export class FabricExecutionService {
               const settle = shell && callArgs.settle === true;
               if (shell) delete callArgs.settle;
               try {
-                return await invokeAction(targetRef, callArgs, callContext);
+                return await invokeAction(targetRef, callArgs, callContext, humanWait);
               } catch (error) {
                 const exit = settle ? piBashExitMetadata(error) : undefined;
                 if (exit) return { ok: false, ...exit, details: null, error: error instanceof Error ? error.message : String(error) };
@@ -1202,7 +1207,7 @@ export class FabricExecutionService {
               return undefined;
             }
             default:
-              return invokeAction(ref, args, callContext);
+              return invokeAction(ref, args, callContext, humanWait);
           }
         },
         {

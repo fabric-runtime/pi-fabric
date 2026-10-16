@@ -26,6 +26,7 @@ import type { FabricApprovalConfig } from "../config.js";
 import { actionApprovalOverride } from "./approval-overrides.js";
 import type { FabricRisk } from "../protocol.js";
 import type { ResolvedFabricAction } from "./action-registry.js";
+import type { FabricHumanWait } from "../runtime/kernel.js";
 import {
   FabricAutoApprovalClassifier,
   type FabricAutoApprovalDecision,
@@ -95,9 +96,13 @@ export class ApprovalController {
     readonly headless?: (action: ResolvedFabricAction, reason?: string) => Promise<boolean>,
   ) {}
 
+  /** `humanWait` pauses the program deadline only while a person is asked:
+   * the screen prompt or a headless decision. Policy checks and the auto
+   * classifier still spend the normal budget. */
   async approve(
     action: ResolvedFabricAction,
     args: Record<string, unknown> = {},
+    humanWait?: FabricHumanWait,
   ): Promise<void> {
     const override = actionApprovalOverride(this.config.actions, action.ref);
     // An action-level deny is absolute: no inherited or session risk grant lifts it.
@@ -122,7 +127,7 @@ export class ApprovalController {
     await this.sessionApprovals.serialize(async () => {
       if (this.sessionApprovals.approvedRisks.has(action.risk)) return;
       if (mode !== "auto") {
-        await this.#requestApproval(action);
+        await this.#requestApproval(action, undefined, humanWait);
         return;
       }
 
@@ -147,6 +152,7 @@ export class ApprovalController {
         await this.#requestApproval(
           action,
           `Auto mode could not determine safety: ${message}`,
+          humanWait,
         );
         return;
       }
@@ -164,6 +170,7 @@ export class ApprovalController {
       await this.#requestApproval(
         action,
         `Auto mode escalated (${decision.model}): ${decision.reason}`,
+        humanWait,
       );
     });
   }
@@ -171,10 +178,13 @@ export class ApprovalController {
   async #requestApproval(
     action: ResolvedFabricAction,
     escalationReason?: string,
+    humanWait?: FabricHumanWait,
   ): Promise<void> {
+    const ask = <T>(wait: () => Promise<T>): Promise<T> => humanWait ? humanWait(wait) : wait();
     if (!this.context.hasUI) {
       if (this.config.headless === "decision" && this.headless) {
-        if (await this.headless(action, escalationReason)) return;
+        const headless = this.headless;
+        if (await ask(() => headless(action, escalationReason))) return;
         throw new FabricTraceSafeError(`${action.ref} approval was denied, cancelled, or expired`);
       }
       throw new FabricTraceSafeError(`${action.ref} requires approval, but no interactive UI is available`);
@@ -184,9 +194,9 @@ export class ApprovalController {
       ? `Fabric auto mode needs approval: ${action.ref} · ${escalationReason}`
       : `Fabric permission requested: ${action.ref} needs ${action.risk} access`;
     this.context.ui.notify(notification, "warning");
-    const choice = this.context.mode === "tui"
-      ? await this.#requestTuiApproval(action, escalationReason)
-      : await this.#requestDialogApproval(action, escalationReason);
+    const choice = await ask(() => this.context.mode === "tui"
+      ? this.#requestTuiApproval(action, escalationReason)
+      : this.#requestDialogApproval(action, escalationReason));
 
     if (choice === "deny") {
       this.context.ui.notify(`Denied ${action.risk} access for ${action.ref}`, "warning");

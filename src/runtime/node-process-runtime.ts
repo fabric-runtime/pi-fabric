@@ -242,7 +242,7 @@ export class NodeProcessRuntime {
         const waitsForHuman = options.isHumanWaitHostCall?.(message.ref, message.args) === true;
         if (waitsForHuman) humanWait.enter();
         const task = runAbortable(hostAbortController.signal, () =>
-          hostCall(message.ref, message.args, hostAbortController.signal),
+          hostCall(message.ref, message.args, hostAbortController.signal, (wait) => humanWait.run(wait)),
         ).finally(() => {
           if (waitsForHuman) humanWait.leave();
         }).then(

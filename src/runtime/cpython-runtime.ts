@@ -274,7 +274,7 @@ export class CPythonRuntime implements FabricKernelRuntime {
           waitsForHuman = options.isHumanWaitHostCall?.(ref, args) === true;
         } catch (error) { fail(`CPython deadline policy failed: ${errorText(error)}`); return; }
         if (waitsForHuman) humanWait.enter();
-        const task = runAbortable(hostAbort.signal, () => hostCall(ref, args, hostAbort.signal)).finally(() => {
+        const task = runAbortable(hostAbort.signal, () => hostCall(ref, args, hostAbort.signal, (wait) => humanWait.run(wait))).finally(() => {
           if (waitsForHuman) humanWait.leave();
         }).then(
           (value) => send({ type: "response", id, ok: true, value }),

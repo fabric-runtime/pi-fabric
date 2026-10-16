@@ -164,7 +164,7 @@ describe("pi argument alias flattening", () => {
     expect(hostCall).toHaveBeenCalledWith("pi.edit", {
       path: "/x",
       edits: [{ oldText: "a", newText: "b", all: true }],
-    }, expect.any(AbortSignal));
+    }, expect.any(AbortSignal), expect.any(Function));
   });
 
   it("normalizes alias keys and the flat edit shape at runtime", async () => {

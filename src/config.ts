@@ -82,7 +82,8 @@ interface FabricExecutorConfig {
   /** Exact-ref deadline floors (ms) for known long-running host calls, e.g.
    * "extensions.subagent". Keys are exact refs; no wildcard matching. */
   hostCallTimeouts: Record<string, number>;
-  /** Exact host-call refs that wait for a person, e.g. "extensions.ask".
+  /** Exact host-call refs that wait for a person, e.g. "extensions.ask" or
+   * "decisions.wait".
    * While such a call is in flight the program deadline is paused, so a
    * foreground question can wait indefinitely. Cancellation still applies. */
   humanWaitRefs: string[];
@@ -483,7 +484,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     timeoutMs: 120_000,
     maxTimeoutMs: 900_000,
     hostCallTimeouts: {},
-    humanWaitRefs: ["extensions.ask"],
+    humanWaitRefs: ["extensions.ask", "decisions.wait"],
     shellHangMs: DEFAULT_SHELL_HANG_MS,
     memoryLimitBytes: 64 * 1024 * 1024,
     maxOutputChars: 50_000,
