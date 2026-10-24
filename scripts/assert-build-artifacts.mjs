@@ -232,9 +232,11 @@ for (const file of hostGraph) {
   if ([...source.matchAll(staticImport)].some((match) => sdkSpecifier(match[1]))) {
     throw new Error(`${file} imports the Pi SDK by name at runtime; use import type or src/core/host-sdk-runtime.ts`);
   }
-  // The loader's own mapped-host fallback, and tool capture's inert one.
+  // The loader's own mapped-host fallback, tool capture's inert one, and the
+  // entry's lazy loader thunk for compiled-binary hosts.
   if ([...source.matchAll(dynamicImport)].some((match) => sdkSpecifier(match[1])) &&
-    !source.includes("// src/core/host-sdk.ts") && !source.includes("// src/capture/interceptor.ts")) {
+    !source.includes("// src/core/host-sdk.ts") && !source.includes("// src/capture/interceptor.ts") &&
+    !source.includes("// src/extension-bootstrap.ts")) {
     throw new Error(`${file} imports the Pi SDK by name at runtime; use loadHostSdk from src/core/host-sdk.ts`);
   }
 }

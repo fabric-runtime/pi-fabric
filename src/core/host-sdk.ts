@@ -92,6 +92,18 @@ export async function loadHostSdk(cliPath: string | undefined = process.argv[1])
       // Unexpected layout: fall back to the package entry.
     }
   }
+  // Compiled hosts (the `pi` binary) have no cli.js layout for hostSdkEntry to
+  // find, and Pi maps the SDK only for modules it loads itself. The extension
+  // entry registers a lazy loader from that mapped realm; use it before the
+  // bare import, which a natively loaded lazy chunk cannot resolve.
+  const mapped = (globalThis as Record<symbol, unknown>)[Symbol.for("pi-fabric.hostSdkLoader")];
+  if (typeof mapped === "function") {
+    try {
+      return await (mapped as () => Promise<PiSdk>)();
+    } catch {
+      // Not a mapped host after all: fall back to the package import.
+    }
+  }
   try {
     return await import("@earendil-works/pi-coding-agent");
   } catch (error) {
