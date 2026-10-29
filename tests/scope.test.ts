@@ -480,6 +480,7 @@ describe("agent scope narrowing", () => {
       resolveKernel: () => undefined,
       resolvePythonRuntime: () => "monty",
       resolveCwd: (cwd: string) => cwd,
+      applyRecursiveDefault: (request: unknown) => request,
       childThinkingBounds: () => ({}),
       forwardedTraceContext: () => undefined,
       detachSignal() {},

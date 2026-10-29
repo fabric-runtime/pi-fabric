@@ -1010,6 +1010,20 @@ return rlm.query({
 
 `agents.maxTokensPerChild` limits cumulative token use for each child. Its default value, `0`, disables the limit. The wall-clock `timeoutMs` limits time, and `budgetUsd` limits cost. This limit caps the context of one runaway child before the host session compacts. Fabric stops the child with the same `timed_out` status and a `token limit` error. See [`/skill:fabric-rlm`](../skillsets/typescript/fabric-rlm/SKILL.md).
 
+### Recursive by default
+
+`agents.recursive` (default `false`) makes nested agents recursive unless a call says otherwise. With `true`, a Pi-runner `agents.run`, `agents.spawn` or `agents.handoff` request that omits `recursive` behaves as `recursive: true`. The child gets `fabric_exec`, `agents.*` with the delegated `agent` risk, and its own children. The existing bounds still apply: `agents.maxDepth` (default `2`), `agents.maxPerExecution` and `agents.budgetUsd`.
+
+The default is resolved once, where the request enters the manager, and it resolves to `false`, and the request still launches, when recursion would be refused or unusable:
+
+- An explicit `recursive: true` or `false` wins. An explicit `extensions: false`, `agents.extensions: false`, or a `tools` list with `-fabric_exec` also wins.
+- Runners without the `recursiveFabric` capability (`claude`, `veda`, custom runners, the hosted `pi-durable-leaf` factory) keep their native surface. Only an explicit `recursive: true` on them is an error.
+- A child that would sit at `maxDepth` is launched without recursion, since it could not spawn. With `maxDepth: 2`, a root session's children are recursive and their children are leaves.
+- A caller launched without `fabric_exec`, or with an inherited tool allowlist that does not name it exactly, never hands it on. The default does not widen inherited authority.
+- Durable (`residency: "durable"`) spawns resolve the default in the calling session before the request reaches the resident host, so the host sees an explicit value.
+
+The default `pi-durable` runner is a Pi process worker with the full Pi capabilities, so a recursive `pi-durable` child runs the full Fabric host. The check in `createPiDurableRunner` that rejects `recursiveFabric` belongs to the separate hosted `pi-durable-leaf` runner, which declares the capability `false`; the default never reaches it.
+
 ## Durable mesh coordination
 
 The `mesh` API provides project-scoped, event-sourced coordination:
