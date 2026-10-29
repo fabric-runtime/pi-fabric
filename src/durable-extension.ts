@@ -126,7 +126,7 @@ const INTERRUPTED_CODE = "interrupted";
  * recorded under another value is refused. tests/durable-extension-replay.test.ts checks it against package.json.
  * Keep this literal host-free for Worker imports; update it alongside package.json on each release.
  */
-export const FABRIC_DURABLE_ENGINE = `${FABRIC_DURABLE_JOURNAL_FORMAT}/pi-fabric@0.129.1/quickjs-singlefile-0.32`;
+export const FABRIC_DURABLE_ENGINE = `${FABRIC_DURABLE_JOURNAL_FORMAT}/pi-fabric@0.129.2/quickjs-singlefile-0.32`;
 
 /**
  * Refusal raised to the program; its message reaches the program as an Error. A granted provider action may throw
