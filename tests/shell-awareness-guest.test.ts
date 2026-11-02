@@ -9,7 +9,7 @@ import { PiToolsProvider } from "../src/providers/pi-tools-provider.js";
 import { TasksProvider } from "../src/providers/tasks-provider.js";
 
 describe("discarded background result awareness", () => {
-  it("projects a real sandbox-started task into model input even when the program returns unrelated data", async () => {
+  it("records a real sandbox-started task for the model even when the program returns unrelated data", async () => {
     const jobs = new FabricShellJobStore(); const registry = new ActionRegistry();
     registry.register(new PiToolsProvider(process.cwd(), undefined, undefined, { shellJobs: jobs, powerShellToolDefinitionFactory: undefined }));
     registry.register(new TasksProvider(jobs));
@@ -30,17 +30,18 @@ describe("discarded background result awareness", () => {
       expect(result.success, JSON.stringify(result)).toBe(true);
       expect(result.value).toBe("unrelated value");
       const [job] = jobs.live(); expect(job?.spilled).toBe(true);
-      const project = handlers.get("context")!;
-      const projected = project({ type: "context", messages: [] }, context)!;
-      expect(projected.messages).toHaveLength(1);
-      expect(projected.messages![0]).toMatchObject({ customType: SHELL_AWARENESS_MESSAGE_TYPE, details: { ids: [job!.id] } });
-      const modelInput = JSON.stringify(convertToLlm(projected.messages!));
+      // The note joins the outer tool result once; requests are never rewritten.
+      expect(handlers.get("context")!({ type: "context", messages: [] }, context)).toBeUndefined();
+      const outer = handlers.get("tool_result")! as unknown as (event: unknown, ctx: ExtensionContext) => { content: Array<{ type: string; text: string }> };
+      const { content } = outer({ type: "tool_result", toolCallId: "awareness-probe", toolName: "fabric_exec", input: {}, content: [{ type: "text", text: "unrelated value" }], isError: false }, context);
+      const modelInput = JSON.stringify(convertToLlm([{ role: "toolResult", toolCallId: "awareness-probe", toolName: "fabric_exec", content, isError: false, timestamp: 1 } as never]));
+      expect(modelInput).toContain("unrelated value");
+      expect(modelInput).toContain(SHELL_AWARENESS_MESSAGE_TYPE);
+      expect(modelInput).toContain(job!.id);
       expect(modelInput).toContain("Discarded build");
       expect(modelInput).toContain("end this turn");
       expect(modelInput).toContain("will resume you");
-      expect(sendMessage).not.toHaveBeenCalled();
       jobs.stop(job!.id);
-      expect(project({ type: "context", messages: projected.messages! }, context)?.messages).toEqual([]);
       expect(sendMessage).not.toHaveBeenCalled();
     } finally { inbox.close(); await registry.close(); await jobs.close(); }
     expect(handlers.size).toBe(0);

@@ -88,14 +88,24 @@ before sealing their log, regardless of extension shutdown order.
 
 ## Agent awareness and yielding
 
-Before each model request, Fabric projects one bounded live-task reminder into
-context, independently of the returned `fabric_exec` value. Even if a program
-discards the nested shell result, the owning agent can see that work is running.
-The reminder is reconstructed from live session state after context compaction;
-it is not a persisted transcript entry and **never triggers a turn** itself.
-Unchanged task state keeps the same message; elapsed time and process output do
-not churn it. It includes at most eight task IDs and short, quoted labels, with
-an omitted count for additional jobs.
+When a task moves to the background, Fabric appends one note to the result of
+the tool call that spilled it, independently of the returned `fabric_exec`
+value. Even if a program discards the nested shell result, the owning agent can
+see that work is running. Tasks spilled by one call share one note, which
+includes at most eight task IDs and short, quoted labels, with an omitted count
+for additional jobs, and never elapsed time or process output. The note
+**never triggers a turn** itself.
+
+The note records a moment and is never edited or retracted; later task events
+report each outcome in transcript order. Fabric does not rewrite requests for
+awareness, so each request extends the previous one and the provider's prompt
+cache keeps hitting while tasks run. A reminder projected at the end of every
+request would be missing from the next request in that position, which caps
+the cached prefix at the last request without it. The note lives in an ordinary
+tool result, not a custom message, because Pi rebuilds custom-message objects
+on every refresh and its idle cache warmer, which compares objects by identity,
+then treats the conversation as changed. After compaction, which replaces the
+prefix anyway, Fabric restates still-running tasks on the next tool result.
 
 For ordinary detached commands and wake-enabled monitors, it tells the agent to
 continue independent work or **end the turn if it needs their results**. Completion
@@ -104,10 +114,12 @@ are unnecessary. UI-only monitors are explicitly marked **no automatic wakeup**,
 including on completion, so the agent must not yield expecting them to resume it.
 Pending required results are not evidence that the assignment is complete.
 
-Foreground, completed, stopping, and abandoned-branch jobs are excluded. Abort/error
-suspension suppresses the reminder until new input, just like automatic delivery.
-Reload/session shutdown removes the context hook along with the inbox. Awareness
-works without a terminal and does not restore processes across Pi restarts.
+Foreground jobs, jobs that end before the next tool result, abandoned-branch
+jobs, and durable tasks reattached after a restart are not announced; the
+process that spilled a reattached task already wrote its note. A note stays on
+its own branch of the session tree. Reload/session shutdown closes the inbox.
+Awareness works without a terminal and does not restore processes across Pi
+restarts.
 
 ### Prompt-cache warming while yielded
 

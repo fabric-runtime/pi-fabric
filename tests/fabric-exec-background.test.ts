@@ -211,9 +211,10 @@ describe("background program delivery", () => {
     const run = new FabricProgramTasks().begin({ code: "return 1;", description: "seven beads", jobs: () => jobs });
     expect(run.detach()).toBe(true);
 
-    const awareness = handlers.get("context")!({ type: "context", messages: [] }, ctx);
-    expect(awareness.messages[0]).toMatchObject({ customType: SHELL_AWARENESS_MESSAGE_TYPE });
-    expect(awareness.messages[0].content).toContain("background fabric_exec program; completion wakes agent");
+    expect(handlers.get("context")!({ type: "context", messages: [] }, ctx)).toBeUndefined();
+    const awareness = handlers.get("tool_result")!({ type: "tool_result", toolCallId: "call", content: [], isError: false }, ctx);
+    expect(awareness.content[0].text).toContain(`[${SHELL_AWARENESS_MESSAGE_TYPE}]`);
+    expect(awareness.content[0].text).toContain("background fabric_exec program; completion wakes agent");
 
     await run.complete(`{"closed":7}\n${"x".repeat(3000)}`, true);
     await vi.advanceTimersByTimeAsync(100);
