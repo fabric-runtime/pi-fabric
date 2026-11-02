@@ -94,6 +94,33 @@ const renderResult = (
 const nestedRows = (rendered: string): string[] => rendered.split("\n").slice(1);
 
 describe("registered fabric_exec compact transcript rendering", () => {
+  it.each(["full", "compact"] as const)("filters successful internal loads in %s partial, final and restored cards", mode => {
+    const tool = toolFor(stateFor(mode));
+    const audits = [
+      { ref: "native.load", success: true, result: { stored: 42 } },
+      { ref: "tasks.wait", args: { id: "task-123" }, success: true },
+    ];
+    for (const partial of [true, false]) for (const expanded of [true, false]) {
+      const details = JSON.parse(JSON.stringify({ success: true, audits, phases: [] }));
+      const card = renderResult(tool, { code: 'return await tools.call({ref: "tasks.wait", args: {id: "task-123"}})' }, details, "done", { partial, expanded });
+      expect(card).not.toContain("native.load");
+      expect(card).not.toContain("2 calls");
+      expect(card).toContain("tasks.wait task-123");
+      expect(details.audits).toHaveLength(2);
+    }
+    const failed = renderResult(tool, {}, { success: false, audits: [{ ref: "native.load", success: false, error: "load failed" }] }, "load failed");
+    expect(failed).toContain("native.load");
+    expect(failed).toContain("load failed");
+  });
+  it("subtracts trimmed internal loads without erasing raw omitted counters", () => {
+    const details = { success: true, audits: [{ ref: "tasks.wait", args: { id: "task-123" }, success: true }], omittedCalls: { count: 4, done: 4, internal: 3, failed: 1 } };
+    for (const partial of [false, true]) {
+      const card = renderResult(toolFor(stateFor("full")), {}, details, "done", { partial });
+      expect(card).not.toContain("5");
+      expect(card).toContain("2");
+      expect(details.omittedCalls).toEqual({ count: 4, done: 4, internal: 3, failed: 1 });
+    }
+  });
   it("retains trimmed failure counts on a resumed compact card", () => {
     const recorder = new FabricExecutionTraceRecorder();
     const details = createFabricPersistedExecutionDetails({

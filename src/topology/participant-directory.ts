@@ -58,6 +58,7 @@ const transports = new Set([
   "screen",
   "localterm",
   "herdr",
+  "herdr-core",
 ]);
 const capabilities = new Set([
   "steer",

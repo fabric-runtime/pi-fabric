@@ -87,6 +87,24 @@ describe("TUI width bounds (#84)", () => {
 });
 
 describe("fabric nested rendering", () => {
+  it("filters internal successes before multicall counts without shifting preview attachment", () => {
+    const audits = [
+      { ref: "native.load", success: true },
+      { ref: "tasks.wait", args: { id: "task-123" }, success: true },
+      { ref: "sessions.status", args: { id: "session-123" } },
+    ];
+    for (const expanded of [false, true]) {
+      const text = renderFabricMulticallPartial({ audits, expanded, phases: [],
+        omittedCalls: { count: 2, done: 2, internal: 2 }, preview: { auditIndex: 1, body: "receipt body", hidden: 0 },
+      }, plainTheme).render(120).join("\n");
+      expect(text).toContain("1/2 calls");
+      expect(text).not.toContain("native.load");
+      expect(text).toContain("tasks.wait task-123");
+      expect(text).toContain("receipt body");
+      expect(text).toContain("sessions.status session-123");
+      expect(audits).toHaveLength(3);
+    }
+  });
   it("renders the whole expand hint dim", () => {
     expect(expandHint(theme)).toMatch(/^\x1b\[dim\].+ to expand\x1b\[0m$/);
     expect(expandHint(theme)).not.toContain("\x1b[muted]");

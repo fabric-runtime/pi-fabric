@@ -14,7 +14,7 @@ const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2
 const assistant = (text: string): AssistantMessage => ({ role: "assistant", content: [{ type: "text", text }], api: "offline-compact", provider: "offline-compact", model: "fixture", stopReason: "stop", timestamp: 1, usage });
 
 it("matches native edited projections/checkpoints and never resurrects omissions across repeated compaction", () => {
-  expect(VERSION).toBe("1.4.0");
+  expect(VERSION).toBe("1.5.0");
   const manager = SessionManager.inMemory();
   manager.appendMessage({ role: "system", content: "", sections: { preamble: "initial" }, toolsAdded: [{ name: "read", description: "original", parameters: {} }], timestamp: 1 });
   manager.appendMessage({ role: "user", content: "Keep this task", timestamp: 1 });
@@ -48,7 +48,7 @@ it("matches native edited projections/checkpoints and never resurrects omissions
 });
 
 it.each(["fabric", "external"] as const)("uses native overflow recovery, replay and ownership (%s)", async owner => {
-  expect(VERSION).toBe("1.4.0");
+  expect(VERSION).toBe("1.5.0");
   const cwd = await mkdtemp(path.join(os.tmpdir(), "fabric-pi110-compact-"));
   const manager = SessionManager.create(cwd, path.join(cwd, "sessions"));
   const settingsManager = SettingsManager.inMemory({ defaultProjectTrust: "never", compaction: { enabled: true, keepRecentTokens: 1000, reserveTokens: 1000 }, retry: { enabled: false } });

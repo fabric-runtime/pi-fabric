@@ -8,7 +8,7 @@ import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, type Message } from "@earendil-works/pi-ai";
-import { createRegistry, defineExtension, defineTool, Harness, type ReportInfo, type ToolRegistration } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, type Report, type ToolRegistration } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -92,7 +92,8 @@ const killMidProgram = async (root: string, secondReplay: "safe" | "unsafe") => 
   fs.writeFileSync(script, `
 import fs from "node:fs";
 import { BACKGROUND_CONTEXT as ctx } from ${dependency("@earendil-works/chord/dist/context/index.js")};
-import { Type, createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } from ${dependency("@earendil-works/pi-ai/dist/index.js")};
+import { Type } from ${JSON.stringify(import.meta.resolve("typebox"))};
+import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } from ${dependency("@earendil-works/pi-ai/dist/index.js")};
 import { createRegistry, defineExtension, defineTool, Harness } from ${dependency("@earendil-works/pi-durable/dist/index.js")};
 import { openNodeSqliteStorage } from ${dependency("@earendil-works/pi-durable/dist/storage/sqlite/node.js")};
 import { createFabricExtension } from ${JSON.stringify(pathToFileURL(path.join(project, "src/durable-extension.ts")).href)};
@@ -337,23 +338,23 @@ describe("errors reach onReport and never crash the Harness", () => {
       if (armed && /\brender \(.*durable-extension\.ts/.test(new Error().stack ?? "")) throw new Error("description store unavailable");
       return "Broken tool";
     } });
-    const reports: [unknown, ReportInfo][] = [];
+    const reports: Report[] = [];
     const onError = vi.fn();
-    const host = await openHost({ tools: [broken], fabric: { onError }, onReport: (error, info) => { reports.push([error, info]); } });
+    const host = await openHost({ tools: [broken], fabric: { onError }, onReport: report => { reports.push(report); } });
     try {
       const conversation = await host.conversation("t_alpha");
       armed = true;
       const run = await host.turn(conversation, "render fails", 'return await tools.search_knowledge({ query: "still works" })');
       armed = false;
-      const extensionErrors = reports.filter(([, info]) => info.type === "extension_error");
+      const extensionErrors = reports.filter(report => report.kind === "extension_error");
       expect(extensionErrors.length).toBeGreaterThan(0);
       // pi-durable names the extension; a section error carries no conversation id.
-      expect(extensionErrors[0]![1]).toMatchObject({ type: "extension_error", extension: "pi-fabric" });
-      expect((extensionErrors[0]![0] as Error).message).toBe("description store unavailable");
+      expect(extensionErrors[0]).toMatchObject({ kind: "extension_error", extension: "pi-fabric" });
+      expect((extensionErrors[0]!.error as Error).message).toBe("description store unavailable");
       // The Harness carried on: the turn ran and the program's call worked.
       expect(run.status).toBe("done");
       expect(run.text).toBe("search_knowledge:still works");
-      expect(reports.filter(([, info]) => info.type === "session_failed")).toEqual([]);
+      expect(reports.filter(report => report.kind === "storage_failed")).toEqual([]);
       // Section errors belong to onReport, not onError.
       expect(onError).not.toHaveBeenCalled();
     } finally {
@@ -369,7 +370,8 @@ describe("Node and Bun", () => {
     const dependency = (name: string) => JSON.stringify(pathToFileURL(path.join(project, "node_modules", name)).href);
     fs.writeFileSync(file, `
 import { BACKGROUND_CONTEXT as ctx } from ${dependency("@earendil-works/chord/dist/context/index.js")};
-import { Type, createModels, fauxProvider, fauxAssistantMessage, fauxToolCall, fauxText } from ${dependency("@earendil-works/pi-ai/dist/index.js")};
+import { Type } from ${JSON.stringify(import.meta.resolve("typebox"))};
+import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall, fauxText } from ${dependency("@earendil-works/pi-ai/dist/index.js")};
 import { createRegistry, defineExtension, defineTool, Harness, MemoryStorage } from ${dependency("@earendil-works/pi-durable/dist/index.js")};
 import { createFabricExtension } from ${JSON.stringify(pathToFileURL(built).href)};
 const models = createModels();

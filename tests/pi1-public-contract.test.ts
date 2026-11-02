@@ -10,7 +10,7 @@ import { fabricToolLoadout } from "../src/core/tool-ownership.js";
 // No compiled Fabric, capture patch, or context_with_system fallback: this
 // witnesses the public 1.1 prepareLoadout/exposure/executeTool contract itself.
 it("uses native prepareLoadout to hide historical and late declarations without removing callable tools", async () => {
-  expect(VERSION).toBe("1.4.0");
+  expect(VERSION).toBe("1.5.0");
   const cwd = await mkdtemp(path.join(os.tmpdir(), "fabric-pi1-public-"));
   const settingsManager = SettingsManager.inMemory({ defaultProjectTrust: "never", compaction: { enabled: false }, retry: { enabled: false } });
   let api!: ExtensionAPI;

@@ -1,6 +1,7 @@
 import { fabricToolLoadout } from "./core/tool-ownership.js";
+import { isRoutineInternalCall } from "./core/call-presentation.js";
 import type { Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { TSchema } from "@earendil-works/pi-ai";
+import type { TSchema } from "typebox";
 import { Container, Text, type Component } from "@earendil-works/pi-tui";
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;
@@ -467,6 +468,14 @@ export const createFabricExecTool = (
         if (rendererState.fabricWritePreviews) {
           audits = restoreFabricWritePreviews(audits, rendererState.fabricWritePreviews);
         }
+      }
+      // Keep raw details/trace untouched; all ordinary row/count paths use this projection.
+      audits = audits.filter(audit => !isRoutineInternalCall(audit));
+      const internal = details.omittedCalls?.internal ?? 0;
+      if (details.omittedCalls && internal > 0) {
+        const count = details.omittedCalls.count - internal;
+        if (count > 0) details.omittedCalls = { ...details.omittedCalls, count, done: details.omittedCalls.done - internal, internal: 0 };
+        else delete details.omittedCalls;
       }
       const phases = details.phases;
       const nl = "\n";

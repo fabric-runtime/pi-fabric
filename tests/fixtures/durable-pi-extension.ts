@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 export default async function (pi: ExtensionAPI) {
   // Pi's jiti maps the package root to its compat facade; resolve this test-only

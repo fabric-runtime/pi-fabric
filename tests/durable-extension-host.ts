@@ -22,7 +22,7 @@ import {
   type Conversation,
   type ConversationId,
   type HarnessSettings,
-  type ReportInfo,
+  type Report,
   type Storage,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
@@ -71,7 +71,7 @@ export interface HostOptions {
   readonly fabric?: FabricExtensionOptions;
   readonly storage?: Storage;
   readonly tools?: readonly ToolRegistration[];
-  readonly onReport?: (error: unknown, info: ReportInfo) => void;
+  readonly onReport?: (report: Report) => void;
   readonly settings?: HarnessSettings;
 }
 
@@ -169,7 +169,7 @@ export async function openHost(options: HostOptions = {}) {
   const registry = createRegistry();
   registry.install(hostTools);
   registry.install(guard);
-  // No cast: the extension's types are the host's pi-durable 1.4 types.
+  // No cast: the extension's types are the host's pi-durable 1.5 types.
   // Tests that pass fabric options get exactly those; the rest get a short deadline.
   const fabric = createFabricExtension(options.fabric ?? { timeoutMs: 10_000 });
   registry.install(fabric);

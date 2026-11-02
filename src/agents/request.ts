@@ -26,7 +26,8 @@ export const normalizeAgentRunRequest = (
     args.transport === "tmux" ||
     args.transport === "screen" ||
     args.transport === "localterm" ||
-    args.transport === "herdr"
+    args.transport === "herdr" ||
+    args.transport === "herdr-core"
       ? args.transport
       : undefined;
   // An explicit call or actor level always wins; otherwise an alias can carry

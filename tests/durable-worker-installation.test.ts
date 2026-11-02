@@ -129,7 +129,7 @@ describe("installed durable worker without host peers", () => {
     const { root, manager } = installation();
     const sdk = path.join(root, "node_modules/pi-fabric-worker-sdk");
     fs.symlinkSync(fs.realpathSync(sdk), path.join(root, "node_modules/@earendil-works/pi-coding-agent"), process.platform === "win32" ? "junction" : "dir");
-    fs.rmSync(sdk);
+    fs.rmSync(sdk, { recursive: true });
     const result = await manager.run({ task: "read fixture", tools: ["read"] });
     expect(result.status).toBe("failed");
     expect(result.error).toContain("Durable Pi worker failed");
@@ -139,7 +139,7 @@ describe("installed durable worker without host peers", () => {
 
   it("names the build and the remedy when the private SDK is not installed", async () => {
     const { root, manager } = installation();
-    fs.rmSync(path.join(root, "node_modules/pi-fabric-worker-sdk"));
+    fs.rmSync(path.join(root, "node_modules/pi-fabric-worker-sdk"), { recursive: true });
     const result = await manager.run({ task: "read fixture", tools: ["read"] });
     expect(result.status).toBe("failed");
     expect(result.error).toContain(`Fabric build at ${fs.realpathSync(root)} cannot start a worker: its dependency "pi-fabric-worker-sdk" is not installed`);

@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { highlightCode, languageFromPath } from "./highlight.js";
 import { headlineArg } from "../core/call-preview.js";
+import { isRoutineInternalCall, providerCallMetadata } from "../core/call-presentation.js";
 import { coreToolTitle, renderCoreToolBody } from "./core-tool-render.js";
 import { isFabricAgentToolPreview, type FabricAgentToolPreviewNode, type FabricTranscriptEntry } from "./transcript.js";
 import { fabricStringLiterals, fabricWriteBindings, type FabricWriteBinding } from "./fabric-code-parser.js";
@@ -608,7 +609,7 @@ const callHeadlinePreview = (audit: FabricRenderAudit): string | undefined => {
   const tool = audit.tool ?? ref.split(".")[1] ?? ref;
   const args = audit.args ?? {};
   return providerCallDetail(provider, tool, args, audit.result, audit.preview)
-    || headlineArg(args)
+    || (providerCallMetadata(ref, args)?.detail ?? headlineArg(args))
     || structuralCallDetail(provider, tool, args, audit.result);
 };
 
@@ -654,7 +655,10 @@ const nestedCallTitleText = (
   const ref = audit.ref;
   const provider = audit.provider ?? ref.split(".")[0] ?? ref;
   const tool = audit.tool ?? ref.split(".")[1] ?? ref;
-  const title = theme.fg("toolTitle", theme.bold(tool));
+  const metadata = providerCallMetadata(ref, audit.args);
+  // Existing agent/mesh/MCP and structural previews already identify their scope.
+  const scopedTitle = metadata && !["agents", "mesh", "mcp", "fabric"].includes(provider) ? metadata.title : tool;
+  const title = theme.fg("toolTitle", theme.bold(scopedTitle));
   const args = audit.args ?? {};
   const providerDetail = providerCallDetail(
     provider,
@@ -665,6 +669,10 @@ const nestedCallTitleText = (
     audit.previewHeadline,
   );
   if (providerDetail) return withTiming(`${title} ${theme.fg("accent", providerDetail)}`);
+  if (metadata) {
+    const detail = metadata.detail || structuralCallDetail(provider, tool, args, audit.result) || audit.previewHeadline;
+    return withTiming(detail ? `${title} ${theme.fg("accent", detail)}` : title);
+  }
   const command = argString(args, "command");
   if (command) {
     const firstLine = command.split("\n")[0] ?? "";
@@ -934,7 +942,7 @@ export interface FabricMulticallPartialInput {
   spinner?: string | undefined;
   activityLabel?: string | undefined;
   /** Calls the progress update left out to stay bounded. */
-  omittedCalls?: { count: number; done: number } | undefined;
+  omittedCalls?: { count: number; done: number; internal?: number } | undefined;
 }
 
 export const shellBackgroundShortcut = (audit: FabricRenderAudit): boolean => {
@@ -964,9 +972,16 @@ export const renderFabricMulticallPartial = (
   theme: Theme,
   invalidate?: () => void,
 ): Component => {
-  const omitted = input.omittedCalls?.count ?? 0;
+  // Preserve original audit indexes when attaching streamed bodies after filtering.
+  const visible = input.audits.map((audit, index) => ({ audit, index }))
+    .filter(({ audit }) => !isRoutineInternalCall(audit));
+  const previewIndex = input.preview ? visible.findIndex(({ index }) => index === input.preview!.auditIndex) : -1;
+  input = { ...input, audits: visible.map(({ audit }) => audit),
+    preview: input.preview && previewIndex >= 0 ? { ...input.preview, auditIndex: previewIndex } : undefined };
+  const internal = input.omittedCalls?.internal ?? 0;
+  const omitted = Math.max(0, (input.omittedCalls?.count ?? 0) - internal);
   const done = input.audits.filter((audit) => audit.success !== undefined).length +
-    (input.omittedCalls?.done ?? 0);
+    Math.max(0, (input.omittedCalls?.done ?? 0) - internal);
   let header = theme.fg(
     "warning",
     `◆ ${input.activityLabel ?? "Fabric"} running · ${done}/${input.audits.length + omitted} calls`,

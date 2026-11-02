@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { headlineArg } from "../core/call-preview.js";
+import { providerCallMetadata } from "../core/call-presentation.js";
 import type { FabricInvocationActivityUpdate } from "../protocol.js";
 import type {
   FabricActivityCall,
@@ -100,6 +101,8 @@ const summarizeCallResult = (result: unknown): string | undefined => {
 };
 
 const labelForCall = (ref: string, args: Record<string, unknown>): string => {
+  const metadata = providerCallMetadata(ref, args);
+  if (metadata) return metadata.detail ? `${metadata.title} · ${metadata.detail}` : metadata.title;
   const explicit =
     cleanText(args.label, MAX_NAME_CHARS) ??
     cleanText(args.name, MAX_NAME_CHARS) ??

@@ -685,6 +685,8 @@ Fabric attributes each file through a `session_info` marker (`fabricagent-<name>
 
   ccusage's double-count guard rejects a named store that overlaps the default pi store, so the isolated-row form requires the separate directory.
 
+`agents.transport` accepts `process` (default), `auto`, `tmux`, `screen`, `localterm`, `herdr`, and `herdr-core`; per-call `transport` uses the same values. Herdr Core requires the existing parent terminal’s `HC_TERMINAL_ID` and `HC_TERMINAL_SOCKET` plus a reachable generation-1 service. It never starts a server. `auto` tries Core before legacy Herdr and falls back when unavailable.
+
 See [agents, actors & mesh](agents.md) for the runner and transport details.
 
 ## MCP

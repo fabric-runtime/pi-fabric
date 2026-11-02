@@ -318,7 +318,9 @@ export class DurableAgent extends Agent {
             return;
           }
           const outcomes = await runtime.outcomes(children, ctx);
-          const results = outcomes.map((o, index): ToolResultMessage => o.status === "completed" ? o.result : ({
+          // pi-durable 1.5 outcomes are immutable snapshots. Strip our private
+          // termination marker only from a copy, never from the stored result.
+          const results = outcomes.map((o, index): ToolResultMessage => o.status === "completed" ? copy(o.result) : ({
             role: "toolResult", toolCallId: calls[index]!.id, toolName: calls[index]!.name,
             content: [{ type: "text", text: `Tool task ${o.status}` }], isError: true, timestamp: Date.now(),
           }));
@@ -509,7 +511,7 @@ export class DurableAgent extends Agent {
       if (this.restored && !this.resetPending) this.state.messages = messages;
       if (this.restored && !this.resetPending) await this.recoverHistory?.(copy(messages));
       this.queuePreview = [ ...this.queuePreview, ...(ledger?.steering ?? []).map(message => ({ mode: "steering" as const, message: message as unknown as AgentMessage })), ...(ledger?.followup ?? []).map(message => ({ mode: "followup" as const, message: message as unknown as AgentMessage })) ];
-      harness.subscribeCommits(publication => {
+      const advance: Parameters<Harness["observeCommits"]>[0]["advance"] = publication => {
         for (const change of publication.changes) {
           if (change.type !== "entry" || change.value.conversationId !== this.root!.id || change.value.kind !== EVENT) continue;
           // A marker whose payload is not in memory came from another process; it is never replayed.
@@ -519,7 +521,11 @@ export class DurableAgent extends Agent {
           // Keep failures observable at every execution boundary, without an unhandled rejection.
           void this.delivery.catch(() => {});
         }
-      });
+      };
+      // 1.5 commit observers end with the Harness. Keep the 1.4 adapter usable.
+      const legacy = harness as unknown as { subscribeCommits?: (listener: typeof advance) => unknown };
+      if (typeof legacy.subscribeCommits === "function") legacy.subscribeCommits(advance);
+      else harness.observeCommits({ advance, end: () => {} });
       this.releaseStartup(true);
     })().catch(error => { this.releaseStartup(false); throw error; });
   }

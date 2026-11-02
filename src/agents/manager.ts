@@ -75,6 +75,7 @@ import {
   type WorkerLiveness,
   type WorkerRecoveryRecord,
 } from "./worker-recovery.js";
+import { HerdrCoreTransport } from "./transports/herdr-core-transport.js";
 import { HerdrTransport } from "./transports/herdr-transport.js";
 import { LocaltermTransport } from "./transports/localterm-transport.js";
 import { ProcessTransport } from "./transports/process-transport.js";
@@ -766,6 +767,7 @@ export class AgentManager {
       new ScreenTransport(),
       new LocaltermTransport(),
       new HerdrTransport(),
+      new HerdrCoreTransport(),
     ];
     this.#transports = new Map(adapters.map((adapter) => [adapter.kind, adapter]));
     if (this.#managedTempRoot) {
@@ -3156,7 +3158,7 @@ export class AgentManager {
       }
       return adapter;
     }
-    for (const kind of ["herdr", "localterm", "tmux", "screen", "process"] as const) {
+    for (const kind of ["herdr-core", "herdr", "localterm", "tmux", "screen", "process"] as const) {
       const adapter = this.#transports.get(kind);
       if (adapter && (await adapter.available())) return adapter;
     }

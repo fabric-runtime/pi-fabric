@@ -40,6 +40,19 @@ function fixture(runtime: "quickjs" | "node-process" | "bun-process" = "quickjs"
 }
 
 describe("native Pi codemode bridge", () => {
+  it("keeps internal load audits and synchronous store semantics with generic tasks.wait", async () => {
+    const f = fixture();
+    const invoke = vi.fn(async (_name, args) => ({ id: args.id, finished: true }));
+    const descriptor = { name: "wait", description: "Wait", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, risk: "read" as const };
+    f.actions.register({ name: "tasks", description: "Tasks", async list() { return [descriptor]; }, async describe() { return descriptor; }, invoke });
+    const result = await f.run('store("answer", 42); const receipt = await tools.call({ref: "tasks.wait", args: {id: "task-123"}}); return {answer: load("answer"), receipt};');
+    expect(result.success, result.error).toBe(true);
+    expect(result.value).toEqual({ answer: 42, receipt: { id: "task-123", finished: true } });
+    expect(result.audits.map(audit => audit.ref)).toContain("native.load");
+    expect(result.audits.map(audit => audit.ref)).toContain("tasks.wait");
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect((await f.run('return load("answer")')).value).toBe(42);
+  });
   it.each([false, true])("falls back to MCP when native provider actions are empty (host definitions: %s)", async hostDefinitions => {
     const f = fixture();
     f.config.executor.codemodeProfile = "native";

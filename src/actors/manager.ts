@@ -2008,7 +2008,8 @@ export class ActorManager {
         record.transport === "tmux" ||
         record.transport === "screen" ||
         record.transport === "localterm" ||
-        record.transport === "herdr"
+        record.transport === "herdr" ||
+        record.transport === "herdr-core"
           ? { transport: record.transport }
           : {}),
         ...(typeof record.timeoutMs === "number" ? { timeoutMs: record.timeoutMs } : {}),

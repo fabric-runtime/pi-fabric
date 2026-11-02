@@ -34,7 +34,7 @@ export const GUEST_TYPE_DECLARATIONS = `
 ${NATIVE_CODEMODE_TYPES}
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
-type FabricTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
+type FabricTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr" | "herdr-core";
 type FabricAgentRunner = "pi-durable" | "pi" | "claude" | "veda" | (string & {});
 type FabricKernel = "typescript" | "python";
 type FabricThinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";

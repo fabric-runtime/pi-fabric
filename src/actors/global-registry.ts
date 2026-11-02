@@ -52,6 +52,7 @@ const TRANSPORTS = new Set<FabricAgentTransport>([
   "screen",
   "localterm",
   "herdr",
+  "herdr-core",
 ]);
 
 interface RegistryFile {

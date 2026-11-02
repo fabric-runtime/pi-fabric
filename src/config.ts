@@ -42,7 +42,8 @@ export type FabricAgentTransport =
   | "tmux"
   | "screen"
   | "localterm"
-  | "herdr";
+  | "herdr"
+  | "herdr-core";
 /** Built-in runner ids, or a runner registered through pi-fabric/runners. */
 export type FabricAgentRunner = "pi-durable" | "pi" | "claude" | "veda" | (string & {});
 
@@ -808,7 +809,8 @@ const transportValue = (
   value === "tmux" ||
   value === "screen" ||
   value === "localterm" ||
-  value === "herdr"
+  value === "herdr" ||
+  value === "herdr-core"
     ? value
     : fallback;
 

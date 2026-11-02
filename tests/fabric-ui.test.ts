@@ -7,7 +7,7 @@ import type { CodePreviewSettings } from "../src/ui/code-preview.js";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { FabricDashboard } from "../src/ui/dashboard.js";
-import { entitiesForOverview } from "../src/ui/dashboard-model.js";
+import { entitiesForOverview, phasePanels } from "../src/ui/dashboard-model.js";
 import {
   topologyParticipantGroup,
   topologyStateGroupPath,
@@ -242,6 +242,18 @@ const body = (lines: string[]): string[] => {
 };
 
 describe("Fabric dynamic UI", () => {
+  it("excludes successful internal loads from dashboard rows and phase counts, not raw history", () => {
+    const current = snapshot();
+    const run = current.runs[0]!;
+    const before = phasePanels(current, run);
+    const call = { id: "internal", ref: "native.load", label: "native.load", kind: "tool" as const, status: "completed" as const, phaseId: "audit", startedAt: current.now, updatedAt: current.now };
+    run.calls.push(call);
+    expect(phasePanels(current, run)).toEqual(before);
+    expect(entitiesForOverview(current, run, before.find(panel => panel.id === "audit"), "activity").some(entity => entity.label === "native.load")).toBe(false);
+    run.calls.push({ ...call, id: "failed-load", status: "failed", error: "load failed" });
+    expect(phasePanels(current, run).find(panel => panel.id === "audit")?.total).toBe((before.find(panel => panel.id === "audit")?.total ?? 0) + 1);
+    expect(run.calls.filter(call => call.ref === "native.load")).toHaveLength(2);
+  });
   it("projects component lifecycle and dependency nodes into both overview modes", () => {
     const current = snapshot();
     const now = Date.now();
@@ -500,8 +512,8 @@ describe("Fabric dynamic UI", () => {
     const grandchild = lines.find((line) => line.includes("recursive-grandchild"));
 
     expect(top).toMatch(/^○ /);
-    expect(child).toMatch(/^ {2}○ /);
-    expect(grandchild).toMatch(/^ {4}○ /);
+    expect(child).toMatch(/^└─ ○ /);
+    expect(grandchild).toMatch(/^ {3}└─ ○ /);
   });
 
   it("leases actor rows through settle and resets them for the next activation", () => {
@@ -814,11 +826,13 @@ describe("Fabric dynamic UI", () => {
     current.agents = [
       { ...current.agents[0]!, id: "agent-one", name: "a very long active agent name", status: "running" },
       { ...current.agents[0]!, id: "agent-two", name: "second", status: "running" },
+      { ...current.agents[0]!, id: "agent-three", name: "third", status: "running" },
     ];
-    // Three rows: the spacer, the header with the overflow count, and one agent.
-    const lines = new FabricWidget(theme, () => current, 3).render(24);
-    expect(lines).toHaveLength(3);
-    expect(lines[1]).toContain("↓ 1 more");
+    // Four rows: spacer, header, one agent, and the reserved bottom overflow cue.
+    const lines = new FabricWidget(theme, () => current, 4).render(24);
+    expect(lines).toHaveLength(4);
+    expect(lines[1]).not.toMatch(/↓ \d+ more/);
+    expect(lines[3]).toContain("↓ 2 more");
     expect(lines.every((line) => visibleWidth(line) <= 24)).toBe(true);
   });
 

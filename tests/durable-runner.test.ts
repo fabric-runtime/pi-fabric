@@ -4,7 +4,7 @@ import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { awaitWithContext } from "@earendil-works/chord/context";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -97,7 +97,7 @@ describe("published Pi durable hosted adapter", () => {
     const project = process.cwd(); const ctx = context({ tools: ["effect"] });
     fs.writeFileSync(script, `
 import fs from "node:fs";
-import { Type } from ${JSON.stringify(path.join(project, "node_modules/@earendil-works/pi-ai/dist/index.js"))};
+import { Type } from ${JSON.stringify(import.meta.resolve("typebox"))};
 import { createModels } from ${JSON.stringify(path.join(project, "node_modules/@earendil-works/pi-ai/dist/models.js"))};
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from ${JSON.stringify(path.join(project, "node_modules/@earendil-works/pi-ai/dist/providers/faux.js"))};
 import { createRegistry, defineExtension, defineTool } from ${JSON.stringify(path.join(project, "node_modules/@earendil-works/pi-durable/dist/index.js"))};

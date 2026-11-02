@@ -5,6 +5,7 @@ import type {
   FabricActivityPhase,
   FabricActivityRun,
 } from "../activity/types.js";
+import { isRoutineInternalCall } from "../core/call-presentation.js";
 import type { GlobalActorDefinition } from "../actors/types.js";
 import type { FabricComponentInfo } from "../components/types.js";
 import type {
@@ -198,7 +199,7 @@ const callsForPanel = (
 ): FabricActivityCall[] => {
   if (!run || panel.kind === "session") return [];
   return run.calls.filter((call) =>
-    panel.kind === "unphased" ? !call.phaseId : call.phaseId === panel.id,
+    !isRoutineInternalCall(call) && (panel.kind === "unphased" ? !call.phaseId : call.phaseId === panel.id),
   );
 };
 
@@ -554,6 +555,7 @@ const activityEntitiesByPanel = (
   const agents = new Map<string, Map<string, FabricUiAgent>>();
   const keyFor = (phaseId: string | undefined): string => phaseId ?? UNPHASED_PANEL_ID;
   for (const call of run.calls) {
+    if (isRoutineInternalCall(call)) continue;
     const key = keyFor(call.phaseId);
     const bucket = calls.get(key) ?? [];
     bucket.push(call);

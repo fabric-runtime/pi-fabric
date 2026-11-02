@@ -677,7 +677,7 @@ describe("FabricUiController widget arrow entry", () => {
     controller.start(context);
     const press = (data: string) => listeners.map((listener) => listener(data)).find(Boolean);
     const list = () => [...host.children, ...below.children].find((child) => child instanceof FabricWidget) as FabricWidget;
-    return { controller, editor, press, setWidget, below, host, footer, editorBox, list, focused: () => focused, setOverlay: (value: boolean) => { overlay = value; } };
+    return { controller, editor, press, setWidget, below, host, footer, editorBox, list, listeners: () => listeners.length, focused: () => focused, setOverlay: (value: boolean) => { overlay = value; } };
   };
 
   it.each(["regular", "fullscreen"] as const)("docks the list after Pi's footer in the %s renderer", (layout) => {
@@ -906,6 +906,19 @@ describe("FabricUiController widget arrow entry", () => {
     } finally {
       controller.stop();
     }
+  });
+
+  it("removes the input listener and mounted mouse target on stop", () => {
+    const { controller, host, list, listeners, press } = mount();
+    const widget = list();
+    expect(listeners()).toBe(1);
+    widget.render(120);
+    controller.stop();
+    expect(listeners()).toBe(0);
+    expect(press("\x1b[B")).toBeUndefined();
+    expect(host.children).not.toContain(widget);
+    controller.stop();
+    expect(listeners()).toBe(0);
   });
 
   it("leaves ↓ to an open overlay", () => {

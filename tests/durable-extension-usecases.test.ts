@@ -7,6 +7,7 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type Message } from "@earendil-works/pi-ai";
 import { createRegistry, defineExtension, defineTool, Harness, type Storage, type StorageWrite } from "@earendil-works/pi-durable";
 import { MemoryStorage } from "@earendil-works/pi-durable/storage/memory";
+import { commitWrites } from "@earendil-works/pi-durable/testing";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { createFabricExtension, FABRIC_DURABLE_ENGINE, type FabricDurableProvider } from "../src/durable-extension.js";
@@ -157,12 +158,12 @@ const recording = (timeline: Event[], commits: StorageWrite[][]): Storage => {
   return new Proxy(inner, {
     get(target, property) {
       if (property === "commit") {
-        return async (writes: readonly StorageWrite[], context: typeof ctx) => {
-          const seq = await target.commit(writes, context);
-          commits.push(structuredClone([...writes]));
-          timeline.push({ commit: commits.length });
-          return seq;
-        };
+        return async (...[batches, receive, context]: Parameters<Storage["commit"]>) =>
+          target.commit(batches, (index, seq) => {
+            commits.push(structuredClone([...batches[index]!]));
+            timeline.push({ commit: commits.length });
+            receive(index, seq);
+          }, context);
       }
       const value = Reflect.get(target, property, target) as unknown;
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
@@ -245,7 +246,7 @@ describe("replay-safe fabric_exec on host programs, crashed after every commit",
           if ("call" in event) before.push(event.call);
         }
         const storage = new MemoryStorage();
-        for (const writes of commits.slice(0, count)) await storage.commit(writes, ctx);
+        for (const writes of commits.slice(0, count)) await commitWrites(storage, writes, ctx);
         const after: string[] = [];
         const run = await openRun(useCase, storage, (line) => after.push(line), before);
         let result;

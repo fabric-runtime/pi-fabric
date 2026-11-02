@@ -55,13 +55,14 @@ describe("widget display-only completion retention", () => {
     vi.useFakeTimers(); vi.setSystemTime(39_999);
     let current = snapshot();
     current.agents = [agent("older", 10_000), agent("newer", 15_000), { ...agent("live"), status: "running" }];
-    const compact = new FabricWidget(theme, () => current, 3);
+    const compact = new FabricWidget(theme, () => current, 4);
     const full = new FabricWidget(theme, () => current, 8);
-    expect(body(compact.render(160))[0]).toContain("↓ 2 more");
+    expect(body(compact.render(160)).at(-1)).toContain("↓ 2 more");
     expect(body(full.render(160))).toHaveLength(4);
     expect(body(full.render(160))[0]).toContain("1 running");
     vi.setSystemTime(40_000); current = { ...current, now: Date.now() };
-    expect(body(compact.render(160))[0]).toContain("↓ 1 more");
+    expect(body(compact.render(160)).join("\n")).not.toContain("more");
+    expect(body(compact.render(160))).toHaveLength(3);
     expect(body(full.render(160))).toHaveLength(3);
     expect(body(full.render(160)).join("\n")).not.toContain("older");
     vi.setSystemTime(44_999); current = { ...current, now: Date.now() };

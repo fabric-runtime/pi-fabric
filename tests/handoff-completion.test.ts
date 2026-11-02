@@ -36,7 +36,7 @@ describe("handoff completion message", () => {
     expect(type).toBe(HANDOFF_COMPLETION_MESSAGE_TYPE);
     const message = { ...send("Implemented guard; tests passed; commit abc123"), role: "custom", timestamp: 1 };
     for (const expanded of [false, true]) {
-      const component = render(message, { expanded, outputPad: 1 }, {} as never)!;
+      const component = render(message, { expanded, outputPad: 1, keyText: () => "ctrl+o", keyHint: () => "ctrl+o to expand" }, {} as never)!;
       const lines = component.render(40);
       const text = lines.join("\n");
       expect(text).toContain("abc123");
@@ -44,7 +44,7 @@ describe("handoff completion message", () => {
       expect(text).not.toContain("Do not redo");
       expect(lines.every(line => visibleWidth(line) <= 40)).toBe(true);
     }
-    const restored = render({ ...message, details: undefined }, { expanded: true, outputPad: 0 }, {} as never)!;
+    const restored = render({ ...message, details: undefined }, { expanded: true, outputPad: 0, keyText: () => "ctrl+o", keyHint: () => "ctrl+o to expand" }, {} as never)!;
     expect(restored.render(80).join("\n")).toContain("See the handoff tool result");
   });
 });

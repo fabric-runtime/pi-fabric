@@ -358,7 +358,8 @@ const actorRequest = (
     args.transport === "tmux" ||
     args.transport === "screen" ||
     args.transport === "localterm" ||
-    args.transport === "herdr"
+    args.transport === "herdr" ||
+    args.transport === "herdr-core"
       ? { transport: args.transport }
       : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { awaitWithContext, BACKGROUND_CONTEXT } from "@earendil-works/chord/context";

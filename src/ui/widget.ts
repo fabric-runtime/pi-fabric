@@ -2,6 +2,7 @@ import type { Component, Focusable, TuiMouseEvent, TuiMouseEventResult } from "@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { FabricUiWidgetMode } from "../config.js";
+import { isRoutineInternalCall } from "../core/call-presentation.js";
 import { FabricWidgetRetention, isRecentWidgetCompletion } from "./retention.js";
 import { FABRIC_WIDGET_FOCUS_HINT, FABRIC_WIDGET_FOCUS_SHORTCUT } from "./widget-keys.js";
 import type { FabricShellJobInfo } from "../core/shell-jobs.js";
@@ -37,7 +38,7 @@ const phaseProgress = (
 ): { completed: number; total: number } => {
   const phase = run.phases.find((candidate) => candidate.id === phaseId);
   const statuses: FabricActivityStatus[] = [
-    ...run.calls.filter((call) => call.phaseId === phaseId).map((call) => call.status),
+    ...run.calls.filter((call) => !isRoutineInternalCall(call) && call.phaseId === phaseId).map((call) => call.status),
     ...run.items.filter((item) => item.phaseId === phaseId).map((item) => item.status),
   ];
   const completed = statuses.filter((status) => status === "completed").length;
@@ -242,14 +243,18 @@ export const widgetRowLimit = (maxRows: number, terminalRows?: number): number =
   return Math.max(1, Math.min(configured, paneShare));
 };
 
-/**
- * Row budget while the widget has focus. Focus is a request to see the list,
- * so it may use its whole terminal share instead of `maxRows`, but never more.
- */
-export const widgetFocusedRowLimit = (maxRows: number, terminalRows?: number): number => {
-  const limit = widgetRowLimit(maxRows, terminalRows);
-  if (terminalRows === undefined || !Number.isFinite(terminalRows) || terminalRows <= 0) return limit;
-  return Math.max(limit, Math.floor(terminalRows * WIDGET_TERMINAL_ROW_SHARE));
+/** Keyboard focus must not resize the footer or move the transcript. */
+export const widgetFocusedRowLimit = (maxRows: number, terminalRows?: number): number =>
+  widgetRowLimit(maxRows, terminalRows);
+
+/** Reserve an overflow row for the whole scroll range, not just while rows remain below. */
+export const widgetViewport = (contentRows: number, budget: number, offset: number) => {
+  const available = Math.max(0, Math.floor(budget));
+  // At a one-child budget keep that child reachable; there is no room for a cue.
+  const hasCue = contentRows > available && available > 1;
+  const windowRows = Math.max(0, available - Number(hasCue));
+  const maxOffset = windowRows > 0 ? Math.max(0, contentRows - windowRows) : 0;
+  return { windowRows, hasCue, maxOffset, offset: Math.max(0, Math.min(maxOffset, Math.floor(offset))) };
 };
 
 /** Pointer-only Main row id; distinct from no hover in the render-cache key. */
@@ -277,6 +282,9 @@ export class FabricWidget implements Component, Focusable {
   /** Rows above the header in the last render: the spacer, or none on a one-row budget. */
   #spacerRows = 1;
   #renderedInteraction: string | undefined;
+  #scrollOffset = 0;
+  #maxScrollOffset = 0;
+  #followSelection = false;
 
   /** Select the row on screen, or the first row; used when focus arrives from the keyboard. */
   selectDefault(): void {
@@ -284,11 +292,13 @@ export class FabricWidget implements Component, Focusable {
     if (rows.some((row) => row.id === this.#selectedId)) return;
     const viewing = this.interaction?.viewing?.();
     this.#selectedId = rows.find((row) => row.id === viewing)?.id ?? rows[0]?.id;
+    this.#followSelection = true;
   }
 
   /** Select the top row; ↓ from the editor lands on the row next to it. */
   selectFirst(): void {
     this.#selectedId = this.#selectableRows()[0]?.id;
+    this.#followSelection = true;
   }
 
   /** True while at least one row can take focus. */
@@ -297,7 +307,7 @@ export class FabricWidget implements Component, Focusable {
   }
 
   #interactionKey(): string {
-    return `${this.focused}|${this.#selectedId ?? ""}|${this.#hoveredId ?? ""}|${this.interaction?.viewing?.() ?? ""}|${this.interaction?.collapseIdle?.() ?? ""}`;
+    return `${this.focused}|${this.#selectedId ?? ""}|${this.#hoveredId ?? ""}|${this.#scrollOffset}|${this.#followSelection}|${this.interaction?.viewing?.() ?? ""}|${this.interaction?.collapseIdle?.() ?? ""}`;
   }
 
   handleInput(data: string): void {
@@ -307,7 +317,7 @@ export class FabricWidget implements Component, Focusable {
     const index = Math.max(0, rows.findIndex((row) => row.id === this.#selectedId));
     const select = (next: number): void => {
       const row = rows[Math.max(0, Math.min(rows.length - 1, next))];
-      if (row) this.#selectedId = row.id;
+      if (row) { this.#selectedId = row.id; this.#followSelection = true; }
     };
     if (matchesKey(data, "escape") || matchesKey(data, FABRIC_WIDGET_FOCUS_SHORTCUT)) {
       this.interaction?.release();
@@ -331,6 +341,18 @@ export class FabricWidget implements Component, Focusable {
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     if (!this.interaction) return undefined;
+    if (event.type === "wheel") {
+      // Only this mounted component's bounds, never the editor/transcript or spacer.
+      if (event.x < 0 || event.x >= (this.#lastWidth ?? 0) ||
+        event.y < this.#spacerRows || event.y >= (this.#lastLines?.length ?? 0) ||
+        this.#maxScrollOffset === 0 || !Number.isFinite(event.wheelDelta) || !event.wheelDelta) return undefined;
+      const offset = Math.max(0, Math.min(this.#maxScrollOffset, this.#scrollOffset + Math.trunc(event.wheelDelta)));
+      const changed = offset !== this.#scrollOffset;
+      this.#scrollOffset = offset;
+      this.#followSelection = false;
+      this.#hoveredId = undefined;
+      return { handled: true, render: changed };
+    }
     // The spacer row, when drawn, sits above the header.
     const row = this.#rows.find((candidate) => candidate.line === event.y - this.#spacerRows);
     if (event.type === "move") {
@@ -363,8 +385,9 @@ export class FabricWidget implements Component, Focusable {
     if (budget === 0) return [];
     const { lines, rows } = this.#content(this.snapshot(), Number.MAX_SAFE_INTEGER);
     const body = Math.max(1, budget - (budget >= 2 ? 1 : 0));
-    const visible = body >= 3 && lines.length > body ? body - 1 : body;
-    return this.focused && body > 1 ? rows : rows.filter((row) => row.line < visible);
+    const viewport = widgetViewport(lines.length - 1, body - 1, this.#scrollOffset);
+    return this.focused && body > 1 ? rows : rows.filter((row) => row.line === 0 ||
+      (row.line > viewport.offset && row.line <= viewport.offset + viewport.windowRows));
   }
 
   #rowLimit(width = this.#lastWidth): number {
@@ -453,39 +476,36 @@ export class FabricWidget implements Component, Focusable {
     if (this.#hoveredId !== undefined && this.#hoveredId !== HEADER_ROW && !rows.some((row) => row.id === this.#hoveredId)) {
       this.#hoveredId = undefined;
     }
-    // Pin Main and reserve a separate footer only when rows remain below.
-    // On tiny budgets the footer would hide the only participant, so the
-    // below count shares the header instead.
-    const selectedLine = this.focused && body > 1 ? rows.find(row => row.id === this.#selectedId)?.line ?? 0 : 0;
-    let capacity = body - 1;
-    let start = Math.max(1, selectedLine - capacity + 1);
-    let below = Math.max(0, lines.length - start - capacity);
-    if (below > 0 && body >= 3) {
-      capacity--;
-      start = Math.max(1, selectedLine - capacity + 1);
-      below = Math.max(0, lines.length - start - capacity);
+    // Pin Main. The overflow slot depends on total content, not offset: reaching
+    // the last child must not enlarge the viewport and jump the footer.
+    let viewport = widgetViewport(lines.length - 1, body - 1, this.#scrollOffset);
+    if (this.focused && this.#followSelection && viewport.windowRows > 0) {
+      const selected = (rows.find(row => row.id === this.#selectedId)?.line ?? 0) - 1;
+      let offset = viewport.offset;
+      if (selected < offset) offset = Math.max(0, selected);
+      else if (selected >= offset + viewport.windowRows) offset = selected - viewport.windowRows + 1;
+      viewport = widgetViewport(lines.length - 1, body - 1, offset);
     }
-    const above = start - 1;
-    const upLabel = above > 0 ? `↑ ${above} more` : undefined;
-    const downLabel = body < 3 && below > 0 ? `↓ ${below} more` : undefined;
-    let label = upLabel ?? downLabel;
-    if (upLabel && downLabel) {
-      // Prefer both directions, but never sacrifice the session identity just
-      // to spell out "more". If the full name cannot fit, retain a useful
-      // prefix before falling back to a single direction or no count at all.
-      const identityWidth = 2 + visibleWidth(safeText(snapshot.sessionLabel ?? "Fabric"));
-      const candidates = [`${upLabel} · ${downLabel}`, `↑ ${above} · ↓ ${below}`, upLabel, `↑ ${above}`];
-      const fits = (candidate: string, identity: number) => visibleWidth(candidate) + 1 + identity <= width;
-      label = candidates.find(candidate => fits(candidate, identityWidth))
-        ?? candidates.find(candidate => fits(candidate, Math.min(identityWidth, 8)));
-    }
+    this.#followSelection = false;
+    this.#scrollOffset = viewport.offset;
+    this.#maxScrollOffset = viewport.maxOffset;
+    const capacity = viewport.windowRows;
+    const start = viewport.offset + 1;
+    const below = Math.max(0, lines.length - start - capacity);
+    const above = viewport.offset;
+    const identityWidth = 2 + visibleWidth(safeText(snapshot.sessionLabel ?? "Fabric"));
+    const labels = above > 0 ? [`↑ ${above} more`, `↑ ${above}`] : [];
+    const fits = (label: string, identity: number) => visibleWidth(label) + 1 + identity <= width;
+    const label = labels.find(label => fits(label, identityWidth))
+      ?? labels.find(label => fits(label, Math.min(identityWidth, 8)));
     // Fit the header against the reserved space, so hints are dropped whole
     // in priority order rather than cut off when the label is appended.
     const headerWidth = label && width >= visibleWidth(label) + 2 ? width - visibleWidth(label) - 1 : width;
     const header = headerWidth === width ? lines[0] ?? "" : this.#content(snapshot, width, headerWidth).lines[0] ?? "";
     const boundedHeader = label ? this.#withRightLabel(header, label, width) : truncateToWidth(header, width);
     const visibleLines = [boundedHeader, ...lines.slice(start, start + capacity).map(line => truncateToWidth(line, width))];
-    if (below > 0 && body >= 3) visibleLines.push(truncateToWidth(this.theme.fg("dim", `↓ ${below} more`), width));
+    if (viewport.hasCue) visibleLines.push(below > 0
+      ? truncateToWidth(this.theme.fg("dim", `↓ ${below} more`), width) : "");
     // Only participant rows, never the overflow footer, are pointer targets.
     this.#rows = rows.filter(row => row.line === 0 || (row.line >= start && row.line < start + capacity))
       .map(row => ({ ...row, line: row.line === 0 ? 0 : row.line - start + 1 }));
@@ -537,7 +557,7 @@ export class FabricWidget implements Component, Focusable {
       .filter((actor) => actor.worker && !isActiveStatus(actor.worker.status))
       .map((actor) => ({ ...actor.worker!, name: actor.name, actorId: actor.id }));
     const nestedCalls =
-      run?.calls.filter((call) => call.kind !== "agent" && call.kind !== "actor") ?? [];
+      run?.calls.filter((call) => !isRoutineInternalCall(call) && call.kind !== "agent" && call.kind !== "actor") ?? [];
     const shells = snapshot.shells ?? [];
     const liveShells = shells.filter(job => job.finishedAt === undefined);
     const recentShells = shells.filter(job => job.finishedAt !== undefined && isRecentWidgetCompletion(job.finishedAt, snapshot.now));

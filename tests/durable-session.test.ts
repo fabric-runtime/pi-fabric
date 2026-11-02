@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { MemoryStorage } from "@earendil-works/pi-durable";
+import { commitWrites } from "@earendil-works/pi-durable/testing";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
   AgentSession, createExtensionRuntime, createSyntheticSourceInfo, ModelRuntime, SessionManager, SettingsManager,
@@ -284,7 +285,7 @@ describe("durable public SDK host", () => {
     await expect(closing).rejects.toThrow("shutdown failed");
     expect(dispose).toHaveBeenCalledOnce();
     expect(storageClose).not.toHaveBeenCalled();
-    await f.storage.commit([{ type: "conversation", value: { id: await f.storage.mintId() } }], BACKGROUND_CONTEXT);
+    await commitWrites(f.storage, [{ type: "conversation", value: { id: await f.storage.mintId() } }], BACKGROUND_CONTEXT);
     // A rejected close remains idempotent; don't make afterEach rethrow it.
     cleanup.pop();
   });

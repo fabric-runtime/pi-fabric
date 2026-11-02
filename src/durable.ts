@@ -49,14 +49,14 @@ async function runtime(): Promise<Runtime> {
     const require = createRequire(import.meta.url);
     for (const name of ["@earendil-works/pi-durable", "@earendil-works/chord"]) {
       const metadata = require(`${name}/package.json`) as { version?: string };
-      if (metadata.version !== "1.4.0") throw new Error(`Unsupported ${name} version ${metadata.version ?? "unknown"}; expected 1.4.0`);
+      if (!["1.4.0", "1.5.0"].includes(metadata.version ?? "")) throw new Error(`Unsupported ${name} version ${metadata.version ?? "unknown"}; expected 1.4.0 or 1.5.0`);
     }
     return Promise.all([import("@earendil-works/pi-durable"), import("@earendil-works/chord/context")]);
   })
     .then(([durable, context]) => ({ durable, context }))
     .catch((cause: unknown) => {
       runtimePromise = undefined;
-      throw new Error(`Pi durable runner requires pinned dependencies @earendil-works/pi-durable@1.4.0 and @earendil-works/chord@1.4.0: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+      throw new Error(`Pi durable runner requires tested dependencies @earendil-works/pi-durable and @earendil-works/chord (1.4.0 or 1.5.0): ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     });
 }
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -213,7 +213,11 @@ export function createPiDurableRunner(options: PiDurableRunnerOptions): PiDurabl
     run.reporters.add(reporter);
     if (!run.watch) {
       run.watch = await conversation.watch(ctx);
-      run.watch.start(async view => { for (const target of run.reporters) report(view, target); });
+      run.watch.start(async call => {
+        // Pi 1.5 uses tagged watch calls; 1.4 passed the view directly.
+        const view = "kind" in call ? (call.kind === "value" ? call.value : undefined) : call;
+        if (view) for (const target of run.reporters) report(view, target);
+      });
     }
     report(run.watch.value, reporter);
     if (!run.observing) {

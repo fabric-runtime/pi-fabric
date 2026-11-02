@@ -1,3 +1,4 @@
+import { isRoutineInternalCall } from "../core/call-presentation.js";
 import type { FabricKernel } from "../runtime/kernel.js";
 import type { FabricAssessmentTraceV1 } from "./assessment.js";
 import {
@@ -83,6 +84,8 @@ export interface FabricOmittedCalls {
   done: number;
   /** How many omitted calls failed (absent in older records). */
   failed?: number;
+  /** Successful internal plumbing among these raw omitted calls; excluded only by UI projections. */
+  internal?: number;
 }
 
 const serializedBytes = (value: unknown): number =>
@@ -156,6 +159,8 @@ export const createFabricPersistedExecutionDetails = (input: {
     details.omittedCalls = {
       count: omitted.count + 1,
       done: omitted.done + (dropped.success !== undefined ? 1 : 0),
+      ...((omitted.internal ?? 0) + Number(isRoutineInternalCall(dropped)) > 0
+        ? { internal: (omitted.internal ?? 0) + Number(isRoutineInternalCall(dropped)) } : {}),
       ...((omitted.failed ?? 0) + (dropped.success === false ? 1 : 0) > 0
         ? { failed: (omitted.failed ?? 0) + (dropped.success === false ? 1 : 0) } : {}),
     };
@@ -284,11 +289,13 @@ export const readFabricExecutionRenderDetails = (
 
 const omittedCalls = (value: unknown): { omittedCalls: FabricOmittedCalls } | undefined => {
   if (!isRecord(value)) return undefined;
-  const { count, done, failed } = value;
+  const { count, done, failed, internal } = value;
   if (typeof count !== "number" || !Number.isInteger(count) || count <= 0) return undefined;
   const finished = typeof done === "number" && Number.isInteger(done) ? Math.min(Math.max(0, done), count) : 0;
   const failures = typeof failed === "number" && Number.isInteger(failed) ? Math.min(Math.max(0, failed), finished) : 0;
-  return { omittedCalls: { count, done: finished, ...(failures > 0 ? { failed: failures } : {}) } };
+  const plumbing = typeof internal === "number" && Number.isInteger(internal)
+    ? Math.min(Math.max(0, internal), finished - failures) : 0;
+  return { omittedCalls: { count, done: finished, ...(failures > 0 ? { failed: failures } : {}), ...(plumbing > 0 ? { internal: plumbing } : {}) } };
 };
 
 /** Byte budget for the call audits in one fabric_exec progress update. */
@@ -377,10 +384,12 @@ export const createFabricPartialExecutionDetails = (input: {
   const audits = [...kept.keys()].sort((left, right) => left - right).map((index) => kept.get(index)!);
   let omittedDone = 0;
   let omittedFailed = 0;
+  let omittedInternal = 0;
   for (let index = 0; index < total; index++) {
     if (!kept.has(index)) {
       if (input.audits[index]!.success !== undefined) omittedDone++;
       if (input.audits[index]!.success === false) omittedFailed++;
+      if (isRoutineInternalCall(input.audits[index]!)) omittedInternal++;
     }
   }
   const omitted = total - audits.length;
@@ -392,7 +401,7 @@ export const createFabricPartialExecutionDetails = (input: {
     ...(input.deadlineAt !== undefined ? { deadlineAt: input.deadlineAt } : {}),
     phases: [],
     audits,
-    ...(omitted > 0 ? { omittedCalls: { count: omitted, done: omittedDone, ...(omittedFailed > 0 ? { failed: omittedFailed } : {}) } } : {}),
+    ...(omitted > 0 ? { omittedCalls: { count: omitted, done: omittedDone, ...(omittedFailed > 0 ? { failed: omittedFailed } : {}), ...(omittedInternal > 0 ? { internal: omittedInternal } : {}) } } : {}),
   };
   // Audits take at most 128 KiB, and each copy of the 8,001-code-unit
   // progress string takes at most six bytes per code unit in JSON. This

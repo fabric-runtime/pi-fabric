@@ -3,7 +3,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { projectAgentTranscript } from "../src/ui/transcript.js";
 import type { FabricDashboardSnapshot, FabricUiAgent } from "../src/ui/types.js";
-import { FabricWidget, shouldShowFabricWidget, type FabricWidgetInteraction, type FabricWidgetRow } from "../src/ui/widget.js";
+import { FabricWidget, shouldShowFabricWidget, widgetViewport, type FabricWidgetInteraction, type FabricWidgetRow } from "../src/ui/widget.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -111,6 +111,78 @@ describe("agent transcript projection", () => {
 });
 
 describe("Fabric agent list", () => {
+  const wheel = (widget: FabricWidget, delta: number, y = 2, x = 4) => widget.handleMouse({
+    type: "wheel", button: "none", x, y, screenX: x, screenY: y, width: 100, height: 6,
+    shift: false, alt: false, ctrl: false, wheelDelta: delta,
+  });
+
+  it("reserves the overflow slot independently of scroll position", () => {
+    expect(widgetViewport(0, 4, 10)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 0, offset: 0 });
+    expect(widgetViewport(2, 4, 10)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 0, offset: 0 });
+    for (const offset of [0, 1, 7, 99]) {
+      expect(widgetViewport(10, 4, offset)).toEqual({ windowRows: 3, hasCue: true, maxOffset: 7, offset: Math.min(offset, 7) });
+    }
+  });
+
+  it("scrolls only inside the overflowing widget and clamps at both ends without height jitter", () => {
+    const current = manyAgents(8); current.sessionLabel = "OS-3";
+    const { widget } = setup({ current, maxRows: 6 });
+    const first = widget.render(100);
+    expect(first).toHaveLength(6);
+    expect(first[1]).toContain("OS-3");
+    expect(first[1]).not.toContain("more");
+    expect(first[2]).toContain("agent-0");
+    expect(first.at(-1)).toBe("↓ 5 more");
+    for (const [y, x] of [[0, 4], [-1, 4], [6, 4], [2, -1], [2, 100]]) {
+      expect(wheel(widget, 1, y, x)).toBeUndefined();
+    }
+    expect(wheel(widget, 2)).toEqual({ handled: true, render: true });
+    const middle = widget.render(100);
+    expect(middle).toHaveLength(first.length);
+    expect(middle[1]).toMatch(/↑ 2 more$/);
+    expect(middle[1]).not.toMatch(/↓ \d+ more/);
+    expect(middle[2]).toContain("agent-2");
+    expect(middle.at(-1)).toBe("↓ 3 more");
+    expect(wheel(widget, 100)).toEqual({ handled: true, render: true });
+    const last = widget.render(100);
+    expect(last).toHaveLength(first.length);
+    expect(last[1]).toMatch(/↑ 5 more$/);
+    expect(last[4]).toContain("agent-7");
+    expect(last.at(-1)).toBe("");
+    expect(wheel(widget, 100)).toEqual({ handled: true, render: false });
+    wheel(widget, -100);
+    expect(widget.render(100)).toEqual(first);
+    expect(wheel(widget, -100)).toEqual({ handled: true, render: false });
+  });
+
+  it("reclamps on resize and child removal, grows to the cap, and does not pad idle content", () => {
+    let rows = 12;
+    const current = manyAgents(0); current.sessionLabel = "OS-3";
+    const widget = new FabricWidget(theme, () => current, 6, () => rows, undefined, { release() {}, requestRender() {} });
+    expect(widget.render(100)).toHaveLength(2);
+    expect(wheel(widget, 1)).toBeUndefined();
+    current.agents = manyAgents(2).agents; widget.invalidate();
+    expect(widget.render(100)).toHaveLength(4);
+    expect(wheel(widget, 1)).toBeUndefined();
+    current.agents = manyAgents(20).agents; widget.invalidate();
+    expect(widget.render(100)).toHaveLength(6);
+    wheel(widget, 100); widget.render(100);
+    for (const width of [1, 2, 8, 20, 100]) {
+      const lines = widget.render(width);
+      expect(lines).toHaveLength(6);
+      expect(lines.every(line => visibleWidth(line) <= width)).toBe(true);
+    }
+    rows = 8;
+    const small = widget.render(100);
+    expect(small).toHaveLength(4);
+    expect(small[2]).toContain("agent-17");
+    expect(small.at(-1)).toMatch(/^↓ /);
+    current.agents = manyAgents(1).agents; widget.invalidate();
+    expect(widget.render(100)).toHaveLength(3);
+    expect(widget.render(100)[2]).toContain("agent-0");
+    current.agents = []; widget.invalidate();
+    expect(widget.render(100)).toHaveLength(2);
+  });
   it("opens the selected participant on Enter, as in Claude Code", () => {
     const current = snapshot();
     current.agents = [{ ...agent("agent-1", "security-reviewer"), model: "anthropic/claude-sonnet-5-5" }];
@@ -320,7 +392,7 @@ describe("Fabric agent list", () => {
     expect(forwarded).toEqual(["x", "\x03"]);
   });
 
-  it("uses its terminal share while focused and keeps every line inside the width", () => {
+  it("keeps its configured cap while focused and every line inside the width", () => {
     const { widget } = setup({ current: manyAgents(30), terminalRows: 40 });
     const collapsed = widget.render(100);
     expect(collapsed).toHaveLength(6);
@@ -328,7 +400,7 @@ describe("Fabric agent list", () => {
     widget.focused = true;
     widget.selectFirst();
     const focused = widget.render(100);
-    expect(focused).toHaveLength(20);
+    expect(focused).toHaveLength(6);
     for (const width of [20, 40, 100]) {
       expect(widget.render(width).every((line) => visibleWidth(line) <= width)).toBe(true);
     }
@@ -355,8 +427,10 @@ describe("Fabric agent list", () => {
     expect(opened.at(-1)?.id).toBe("agent-1");
     for (let i = 0; i < 10; i++) widget.handleInput("\x1b[B");
     const end = widget.render(40);
-    expect(end[1]).toMatch(/↑ 3 more$/);
-    expect(end.at(-1)).toMatch(/^● agent-5/);
+    expect(end[1]).toMatch(/↑ 4 more$/);
+    expect(end[3]).toMatch(/^● agent-5/);
+    expect(end.at(-1)).toBe("");
+    expect(end).toHaveLength(initial.length);
     expect(end.join("\n")).not.toContain("↓ ");
     for (const width of [1, 2, 8, 12, 40]) {
       expect(widget.render(width).every(line => visibleWidth(line) <= width)).toBe(true);
@@ -382,13 +456,12 @@ describe("Fabric agent list", () => {
         expect(screen[1]).toContain("↑ ");
         if (rows === 3) {
           expect(screen).toHaveLength(3);
-          expect(screen[1]).toContain("↓ ");
+          expect(screen[1]).not.toMatch(/↓ \d+ more/);
           expect(screen[2]).toMatch(/^● agent-2/);
         } else expect(screen.at(-1)).toMatch(/^↓ \d+ more$/);
         const beforeLabel = screen[1]!.split("↑ ")[0]!;
         const hints = beforeLabel.split(" · ").slice(1).map(s => s.trim()).filter(Boolean);
-        const expected = rows === 3 ? (width === 45 ? ["⏎ open"] : [])
-          : width === 45 ? ["⏎ open", "↑↓ select"] : width === 35 ? ["⏎ open"] : [];
+        const expected = width === 45 ? ["⏎ open", "↑↓ select"] : width === 35 ? ["⏎ open"] : [];
         expect(hints).toEqual(expected);
       }
       widget.render(45);
@@ -421,7 +494,8 @@ describe("Fabric agent list", () => {
         expect(screen[2]).toMatch(/^● agent-11/);
         if (sessionLabel !== "Release-candidate") {
           expect(screen[1]).toContain(`○ ${sessionLabel ?? "Fabric"}`);
-          expect(screen[1]).toMatch(/↑ 11(?: more)? · ↓ 18(?: more)?$/);
+          expect(screen[1]).toMatch(/↑ 11(?: more)?$/);
+          expect(screen[1]).not.toContain("↓");
         } else if (width >= 24) {
           expect(screen[1]).toContain("○ Release-candidate");
           expect(screen[1]).toMatch(/↑ 11(?: more)?$/);
@@ -449,8 +523,8 @@ describe("Fabric agent list", () => {
     expect(middle[1]).toMatch(/↑ 1 more\x1b\[39m$/);
     expect(screen(40).slice(2)).toEqual(["○ agent-1", "● agent-2", "↓ 1 more"]);
     widget.handleInput("\x1b[B");
-    expect(widget.render(40)[1]).toMatch(/↑ 1 more\x1b\[39m$/);
-    expect(screen(40).slice(2)).toEqual(["○ agent-1", "○ agent-2", "● agent-3"]);
+    expect(widget.render(40)[1]).toMatch(/↑ 2 more\x1b\[39m$/);
+    expect(screen(40).slice(2)).toEqual(["○ agent-2", "● agent-3", ""]);
     for (const width of [1, 4, 8, 12, 40]) expect(widget.render(width).every(line => visibleWidth(line) <= width)).toBe(true);
   });
 
@@ -464,7 +538,8 @@ describe("Fabric agent list", () => {
     widget.focused = true; widget.selectFirst(); widget.render(100);
     for (let index = 0; index < 40; index++) widget.handleInput("\x1b[B");
     const shown = widget.render(100);
-    expect(shown).toHaveLength(6); expect(shown.at(-1)).toMatch(/^● shell-29/);
+    expect(shown).toHaveLength(6); expect(shown[4]).toMatch(/^● shell-29/);
+    expect(shown.at(-1)).toBe("");
     widget.handleInput("\r"); expect(opened.at(-1)?.id).toBe("shell-29-0000");
     const firstVisible = /shell-\d+/.exec(shown[2]!)![0];
     expect(mouse(widget, "click", 2)).toEqual({ handled: true, render: true });
@@ -496,7 +571,7 @@ describe("Fabric agent list", () => {
     const lines = widget.render(100);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^● Fabric /);
-    expect(lines[0]).toMatch(/↓ 2 more$/);
+    expect(lines[0]).not.toMatch(/↓ \d+ more/);
     // Clicks map to rows without the spacer offset.
     expect(mouse(widget, "click", 0)).toBeUndefined();
     expect(opened).toEqual([]);

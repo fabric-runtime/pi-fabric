@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 export default async function (pi: ExtensionAPI) {
   const { fauxProvider, fauxAssistantMessage } = await import(process.env.DURABLE_TEST_FAUX_MODULE!) as typeof import("@earendil-works/pi-ai/providers/faux");

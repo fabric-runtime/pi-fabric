@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createAssistantMessageEventStream, Type, type AssistantMessage } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 // Offline provider with two models and a switch hook. Every entry into the
 // provider's stream function is appended to MODEL_SWITCH_CALL_LOG, so a test can

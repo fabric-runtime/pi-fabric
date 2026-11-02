@@ -16,7 +16,7 @@ import {
 export const BOOLEANS = ["true", "false"] as const;
 export const APPROVAL_MODES = ["allow", "ask", "auto", "deny"] as const;
 export const RUNNERS = ["pi-durable", "pi", "claude", "veda"] as const;
-export const TRANSPORTS = ["auto", "process", "tmux", "screen", "localterm", "herdr"] as const;
+export const TRANSPORTS = ["auto", "process", "tmux", "screen", "localterm", "herdr", "herdr-core"] as const;
 export const WIDGET_MODES = ["auto", "always", "hidden"] as const;
 export const TOOL_DISPLAY_MODES = ["full", "compact"] as const;
 export const RESULT_FORMATS = ["auto", "yaml", "json", "text"] as const;

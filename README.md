@@ -154,7 +154,7 @@ Press **↓** in an empty editor and **Enter** on an agent in the list at the bo
 
 Fabric includes a live activity surface in Pi:
 
-- A compact widget above the chat (like `pi-supervisor`) whose header follows the current phase while its rows show active/completed agents, active actors, and their recent nested tool or code-change activity.
+- A compact activity list below Pi's footer whose header follows the current phase and whose rows show active/completed agents, actors, and shell tasks. Mouse-wheel and keyboard navigation stay within the configured height; upward overflow appears in the header and downward overflow stays at the bottom.
 - `/fabric` (or `/fabric dashboard`): opens the **Activity** and **Topology** views. The user-facing Pi session appears as **Main**. You can queue or steer participants and inspect the project topology.
 - `/fabric settings`: mirrors Pi's `/settings` and writes changes to `fabric.json`. TUI hosts get the searchable settings component; RPC hosts get the same nested sections, value/input/model pickers, list editors, and project/global save scopes through native dialog primitives.
 - Code previews automatically highlight `.bend` files using Bend 2 syntax, including laws and proof terms. The grammar loads only when needed, with no Bend installation required.
