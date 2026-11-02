@@ -70,12 +70,12 @@ describe("Fabric dock with native Pi fullscreen layout", () => {
     expect(h.context.ui.notify).not.toHaveBeenCalled();
   });
 
-  it("shrinks through zero rows and restores the same list after a resize, even while focused", () => {
+  it("caps the configured height, shrinks through zero rows and restores the same list while focused", () => {
     const h = mount(); h.controller.start(h.context);
     const list = h.list(); list.focused = true;
     h.terminal.rows = 30;
     expect(h.frame().join("\n")).toContain(STATUS);
-    expect(list.render(80).length).toBeGreaterThan(6);
+    expect(list.render(80)).toHaveLength(6);
     h.terminal.rows = 16;
     expect(h.frame().join("\n")).toContain(STATUS);
     expect(list.render(80)).toHaveLength(2);
@@ -85,7 +85,7 @@ describe("Fabric dock with native Pi fullscreen layout", () => {
     expect(list.hasRows()).toBe(false);
     h.terminal.rows = 30;
     expect(h.frame().join("\n")).toContain(STATUS);
-    expect(list.render(80).length).toBeGreaterThan(6);
+    expect(list.render(80)).toHaveLength(6);
     expect(h.list()).toBe(list);
   });
 
