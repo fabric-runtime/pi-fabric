@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { MeshIdentity } from "./mesh/store.js";
+import { notifyAgentFeedback, serializableFeedbackData } from "./feedback.js";
 
 const MAIN_AGENT_ALIAS = "main";
 export type FabricAgentMessageDelivery = "steer" | "followUp";
@@ -93,15 +94,6 @@ export const resolveFabricIdentity = (
 const escapeXmlText = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-const serializableData = (value: unknown): unknown => {
-  try {
-    const serialized = JSON.stringify(value);
-    return serialized === undefined ? undefined : JSON.parse(serialized) as unknown;
-  } catch {
-    return { fabricUnserializable: true };
-  }
-};
-
 export class MainAgentController implements FabricMainAgentTarget {
   readonly startedAt = Date.now();
 
@@ -111,6 +103,7 @@ export class MainAgentController implements FabricMainAgentTarget {
     readonly local: boolean,
     readonly cwd: string,
     readonly sessionId?: string,
+    readonly context?: Pick<ExtensionContext, "hasUI" | "ui">,
   ) {}
 
   matches(id: string): boolean {
@@ -170,29 +163,33 @@ export class MainAgentController implements FabricMainAgentTarget {
     const message = request.message.trim();
     if (!message) throw new Error("Main agent message must not be empty");
     const messageId = randomUUID();
-    const data = request.data === undefined ? undefined : serializableData(request.data);
+    const data = request.data === undefined ? undefined : serializableFeedbackData(request.data);
     this.pi.sendMessage(
       {
         customType: "pi-fabric-agent-message",
         content: [
-          `<fabric-agent-message from_name=${JSON.stringify(request.from.name)} from_id=${JSON.stringify(request.from.id)} from_kind=${JSON.stringify(request.from.kind)}>`,
+          `<fabric-agent-message from_name=${JSON.stringify(escapeXmlText(request.from.name))} from_id=${JSON.stringify(escapeXmlText(request.from.id))} from_kind=${JSON.stringify(escapeXmlText(request.from.kind))}>`,
           escapeXmlText(message),
           data === undefined ? undefined : `<data>${escapeXmlText(JSON.stringify(data))}</data>`,
           "</fabric-agent-message>",
         ]
           .filter((line): line is string => Boolean(line))
           .join("\n"),
-        display: true,
+        display: false,
         details: {
           id: messageId,
           from: structuredClone(request.from),
-          delivery: request.delivery,
+          delivery: "steer",
+          requestedDelivery: request.delivery,
           triggerTurn: request.triggerTurn ?? true,
           ...(data === undefined ? {} : { data }),
         },
       },
-      { deliverAs: request.delivery, triggerTurn: request.triggerTurn ?? true },
+      // Incoming agent feedback must not wait for Main to finish its run.
+      // Pi still honors triggerTurn=false (including passive idle delivery).
+      { deliverAs: "steer", triggerTurn: request.triggerTurn ?? true },
     );
+    notifyAgentFeedback(this.context, request.from.name || request.from.id, message);
     return { queued: true, messageId, routed: "main" };
   }
 }

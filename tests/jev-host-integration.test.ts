@@ -49,7 +49,7 @@ describe("Main lifecycle to Jev observer integration", () => {
       extensionContext: context, update() {}, approve: async () => {}, audits: [], maxResultChars: 32_768,
     };
     const spawn = (code: string, requires = ["jev.advise"]) => runtime.registry.invoke("jev.spawn", {
-      input: null, observe: { events: ["turn_end"], delivery: "steer" },
+      input: null, observe: { events: ["turn_end"], delivery: "followUp" },
       program: { name: "turn-advisor", code, requires, inputSchema: {}, outputSchema: {} },
     }, invocation) as Promise<JevRunInfo>;
     const wait = (id: string) => runtime.registry.invoke("jev.wait", { id }, invocation);
@@ -59,8 +59,8 @@ describe("Main lifecycle to Jev observer integration", () => {
       emit("turn_end", { type: "turn_end", turnIndex: 0, message: { role: "assistant", content: [{ type: "text", text: "private unselected response" }] }, toolResults: [] });
       expect(await wait(run.id)).toMatchObject({ state: "completed", result: { delivered: true }, observation: { consumed: 1, adviceDelivered: 1 } });
       expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        customType: "pi-fabric-jev", display: true, content: expect.stringContaining("Check &lt;tests&gt;"),
-        details: expect.objectContaining({ runId: run.id }),
+        customType: "pi-fabric-jev", display: false, content: expect.stringContaining("Check &lt;tests&gt;"),
+        details: expect.objectContaining({ runId: run.id, delivery: { mode: "steer", requestedMode: "followUp", triggerTurn: false } }),
       }), { deliverAs: "steer", triggerTurn: false });
       expect(JSON.stringify(sendMessage.mock.calls)).not.toContain("private unselected");
 

@@ -71,7 +71,7 @@ Lifecycle subscriptions are durable, source-qualified mesh routes. They let Main
 - `agents.subscribe({ from, events, to?, delivery, triggerTurn, once? })` creates a subscription. `from` is an exact participant id; `"main"` means the caller's lineage root. `to` defaults to that Main id.
 - `agents.subscriptions({ from?, to? })` lists project subscriptions.
 - `agents.unsubscribe({ id })` removes one.
-- `delivery` is `steer` or `followUp`. State `triggerTurn: true | false` explicitly; it controls whether delivery to an idle Main starts a turn.
+- `delivery` is `steer` or `followUp`. Incoming Main feedback normalizes both to hidden steering (with a bounded sender notification); one-shot and actor target controls keep their existing semantics. State `triggerTurn: true | false` explicitly; false never starts idle Main. Actor output also uses hidden steering for legacy follow-up policies; `mailbox` and `nextTurn` remain intentional deferral choices.
 - `once: true` removes the subscription after its first successful matching delivery. Omitted keeps it active.
 - Creation starts at the current mesh sequence, so old lifecycle events are not replayed. Delivery cursors persist across owner restarts. Delivery is at-least-once across a crash between message insertion and cursor persistence; use the lifecycle event `id` to deduplicate side effects.
 
@@ -142,7 +142,7 @@ Every live root, one-shot/recursive agent, and persistent actor is represented i
 - `agents.peers()` remains the compatibility view of other live roots as `Peer <session-prefix>`. It is derived from `agents.members`, not maintained by a second registry.
 - A `<fabric-peers>` message in the transcript is a host notice, not a user request: it lists the other root sessions sharing this project's files by label and participant id, and is sent only when that set changes. Treat file or git changes you did not make as possibly theirs, and pass a listed id to `agents.steer` to coordinate.
 - `agents.status({ id })` accepts any known participant id. Local runs/actors return full local detail; remote participants return their bounded directory summary.
-- `agents.steer({ id, message, data? })` and `agents.followUp(...)` target Main, a live one-shot child, or an actor without discarding context.
+- `agents.steer({ id, message, data? })` and `agents.followUp(...)` target Main, a live one-shot child, or an actor without discarding context. Incoming Main feedback always uses hidden steering, including when the sender requested `followUp`; the full message and structured data remain in context and audit, while UI notifications contain only a bounded sender/text preview. One-shot and actor mailbox controls retain their chosen operation.
 - `agents.stop({ id })` can stop a local or remotely owned agent/actor when its participant advertises `"stop"`. It returns the local agent result, local actor info, or an acknowledged remote control result according to the target.
 - Provider-registered work appears as `kind: "provider"` members with ids `provider:<provider>:<id>`. `agents.stop`, `agents.steer`, and `agents.followUp` accept those ids and call the provider; stop returns `{ ref, outcome: "confirmed" | "unconfirmed", detail? }`. Cancelling or timing out a program stops the non-detached provider work it started.
 - `agents.setSteeringMode({ id, mode })` / `agents.setFollowUpMode({ id, mode })` remain local one-shot controls.
@@ -155,7 +155,7 @@ const main = await agents.main();
 const project = await agents.members({ scope: "project" });
 const peerRoot = project.find((participant) => participant.kind === "root" && participant.id !== main.id);
 if (peerRoot) await agents.steer({ id: peerRoot.id, message: "Coordinate on the shared migration." });
-await agents.followUp({ id: main.id, message: "After the audit, reconcile the worker findings." });
+await agents.steer({ id: main.id, message: "Reconcile the worker findings." });
 const handle = await agents.spawn({ task: "Audit auth flows.", tools: ["read", "grep", "find", "ls"] });
 // Watch progress, then redirect between turns without losing the child's context.
 const s = await agents.status({ id: handle.id });
@@ -190,7 +190,7 @@ call override → session binding → project default → Fabric or runner defau
 - `topics` lists durable mesh topics to subscribe to (see `mesh.md`).
 - `responseMode` is `text` (every non-empty response becomes an outbox message) or `directive` (validated `{ action, message?, data? }` where `action` is `silent`, `message`, or `stop`; the actor decides whether to intervene).
 - `delivery` is `mailbox`, `steer`, `followUp`, or `nextTurn`. An actor cannot escalate it in a response; the owner can replace it with `agents.setDeliveryPolicy({ id, delivery, triggerTurn, scope? })`.
-- `triggerTurn` is mandatory for `steer`/`followUp`: `true` starts Main when idle; `false` is passive and the delivered message visibly says it will not start Main. `mailbox`/`nextTurn` never start Main. `coalesce` is on by default.
+- `triggerTurn` is mandatory for `steer`/`followUp`: `true` starts Main when idle; `false` is passive and the hidden context message says it will not start Main. The UI receives only a bounded sender notification, not a chat bubble. `mailbox`/`nextTurn` never start Main. `coalesce` is on by default.
 - `validWhile` is an optional pure synchronous predicate checked before an activation runs and again before its result is delivered. It receives immutable `{ activation, current }` facts. Return `false` or `{ valid: false, reason? }` to record the activation as stale and suppress delivery; an invalidated blocking `agents.ask()` rejects. The predicate source persists with project actors and global templates, so it cannot use closures, tools, promises, or host APIs.
 - `timeoutMs` follows the same floor as one-shot agents: omit it normally and set it only above `agents.timeoutMs` when an activation needs longer.
 - `tools` is the actor's persisted allowlist and defaults to `agents.defaultTools`. Replace it for future activations with `agents.setTools({ id, tools })`; an empty list disables optional tools. Pi actors retain the host-required `fabric_exec` tool unless created with `extensions: false`. Use `scope: "global"` to update a reusable template instead.

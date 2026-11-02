@@ -105,11 +105,12 @@ describe("MainAgentController", () => {
         content: expect.stringContaining("inspect &lt;unsafe&gt; &amp; continue"),
         details: expect.objectContaining({
           from: { id: "actor-1", name: "Supervisor", kind: "actor" },
-          delivery: "followUp",
+          delivery: "steer",
+          requestedDelivery: "followUp",
           data: { priority: 2 },
         }),
       }),
-      { deliverAs: "followUp", triggerTurn: true },
+      { deliverAs: "steer", triggerTurn: true },
     );
 
     const longMessage = "x".repeat(20_000);
@@ -132,7 +133,7 @@ describe("MainAgentController", () => {
       triggerTurn: false,
     });
     expect(sendMessage.mock.calls.at(-1)?.[1]).toEqual({
-      deliverAs: "followUp",
+      deliverAs: "steer",
       triggerTurn: false,
     });
   });

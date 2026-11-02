@@ -313,7 +313,7 @@ class ResidentHost {
         void this.#queueDelivery(
           { id: result.id, name: result.name, kind: "agent" },
           `Fabric agent ${result.id.slice(0, 8)} ${result.status} after ${Math.round(durationMs / 1_000)}s: ${summary}`,
-          "followUp",
+          "steer",
           true,
           result,
           result.id,

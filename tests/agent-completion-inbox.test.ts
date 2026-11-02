@@ -75,6 +75,19 @@ describe("AgentCompletionInbox", () => {
     expect(h.sendMessage).toHaveBeenCalledOnce();
   });
 
+  it.each(["headless", "broken UI"])("delivers hidden steering once with %s", mode => {
+    const h = harness();
+    if (mode === "headless") Object.assign(h.context, { hasUI: false });
+    else h.notify.mockImplementation(() => { throw new Error("closed UI"); });
+    const delivered = vi.fn();
+    expect(() => h.inbox.enqueue(result("a"), delivered)).not.toThrow();
+    h.boundary(); h.boundary();
+    expect(h.sendMessage).toHaveBeenCalledOnce();
+    expect(h.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ display: false }), { deliverAs: "steer", triggerTurn: true });
+    expect(delivered).toHaveBeenCalledOnce();
+    if (mode === "headless") expect(h.notify).not.toHaveBeenCalled();
+  });
+
   it("retracts a completion consumed by a later wait in the same tool batch", async () => {
     const h = harness();
     h.inbox.enqueue(result("a"));

@@ -20,8 +20,8 @@ const POLICIES: Array<FabricActorDeliveryPolicy & { value: string; label: string
   { value: "mailbox", label: "Mailbox only", description: "keep output in actor history", delivery: "mailbox", triggerTurn: false },
   { value: "steer-passive", label: "Steer · passive", description: "deliver now without starting idle Main", delivery: "steer", triggerTurn: false },
   { value: "steer-active", label: "Steer · resume Main", description: "deliver now and start Main when idle", delivery: "steer", triggerTurn: true },
-  { value: "followUp-passive", label: "Follow-up · passive", description: "deliver after the run without starting idle Main", delivery: "followUp", triggerTurn: false },
-  { value: "followUp-active", label: "Follow-up · resume Main", description: "deliver after the run and start Main when idle", delivery: "followUp", triggerTurn: true },
+  { value: "followUp-passive", label: "Legacy follow-up · passive", description: "steering alias; never starts idle Main", delivery: "followUp", triggerTurn: false },
+  { value: "followUp-active", label: "Legacy follow-up · resume Main", description: "steering alias; starts Main when idle", delivery: "followUp", triggerTurn: true },
   { value: "next-turn", label: "Next user turn", description: "defer until the next user prompt", delivery: "nextTurn", triggerTurn: false },
 ];
 

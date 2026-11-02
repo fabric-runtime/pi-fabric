@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentRunResult } from "./types.js";
+import { notifyAgentFeedback } from "../feedback.js";
 
 export const AGENT_COMPLETION_MESSAGE_TYPE = "pi-fabric-agent-complete";
 const SUMMARY_CHARS = 4_000;
@@ -92,7 +93,7 @@ export class AgentCompletionInbox {
     if (this.#context.hasUI) {
       const failure = result.status !== "completed";
       const detail = failure && result.error ? `: ${oneLine(result.error).slice(0, 180)}` : "";
-      this.#context.ui.notify(`Agent ${oneLine(result.name).slice(0, 80)} ${result.status}${detail}`, failure ? "warning" : "info");
+      notifyAgentFeedback(this.#context, result.name, `${result.status}${detail}`, failure ? "warning" : "info");
     }
     this.#schedule();
   }

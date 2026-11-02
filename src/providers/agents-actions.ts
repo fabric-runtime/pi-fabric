@@ -607,7 +607,7 @@ export const AGENTS_ACTION_DESCRIPTORS: FabricActionDescriptor[] = [
   {
     name: "followUp",
     description:
-      "Queue a follow-up for Main or a running one-shot agent, or enqueue a persistent actor mailbox message. The stable id alias main targets the root user-facing Pi session. Non-local targets route over the project mesh.",
+      "Queue a follow-up for a running one-shot agent, or enqueue a persistent actor mailbox message. Incoming Main feedback is delivered as hidden steering with a sender notification, even through this legacy followUp method. The stable id alias main targets the root user-facing Pi session. Non-local targets route over the project mesh.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" }, message: { type: "string" }, data: {} },
