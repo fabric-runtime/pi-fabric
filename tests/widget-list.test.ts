@@ -160,12 +160,32 @@ describe("Fabric agent list", () => {
       { ...agent("reviewer", "reviewer"), startedAt: at(1_000) },
       // Started after reviewer, so creation order alone would draw it under reviewer.
       { ...agent("api", "api-audit"), parentId: "planner", nestingDepth: 1, startedAt: at(2_000) },
+      { ...agent("api-child", "api-child"), parentId: "api", startedAt: at(2_500) },
       { ...agent("ui", "ui-audit", "completed"), parentId: "planner", nestingDepth: 1, startedAt: at(3_000), finishedAt: Date.now() },
       { ...agent("fixture", "fixture", "failed"), parentId: "ui", nestingDepth: 2, startedAt: at(4_000), finishedAt: Date.now(), error: "timed out" },
     ];
     const { widget } = setup({ current, maxRows: 10 });
-    const rows = widget.render(160).slice(2).map((line) => line.replace(/^( *○ \S+).*$/, "$1"));
-    expect(rows).toEqual(["○ planner", "  ○ api-audit", "  ○ ui-audit", "    ○ fixture", "○ reviewer"]);
+    const rows = widget.render(160).slice(2).map((line) => line.replace(/^(.*?○ \S+).*$/, "$1"));
+    expect(rows).toEqual(["○ planner", "├─ ○ api-audit", "│  └─ ○ api-child", "└─ ○ ui-audit", "   └─ ○ fixture", "○ reviewer"]);
+    widget.focused = true;
+    widget.selectFirst();
+    widget.handleInput("\x1b[B");
+    expect(widget.render(160)[3]).toMatch(/^├─ ● api-audit/);
+  });
+
+  it("keeps deep nested rows readable on narrow terminals and promotes missing parents", () => {
+    const current = snapshot();
+    current.actors = [];
+    current.agents = Array.from({ length: 8 }, (_, index) => ({
+      ...agent(`deep-${index}`, `node${index}`),
+      parentId: index === 0 ? "missing" : `deep-${index - 1}`,
+    }));
+    const { widget } = setup({ current, maxRows: 12 });
+    const rows = widget.render(24);
+    expect(rows[2]).toMatch(/^○ node0/);
+    expect(rows[9]).toContain("○ node7");
+    expect(rows[9]).toMatch(/^…/);
+    expect(rows.every((line) => visibleWidth(line) <= 24)).toBe(true);
   });
 
   it("shows a running agent's milestone in place of its tool name", () => {

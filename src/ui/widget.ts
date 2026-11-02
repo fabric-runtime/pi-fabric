@@ -142,7 +142,7 @@ const fitLine = (
 };
 
 /** Parents before their children, so nesting reads as a tree; `depth` is the indent within the listed set. */
-const treeOrder = (agents: FabricUiAgent[]): Array<{ agent: FabricUiAgent; depth: number }> => {
+const treeOrder = (agents: FabricUiAgent[]): Array<{ agent: FabricUiAgent; depth: number; prefix: string }> => {
   const ids = new Set(agents.map((agent) => agent.id));
   const children = new Map<string, FabricUiAgent[]>();
   const roots: FabricUiAgent[] = [];
@@ -152,18 +152,21 @@ const treeOrder = (agents: FabricUiAgent[]): Array<{ agent: FabricUiAgent; depth
       children.set(parentId, [...(children.get(parentId) ?? []), agent]);
     } else roots.push(agent);
   }
-  const ordered: Array<{ agent: FabricUiAgent; depth: number }> = [];
+  const ordered: Array<{ agent: FabricUiAgent; depth: number; prefix: string }> = [];
   const seen = new Set<string>();
-  const visit = (agent: FabricUiAgent, depth: number): void => {
+  const visit = (agent: FabricUiAgent, ancestors: boolean[], last: boolean): void => {
     if (seen.has(agent.id)) return;
     seen.add(agent.id);
-    ordered.push({ agent, depth });
-    for (const child of children.get(agent.id) ?? []) visit(child, depth + 1);
+    const depth = ancestors.length;
+    const prefix = depth === 0 ? "" : `${ancestors.slice(1).map((more) => more ? "│  " : "   ").join("")}${last ? "└─ " : "├─ "}`;
+    ordered.push({ agent, depth, prefix });
+    const descendants = (children.get(agent.id) ?? []).filter((child) => !seen.has(child.id));
+    descendants.forEach((child, index) => visit(child, [...ancestors, !last], index === descendants.length - 1));
   };
-  for (const root of roots) visit(root, 0);
+  for (const root of roots) visit(root, [], true);
   // Parents that point at each other leave a cycle with no root: list each such
   // agent as a root instead of hiding it.
-  for (const agent of agents) visit(agent, 0);
+  for (const agent of agents) visit(agent, [], true);
   return ordered;
 };
 
@@ -171,7 +174,7 @@ const agentLine = (
   theme: Theme,
   agent: FabricUiAgent,
   now: number,
-  depth: number,
+  prefix: string,
   selected: boolean,
   width: number,
 ): string => {
@@ -193,7 +196,10 @@ const agentLine = (
       : undefined,
   ].filter((value): value is string => Boolean(value));
   const name = safeText(agent.name);
-  const lead = `${"  ".repeat(depth)}${status} ${selected ? theme.bold(name) : theme.fg("muted", name)}`;
+  // Deep trees should not consume the whole row on narrow terminals.
+  const prefixBudget = Math.max(0, Math.floor(width / 3));
+  const compactPrefix = prefix.length <= prefixBudget ? prefix : prefixBudget >= 4 ? `…${prefix.slice(-(prefixBudget - 1))}` : "";
+  const lead = `${theme.fg("dim", compactPrefix)}${status} ${selected ? theme.bold(name) : theme.fg("muted", name)}`;
   return fitLine(theme, width, lead, { text: safeText(activity).replace(/\s+/g, " ").trim(), gap: "  ", color: "muted" }, metrics, []);
 };
 
@@ -591,7 +597,7 @@ export class FabricWidget implements Component, Focusable {
       this.#hints(hasRows),
     ));
 
-    const pushParticipant = (agent: FabricUiAgent, kind: "agent" | "actor", depth = 0): void => {
+    const pushParticipant = (agent: FabricUiAgent, kind: "agent" | "actor", prefix = ""): void => {
       const id = kind === "actor" ? agent.actorId ?? agent.id : agent.id;
       rows.push({
         id,
@@ -600,21 +606,21 @@ export class FabricWidget implements Component, Focusable {
         ...(agent.model ? { model: agent.model } : {}),
         line: lines.length,
       });
-      lines.push(agentLine(this.theme, agent, snapshot.now, depth, id === marked, width));
+      lines.push(agentLine(this.theme, agent, snapshot.now, prefix, id === marked, width));
     };
     // Trees with a running root come first, then retained ones; a child always
     // sits under its parent, whatever its own status.
-    const liveTrees: Array<{ agent: FabricUiAgent; depth: number }> = [];
-    const settledTrees: Array<{ agent: FabricUiAgent; depth: number }> = [];
+    const liveTrees: Array<{ agent: FabricUiAgent; depth: number; prefix: string }> = [];
+    const settledTrees: Array<{ agent: FabricUiAgent; depth: number; prefix: string }> = [];
     let liveRoot = false;
     for (const entry of treeOrder([...activeAgents, ...terminalAgents])) {
       if (entry.depth === 0) liveRoot = isActiveStatus(entry.agent.status);
       (liveRoot ? liveTrees : settledTrees).push(entry);
     }
-    for (const { agent, depth } of liveTrees) pushParticipant(agent, "agent", depth);
+    for (const { agent, prefix } of liveTrees) pushParticipant(agent, "agent", prefix);
     for (const agent of activeActorWorkers) pushParticipant(agent, "actor");
     for (const agent of terminalActorWorkers) pushParticipant(agent, "actor");
-    for (const { agent, depth } of settledTrees) pushParticipant(agent, "agent", depth);
+    for (const { agent, prefix } of settledTrees) pushParticipant(agent, "agent", prefix);
 
     // Shells follow participants. Every selectable row names an exact task;
     // Enter opens its detail, with no separate task-list overlay.
