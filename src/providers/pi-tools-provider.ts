@@ -644,8 +644,14 @@ export class PiToolsProvider implements FabricProvider {
       ...(pid !== undefined ? { pid } : {}),
       ...exited,
     });
+    // An auto hand-off ends only this wait. Say that the caller's timeout still
+    // bounds the process, and name the call that keeps waiting for it.
+    const timeoutSeconds = Number(executeArgs.timeout);
+    const waitNotice = !background && !exited && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+      ? ` Its timeout (${timeoutSeconds}s) bounds the process, not this wait; to wait for the result, call tools.call({ref:"tasks.wait",args:{id:"${job.id}",timeoutMs:300000}}) until it reports a terminal status.`
+      : "";
     const durableNotice = job.durable ? ` Durable: owned by the jev-fabric store at ${job.durable.home}; it keeps running if Pi exits and reattaches to this session on resume. Stop it explicitly with tasks.stop when no longer needed.` : "";
-    const output = appendShellHangNotice(job.snapshotText(), `${notice}\n[Task ${job.id}; /fabric tasks or tools.call({ref:"tasks.get",args:{id:"${job.id}"}}). ${monitor?.delivery === "ui" ? "UI-only monitor: will not wake the agent." : "Completion will notify this session; do not poll."}${durableNotice}]`);
+    const output = appendShellHangNotice(job.snapshotText(), `${notice}\n[Task ${job.id}; /fabric tasks or tools.call({ref:"tasks.get",args:{id:"${job.id}"}}). ${monitor?.delivery === "ui" ? "UI-only monitor: will not wake the agent." : "Completion will notify this session; do not poll."}${waitNotice}${durableNotice}]`);
     context.update(exited
       ? `${name}: ${exited.exitCode === null ? "ended" : `exited with code ${exited.exitCode}`} in the background`
       : `${name}: still running after ${Math.max(1, Math.round(elapsedMs / 1000))}s`);
