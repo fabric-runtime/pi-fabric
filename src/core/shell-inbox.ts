@@ -1,5 +1,5 @@
 import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult, ContextEvent, ExtensionAPI, ExtensionContext, ToolResultEvent, ToolResultEventResult } from "@earendil-works/pi-coding-agent";
-import type { FabricShellJobEvent, FabricShellJobInfo, FabricShellJobStore } from "./shell-jobs.js";
+import { hasWakeObserver, type FabricShellJobEvent, type FabricShellJobInfo, type FabricShellJobStore } from "./shell-jobs.js";
 
 export const SHELL_MESSAGE_TYPE = "pi-fabric-shell-event";
 export const SHELL_AWARENESS_MESSAGE_TYPE = "pi-fabric-shell-awareness";
@@ -99,6 +99,7 @@ export class ShellEventInbox {
       // Old-frontier jobs can finish, but must not wake a different branch.
       for (const job of jobs.live()) this.#ignored.add(job.id);
       this.#pending.clear();
+      for (const job of jobs.live()) if (job.options.observes) job.stop("Observation branch abandoned");
     });
   }
 
@@ -173,6 +174,13 @@ export class ShellEventInbox {
       if (type === "finished") this.#ignored.delete(job.id);
       return;
     }
+    // An attached wake observer owns notification delivery for its source.
+    if (type === "started" && job.observes?.kind === "task" && job.monitor?.delivery === "wake") this.#pending.delete(job.observes.id);
+    if ((type === "monitor" || type === "finished") && !job.observes && hasWakeObserver(this.jobs, "task", job.id)) return;
+    if (type === "finished" && job.observes?.kind === "task" && job.monitor?.delivery === "wake") {
+      this.#pending.delete(job.observes.id);
+      this.#pending.delete(job.id);
+    }
     // Reattached durable tasks were announced by the process that spilled them.
     if (type === "spilled") { if (!job.durable?.adopted) this.#unannounced.add(job.id); return; }
     if (type !== "finished" && type !== "monitor") return;
@@ -225,7 +233,7 @@ export class ShellEventInbox {
       this.#timer = undefined;
     }
     if (this.#context.hasUI) {
-      const rows = batch.slice(0, 3).map(({ job, type }) => `${job.tool === "fabric_exec" ? "Program" : "Shell"} ${job.id.slice(0, 8)} ${type === "monitor" ? "event" : job.status}: ${clean(job.description ?? job.command).slice(0, 100)}`);
+      const rows = batch.slice(0, 3).map(({ job, type }) => `${job.tool === "fabric_exec" ? "Program" : job.tool === "monitor" ? "Monitor" : "Shell"} ${job.id.slice(0, 8)} ${type === "monitor" ? "event" : job.status}: ${clean(job.description ?? job.command).slice(0, 100)}`);
       if (batch.length > 3) rows.push(`+${batch.length - 3} more · /fabric tasks`);
       this.#context.ui.notify(rows.join("\n"), batch.some(({ job }) => job.status === "failed" || job.status === "timed_out") ? "warning" : "info");
     }

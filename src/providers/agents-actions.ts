@@ -1,3 +1,4 @@
+import { observationAction } from "../core/observation-actions.js";
 import { FABRIC_ACTOR_HOST_EVENTS } from "../actors/types.js";
 import {
   MAX_COMPACTION_INSTRUCTIONS_CHARS,
@@ -264,6 +265,7 @@ const lifecycleEventSchema = {
 };
 
 export const AGENTS_ACTION_DESCRIPTORS: FabricActionDescriptor[] = [
+  observationAction("participant"),
   {
     name: "run",
     description: "Run a child agent through Pi or Claude Code and wait for its final result",

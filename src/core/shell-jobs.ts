@@ -93,7 +93,7 @@ export const parseShellPid = (text: string): number | undefined => {
 };
 
 /** Shell tools, plus `fabric_exec` programs moved to the background. */
-export type FabricTaskTool = PiShellToolName | "fabric_exec";
+export type FabricTaskTool = PiShellToolName | "fabric_exec" | "monitor";
 /** Final output a detached program hands to its completion event. */
 const PROGRAM_SUMMARY_BYTES = 8_000;
 
@@ -118,6 +118,8 @@ export interface FabricShellJobOptions {
   ownerId?: string;
   description?: string;
   monitor?: ShellMonitorOptions;
+  /** An observer task owns its subscription, never the target process or participant. */
+  observes?: { kind: "task" | "participant"; id: string };
 }
 
 export interface FabricShellJobEvent {
@@ -143,6 +145,7 @@ export interface FabricShellJobInfo {
   description?: string;
   lastOutputAt?: number;
   monitor?: ShellMonitorOptions;
+  observes?: { kind: "task" | "participant"; id: string };
   lastEvent?: ShellMonitorBatch & { at: number };
   durable?: FabricDurableTaskInfo;
   eventCount: number;
@@ -198,6 +201,7 @@ class FabricShellJob implements FabricShellJobHandle {
   /** After finish: a short copy of the tail, readable by offset only. */
   #finished = Buffer.alloc(0);
   readonly #outputWaiters = new Set<() => void>();
+  readonly #outputObservers = new Set<(data: Buffer) => void>();
   readonly #directory: string;
   #descriptor: number | undefined;
   #logBytes = 0;
@@ -223,20 +227,34 @@ class FabricShellJob implements FabricShellJobHandle {
     this.#directory = createScratch("shell", tempRoot);
     this.pidPath = path.join(this.#directory, "child.pid");
     if (options.monitor) {
-      this.#monitor = new ShellMonitor(options.monitor, (batch) => {
-        const previews = batch.lines.slice(-SHELL_MONITOR_PREVIEWS);
-        this.lastEvent = { lines: previews, omitted: batch.omitted + batch.lines.length - previews.length, at: Date.now() };
-        this.#replay.record(batch.lines, batch.omitted);
-        this.unread = true;
-        // The terminal event includes final output; do not race a second wakeup.
-        if (!this.finished) this.onChange("monitor");
-      });
+      this.#monitor = new ShellMonitor(options.monitor, batch => this.recordMonitorEvent(batch));
       this.#deadline = setTimeout(() => {
         this.#timedOut = true;
         this.stop("Monitor deadline reached");
       }, options.monitor.timeoutMs);
       this.#deadline.unref?.();
     }
+  }
+
+  /** Subscribe from now; retained output is available separately through read(). */
+  observeOutput(observer: (data: Buffer) => void): () => void {
+    if (!this.finished) this.#outputObservers.add(observer);
+    return () => { this.#outputObservers.delete(observer); };
+  }
+
+  flushMonitor(final = false): void {
+    if (final) this.#monitor?.close(!this.abort.signal.aborted);
+    else this.#monitor?.flush();
+  }
+
+  /** Structured observer events bypass the optional stdout filter. */
+  recordMonitorEvent(batch: ShellMonitorBatch, retain = false, notify = true): void {
+    if (retain) this.#append(Buffer.from(`${batch.lines.join("\n")}\n`), false);
+    const previews = batch.lines.slice(-SHELL_MONITOR_PREVIEWS);
+    this.lastEvent = { lines: previews, omitted: batch.omitted + batch.lines.length - previews.length, at: Date.now() };
+    this.#replay.record(batch.lines, batch.omitted);
+    this.unread = true;
+    if (notify && !this.finished) this.onChange("monitor");
   }
 
   stop(reason = "Stopped by user or agent"): boolean {
@@ -266,10 +284,12 @@ class FabricShellJob implements FabricShellJobHandle {
     this.onChange("acknowledged");
   }
 
-  append(data: Buffer): void {
+  append(data: Buffer): void { this.#append(data, true); }
+
+  #append(data: Buffer, frame: boolean): void {
     if (this.finished) return;
     if (data.length > 0) this.lastOutputAt = Date.now();
-    this.#monitor?.append(data);
+    if (frame) this.#monitor?.append(data);
     const keep = Math.max(0, SHELL_TAIL_BYTES - data.length);
     if (this.#tail.length + data.length > SHELL_TAIL_BYTES) this.#omitted = true;
     // Copy slices: a tiny view must not pin an arbitrarily large input buffer.
@@ -279,7 +299,12 @@ class FabricShellJob implements FabricShellJobHandle {
     ]);
     this.#writeLog(data);
     this.#written += data.length;
-    if (data.length > 0) this.#notifyOutput();
+    if (data.length > 0) {
+      this.#notifyOutput();
+      for (const observer of this.#outputObservers) {
+        try { observer(data); } catch { /* Observation cannot break the process. */ }
+      }
+    }
   }
 
   #notifyOutput(): void {
@@ -419,6 +444,7 @@ class FabricShellJob implements FabricShellJobHandle {
     const persistence = this.spilled && !this.logPath ? this.persistLog() : undefined;
     const output = this.snapshotText(this.tool === "fabric_exec" ? PROGRAM_SUMMARY_BYTES : 2000);
     this.finished = true;
+    this.#outputObservers.clear();
     if (this.#deadline) clearTimeout(this.#deadline);
     this.#deadline = undefined;
     this.#monitor?.close(!this.abort.signal.aborted);
@@ -626,6 +652,13 @@ export class FabricShellJobStore {
       : "\n\n[Process ended: session closed]\n")));
     this.#jobs.clear();
   }
+}
+
+/** An active observer owns notifications; its terminal receipt also deduplicates a racing source completion. */
+export function hasWakeObserver(jobs: FabricShellJobStore, kind: "task" | "participant", id: string): boolean {
+  return jobs.list().some(job => job.observes?.kind === kind && job.observes.id === id &&
+    job.monitor?.delivery === "wake" && (job.status === "exited" ||
+      (job.finishedAt === undefined && !jobs.get(job.id)?.abort.signal.aborted)));
 }
 
 export const raceShellHang = async <T>(options: {

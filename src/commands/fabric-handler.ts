@@ -989,7 +989,7 @@ export async function runFabricCommand(
   }
   if (command !== "status") {
     context.ui.notify(
-      "Usage: /fabric [status|dashboard|chat [id-or-name]|focus|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]]",
+      "Usage: /fabric [status|dashboard|background|chat [id-or-name]|focus|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]]",
       "warning",
     );
     return;

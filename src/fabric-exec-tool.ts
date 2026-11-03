@@ -12,7 +12,7 @@ const defineTool = <TParams extends TSchema, TDetails = unknown, TState = any>(
   tool: ToolDefinition<TParams, TDetails, TState>,
 ): ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition =>
   tool as ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition;
-import { arcItemStyled } from "./ui/arc-group.js";
+import { arcItem, arcItemStyled, pushArcItem } from "./ui/arc-group.js";
 import type { CodePreviewSettings } from "./ui/code-preview.js";
 import {
   type FabricToolShellDecorator,
@@ -261,7 +261,7 @@ export const createFabricExecTool = (
         }),
       ),
       background: Type.Optional(Type.Boolean({
-        description: "Run the program as a background task and return at once; its result arrives as a background task event. Use for long workflows (many agents) whose result you do not need before continuing.",
+        description: "Run this entire program in the background and return its task handle immediately. Use for long workflows, including waits for required shell or agent results: keep dependent awaits inside this program. Main can do independent work or yield for the completion event instead of opening another foreground wait. Backgrounding is not task completion; do not restart the work or claim success while results are pending.",
       })),
       timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Hard whole-script deadline in milliseconds; cannot be extended or paused, capped by executor.maxTimeoutMs." })),
       maxOutputTokens: Type.Optional(Type.Integer({ minimum: 1, description: "Per-call output token budget (estimated at four characters per token), capped by executor.maxOutputChars." })),
@@ -536,9 +536,6 @@ export const createFabricExecTool = (
                 ? theme.fg("error", "✗")
                 : theme.fg("dim", "›");
           let text = `${glyph} ${nestedCallTitle(audit, theme, context?.invalidate, corePreviewContext)}`;
-          if (shellBackgroundShortcut(audit)) {
-            text += nl + theme.fg("dim", "Ctrl+B twice · background waiting shell");
-          }
           const previewLines = renderAgentToolPreviewLines(audit, theme, {
             expanded,
             showTools: showAgentToolPreview,
@@ -576,6 +573,7 @@ export const createFabricExecTool = (
             if (previewLines.length > 1) text += nl + previewLines.slice(1).join(nl);
           }
           const textLines = text.split(nl);
+          if (shellBackgroundShortcut(audit)) pushArcItem(textLines, arcItem(theme, "(ctrl+b to run in background)"));
           return trackRows(
             renderBoundedLines(
               textLines,
@@ -1165,6 +1163,7 @@ export const createFabricExecTool = (
   {
     mode: codePreviewSettings.toolCallBackground,
     toolCallTiming: codePreviewSettings.toolCallTiming,
+    backgroundShortcut: true,
   },
   );
 };

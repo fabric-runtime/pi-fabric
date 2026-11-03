@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { arcItem, pushArcItem } from "./arc-group.js";
 import type { AppKeybinding, Theme } from "@earendil-works/pi-coding-agent";
 import type { CodePreviewSettings } from "./code-preview.js";
 import { formatToolCallDuration } from "./tool-call-timing.js";
@@ -990,9 +991,6 @@ export const renderFabricMulticallPartial = (
   if (progress) header += theme.fg("dim", ` · ${progress}`);
 
   const rows = [header];
-  if (input.audits.some(shellBackgroundShortcut)) {
-    rows.push(theme.fg("dim", "Ctrl+B twice · background waiting shell"));
-  }
   const wrapLineIndexes = input.expanded ? new Set<number>() : undefined;
   if (input.phases.length > 0) {
     rows.push(theme.fg("dim", input.phases.map((phase) => `◆ ${phase}`).join("  ")));
@@ -1049,6 +1047,9 @@ export const renderFabricMulticallPartial = (
       theme.fg("dim", label) +
         (input.expanded ? "" : theme.fg("dim", " · ") + expandHint(theme)),
     );
+  }
+  if (input.audits.some(shellBackgroundShortcut)) {
+    pushArcItem(rows, arcItem(theme, "(ctrl+b to run in background)"));
   }
   return renderBoundedLines(
     rows,

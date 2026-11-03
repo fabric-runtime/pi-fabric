@@ -14,6 +14,33 @@ import type { FabricState } from "../src/fabric-state.js";
 import type { FabricUiController } from "../src/ui/controller.js";
 
 describe("/fabric command", () => {
+  it("does not register automatic queued-input notices", () => {
+    const on = vi.fn(), waiting = vi.fn(() => 1), detachWaiting = vi.fn();
+    const pi = { on, registerCommand: vi.fn() } as unknown as ExtensionAPI;
+    registerFabricCommand(pi, {
+      state: { programTasks: { waiting, detachWaiting } } as unknown as FabricState,
+      fabricUi: {} as FabricUiController, capturedTools: {} as CapturedToolCatalog,
+      applyFabricMode() {}, suspendToolCapture() {},
+    });
+    expect(on.mock.calls.some(([event]) => event === "input")).toBe(false);
+    expect(waiting).not.toHaveBeenCalled();
+    expect(detachWaiting).not.toHaveBeenCalled();
+  });
+
+  it("rejects background arguments and handles idle commands without booting the runtime", async () => {
+    let command: any;
+    const detachWaiting = vi.fn(() => 0), ensure = vi.fn(), notify = vi.fn();
+    const pi = { registerCommand: (_name: string, value: any) => { command = value; } } as unknown as ExtensionAPI;
+    registerFabricCommand(pi, { state: { programTasks: { detachWaiting }, ensure } as unknown as FabricState,
+      fabricUi: {} as FabricUiController, capturedTools: {} as CapturedToolCatalog, applyFabricMode() {}, suspendToolCapture() {} });
+    await command.handler("background extra", { ui: { notify } });
+    expect(detachWaiting).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenLastCalledWith("Usage: /fabric background", "warning");
+    await command.handler("background", { ui: { notify } });
+    expect(detachWaiting).toHaveBeenCalledOnce(); expect(ensure).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenLastCalledWith("Fabric: no foreground workflow to background", "info");
+  });
+
   it("opens the dashboard when invoked without arguments", async () => {
     let handler: ((argumentsText: string, context: ExtensionContext) => Promise<void>) | undefined;
     const pi = {

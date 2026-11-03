@@ -1,6 +1,7 @@
 import type { FabricActionDescriptor, FabricInvocationContext, FabricProvider, FabricProviderListRequest } from "../protocol.js";
 import { SHELL_READ_MAX_BYTES, type FabricShellJobStore } from "../core/shell-jobs.js";
 import { validationMessage } from "../core/action-arguments.js";
+import { observationAction, observeExisting, type ObservationSource } from "../core/observation-actions.js";
 
 const idSchema = { type: "object", properties: { id: { type: "string", minLength: 1 } }, required: ["id"], additionalProperties: false };
 const waitSchema = { ...idSchema, properties: { ...idSchema.properties,
@@ -20,12 +21,13 @@ const WATCH_LINES = 64;
 const WATCH_LINE_CHARS = 2048;
 const clean = (line: string): string => line.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim();
 const descriptors: FabricActionDescriptor[] = [
+  observationAction("task"),
   { name: "list", description: "List this session's tracked shell tasks and monitors, with IDs, command, cwd, state, timestamps, and bounded monitor events. No output polling is needed: detached completions notify the owning agent.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, risk: "read", effect: { kind: "none", ordering: "commutative" } },
   { name: "get", description: "Inspect one shell task by ID, returning metadata and a bounded output tail. Acknowledges its pending notification after a successful read. Full retained output is at logPath (bounded, not an archive).", inputSchema: idSchema, risk: "read", effect: { kind: "emission", ordering: "ordered" } },
   { name: "wait", description: "Wait without polling for a session-owned shell task to finish, default 30 seconds. Returns task metadata, a bounded output tail and timedOut. Inspect status and exitCode; an exited task is not goal verification. Timeout or cancellation stops only this wait.", inputSchema: waitSchema, risk: "read", effect: { kind: "emission", ordering: "ordered" } },
   { name: "read", description: "Read a background task's combined output by byte offset, in jev-fabric's read record shape: offset, bytes, omittedBytes, text (or base64 data), next, eof, state. Optional waitMs long-polls for new bytes. The live window is 1 MiB; 32 KiB stays readable after exit. Never consumes or stops anything.", inputSchema: readSchema, risk: "read", effect: { kind: "none", ordering: "commutative" } },
   { name: "watch", description: "Wait without polling for matching lines, task exit, or timeout (default 5 seconds). With match (any background task, chosen now): returns complete output lines containing that literal after the byte cursor, omittedBytes, more and nextCursor. Without match: reads a launch-time monitor (pi.bash monitor with delivery ui). Returns reason, up to 64 lines after the cursor, losses (burst/evicted cursor ranges), omitted, more and nextCursor with task metadata; pass nextCursor as after, immediately again while more is true. The latest 256 positions are replayable. No inference, wakeup, renewal or cancellation of the task. Not a lossless RPC stream.", inputSchema: watchSchema, risk: "read", effect: { kind: "none", ordering: "commutative" } },
-  { name: "stop", description: "Stop one session-owned shell task or monitor by ID using its existing abort controller, not an arbitrary PID. A durable task is stopped through jev-fabric. Cancellation does not wake the owning agent.", inputSchema: idSchema, risk: "execute", effect: { kind: "emission", ordering: "ordered" } },
+  { name: "stop", description: "Stop one session-owned shell task or monitor by ID using its existing abort controller, not an arbitrary PID. A durable task is stopped through jev-fabric. An attached observation stops only itself, never its target. Cancellation does not wake the owning agent.", inputSchema: idSchema, risk: "execute", effect: { kind: "emission", ordering: "ordered" } },
   { name: "external", description: "List jev-fabric jobs in this session's durable store that no task here tracks, for example dev servers started by another harness or an earlier session. Returns id, state, label and start time; read-only.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, risk: "read", effect: { kind: "none", ordering: "commutative" } },
   { name: "adopt", description: "Attach an existing jev-fabric job from tasks.external to this session as a durable task: its output, completion notification, wait/stop and inspector row. Adopting does not restart or signal the process.", inputSchema: { type: "object", properties: { jobId: { type: "string", minLength: 1, maxLength: 128 }, description: { type: "string", minLength: 1, maxLength: 120 } }, required: ["jobId"], additionalProperties: false }, risk: "read", effect: { kind: "emission", ordering: "ordered" } },
 ];
@@ -34,14 +36,15 @@ const durableOnly = new Set(["external", "adopt"]);
 export class TasksProvider implements FabricProvider {
   readonly name = "tasks";
   readonly description = "Session-owned shell orchestration with bounded wait/watch and explicit stop";
-  constructor(readonly jobs: FabricShellJobStore) {}
+  constructor(readonly jobs: FabricShellJobStore, readonly observations?: ObservationSource) {}
   async list(request: FabricProviderListRequest): Promise<FabricActionDescriptor[]> {
     const query = request.query?.toLowerCase();
-    const available = this.jobs.durable ? descriptors : descriptors.filter(d => !durableOnly.has(d.name));
+    const available = descriptors.filter(d => (this.jobs.durable || !durableOnly.has(d.name)) && (d.name !== "observe" || this.observations));
     return query ? available.filter(d => `${d.name} ${d.description}`.toLowerCase().includes(query)) : available;
   }
   async describe(name: string): Promise<FabricActionDescriptor | undefined> {
-    return this.jobs.durable || !durableOnly.has(name) ? descriptors.find(d => d.name === name) : undefined;
+    return (this.jobs.durable || !durableOnly.has(name)) && (name !== "observe" || this.observations)
+      ? descriptors.find(d => d.name === name) : undefined;
   }
   async invoke(name: string, args: Record<string, unknown>, context: FabricInvocationContext): Promise<unknown> {
     const descriptor = await this.describe(name);
@@ -50,6 +53,7 @@ export class TasksProvider implements FabricProvider {
     if (invalid) throw new Error(`Invalid tasks.${name} arguments: ${invalid}`);
     // Reattach this session's durable tasks before answering about them.
     await this.jobs.durable?.resume();
+    if (name === "observe") return observeExisting(this.observations?.(), "task", args, context);
     if (name === "list") return this.jobs.list();
     if (name === "external") return await this.jobs.durable!.external();
     if (name === "adopt") return { task: await this.jobs.durable!.adopt(args.jobId as string, args.description as string | undefined) };

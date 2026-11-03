@@ -143,12 +143,12 @@ describe("registered fabric_exec compact transcript rendering", () => {
     const shell = { ref: "pi.bash", provider: "pi", tool: "bash", args: { command: "build" }, preview: { result: "streamed output", shellBackgroundShortcut: true } };
     const details = { audits: [shell], phases: [], progress: "bash: streamed output" };
     for (const expanded of [false, true]) {
-      expect(renderResult(tool, args, details, "", { partial: true, expanded })).toContain("Ctrl+B twice");
-      expect(renderResult(tool, args, { ...details, audits: [shell, { ref: "pi.read", tool: "read", success: true }] }, "", { partial: true, expanded })).toContain("Ctrl+B twice");
+      expect(renderResult(tool, args, details, "", { partial: true, expanded })).toContain("(ctrl+b to run in background)");
+      expect(renderResult(tool, args, { ...details, audits: [shell, { ref: "pi.read", tool: "read", success: true }] }, "", { partial: true, expanded })).toContain("(ctrl+b to run in background)");
     }
-    expect(renderResult(tool, args, { ...details, audits: [{ ...shell, success: true }] }, "", { partial: true })).not.toContain("Ctrl+B twice");
-    expect(renderResult(tool, args, details, "", { partial: false })).not.toContain("Ctrl+B twice");
-    expect(renderResult(tool, args, { ...details, audits: [{ ...shell, preview: { result: "streamed output" } }] }, "", { partial: true })).not.toContain("Ctrl+B twice");
+    expect(renderResult(tool, args, { ...details, audits: [{ ...shell, success: true }] }, "", { partial: true })).not.toContain("(ctrl+b to run in background)");
+    expect(renderResult(tool, args, details, "", { partial: false })).not.toContain("(ctrl+b to run in background)");
+    expect(renderResult(tool, args, { ...details, audits: [{ ...shell, preview: { result: "streamed output" } }] }, "", { partial: true })).not.toContain("(ctrl+b to run in background)");
   });
   it("infers Python compact titles while preserving explicit intent and neutral fallbacks", () => {
     const state = stateFor("compact");

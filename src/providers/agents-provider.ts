@@ -1,3 +1,4 @@
+import { observeExisting, type ObservationSource } from "../core/observation-actions.js";
 import { ActorManager, ActorRegistryOwnershipError } from "../actors/manager.js";
 import { GlobalActorRegistry } from "../actors/global-registry.js";
 import { isFabricActorHostEvent } from "../actors/types.js";
@@ -393,6 +394,7 @@ const refuseInvalidModelsModel = (
 };
 
 export class AgentsProvider implements FabricProvider {
+  observations: ObservationSource | undefined;
   readonly #transcripts = new AgentTranscriptReader();
   readonly #router: AgentMessageRouter;
   readonly name = "agents";
@@ -569,17 +571,19 @@ export class AgentsProvider implements FabricProvider {
     _context: FabricInvocationContext,
   ): Promise<FabricActionDescriptor[]> {
     const query = request.query?.toLowerCase();
+    const available = AGENTS_ACTION_DESCRIPTORS.filter(d => d.name !== "observe" || this.observations);
     return query
-      ? AGENTS_ACTION_DESCRIPTORS.filter((descriptor) =>
+      ? available.filter((descriptor) =>
           `${descriptor.name} ${descriptor.description}`.toLowerCase().includes(query),
         )
-      : AGENTS_ACTION_DESCRIPTORS;
+      : available;
   }
 
   async describe(
     actionName: string,
     _context: FabricInvocationContext,
   ): Promise<FabricActionDescriptor | undefined> {
+    if (actionName === "observe" && !this.observations) return undefined;
     return AGENTS_ACTION_DESCRIPTORS.find((descriptor) => descriptor.name === actionName);
   }
 
@@ -693,6 +697,8 @@ export class AgentsProvider implements FabricProvider {
     context: FabricInvocationContext,
   ): Promise<unknown> {
     switch (actionName) {
+      case "observe":
+        return observeExisting(this.observations?.(), "participant", args, context);
       case "run": {
         const runArgs = await this.#applyAgentFile(args, context);
         const handle = await this.manager.spawn(

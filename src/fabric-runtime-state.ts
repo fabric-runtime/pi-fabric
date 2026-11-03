@@ -16,7 +16,7 @@ import { FabricActivityStore } from "./activity/store.js";
 import { ActorDirectory } from "./actors/directory.js";
 import { resolvePiBinary } from "./agents/pi-binary.js";
 import { isPiShellRef } from "./core/pi-tools.js";
-import { DEFAULT_SHELL_HANG_MS, FabricShellJobStore } from "./core/shell-jobs.js";
+import { DEFAULT_SHELL_HANG_MS, FabricShellJobStore, hasWakeObserver } from "./core/shell-jobs.js";
 import { GlobalActorRegistry } from "./actors/global-registry.js";
 import { buildActorContext } from "./actors/context.js";
 import { actorDeliveryNotice } from "./actors/delivery-policy.js";
@@ -154,6 +154,7 @@ import { recordedPeerLabel, SessionLabelPresenter } from "./topology/session-lab
 import { sessionLabelSettings } from "./topology/session-label-settings.js";
 import type { HerdrAgentStatus } from "./agents/herdr-status.js";
 import { ShellEventInbox } from "./core/shell-inbox.js";
+import { AttachedMonitors, localMonitorParticipants } from "./core/attached-monitors.js";
 import { FabricShellTimingBridge } from "./core/shell-timing.js";
 import { readFabricBashMiddleware } from "./core/shell-middleware.js";
 import { DurableShellBridge, JEV_FABRIC_START_MAX_MS } from "./jev-fabric/bridge.js";
@@ -286,6 +287,7 @@ export class FabricRuntimeState {
   readonly #builtinComponentNames = new Set<string>();
   readonly componentCatalog = new FabricComponentCatalog();
   readonly activity: FabricActivityStore;
+  #observations: AttachedMonitors | undefined;
   #shellJobs = new FabricShellJobStore();
   get shellJobs(): FabricShellJobStore { return this.#shellJobs; }
   readonly prewalk: PrewalkController;
@@ -654,6 +656,7 @@ export class FabricRuntimeState {
     await builtins.tools(context.cwd, this.#config, this.capturedTools, {
       jobs: this.shellJobs,
       getHangMs: () => this.#config?.executor.shellHangMs ?? DEFAULT_SHELL_HANG_MS,
+      ...(!this.#managedHost ? { observations: () => this.#observations } : {}),
     });
     if (!this.#managedHost && (this.#config.fullCodeMode || enforceSchema)) {
       this.#shellInbox = new ShellEventInbox(this.pi, context, this.shellJobs);
@@ -853,7 +856,7 @@ export class FabricRuntimeState {
       }
       return { key: `${resolved.provider}/${resolved.id}`, model };
     };
-    const completionInbox = new AgentCompletionInbox(this.pi, context);
+    const completionInbox = new AgentCompletionInbox(this.pi, context, id => hasWakeObserver(this.shellJobs, "participant", id));
     this.#completionInbox = completionInbox;
     this.#agents = new AgentManager(context.cwd, agentConfig, {
       fullCodeMode: this.#config.fullCodeMode,
@@ -1100,6 +1103,10 @@ export class FabricRuntimeState {
       false,
       () => this.#config?.models ?? DEFAULT_FABRIC_CONFIG.models,
     );
+    if (!this.#managedHost && (this.#config.fullCodeMode || enforceSchema)) {
+      this.#observations = new AttachedMonitors(this.shellJobs, localMonitorParticipants(this.#agents, providerParticipants));
+      agentsProvider.observations = () => this.#observations;
+    }
     agentsProvider.providerParticipants = providerParticipants;
     agentsProvider.sessionCommands = () => this.pi.getCommands();
     this.#agentsProvider = agentsProvider;
@@ -1689,6 +1696,8 @@ export class FabricRuntimeState {
     this.#peerPresence = undefined;
     this.#shellInbox?.close();
     this.#shellInbox = undefined;
+    this.#observations?.close();
+    this.#observations = undefined;
     this.#shellTiming?.close();
     this.#shellTiming = undefined;
     this.#suppressResidentGuidanceSync = true;
@@ -1818,6 +1827,8 @@ export class FabricRuntimeState {
     await this.#closeHerdr();
     this.#shellInbox?.close();
     this.#shellInbox = undefined;
+    this.#observations?.close();
+    this.#observations = undefined;
     this.#shellTiming?.close();
     this.#shellTiming = undefined;
     await this.shellJobs.close();

@@ -588,7 +588,13 @@ export class FabricWidget implements Component, Focusable {
     }
     if (activeAgents.length > 0) parts.push(`${activeAgents.length} running`);
     if (visibleActors.length > 0) parts.push(`${visibleActors.length} actor${visibleActors.length === 1 ? "" : "s"}`);
-    if (liveShells.length > 0) parts.push(`${liveShells.length} shell${liveShells.length === 1 ? "" : "s"}`);
+    const backgroundWork = liveShells.filter(job => !job.observes);
+    const shellCount = backgroundWork.filter(job => job.tool !== "fabric_exec").length;
+    const workflowCount = backgroundWork.length - shellCount;
+    const observationCount = liveShells.length - backgroundWork.length;
+    if (shellCount) parts.push(`${shellCount} shell${shellCount === 1 ? "" : "s"}`);
+    if (workflowCount) parts.push(`${workflowCount} workflow${workflowCount === 1 ? "" : "s"}`);
+    if (observationCount) parts.push(`${observationCount} observation${observationCount === 1 ? "" : "s"}`);
     const tokens = totalTokens(snapshot, run);
     if (tokens > 0) parts.push(`${formatTokens(tokens)} tok`);
     const cost = totalCost(snapshot, run);
@@ -617,6 +623,22 @@ export class FabricWidget implements Component, Focusable {
       this.#hints(hasRows),
     ));
 
+    const shownObservations = new Set<string>();
+    const pushObservation = (job: FabricShellJobInfo, prefix: string): void => {
+      shownObservations.add(job.id);
+      rows.push({ id: job.id, kind: "shell", name: safeText(job.description ?? job.command), line: lines.length });
+      const active = job.finishedAt === undefined;
+      const status = job.stopping ? "stopping" : active ? "watching" : job.status === "timed_out" ? "expired" : job.status === "killed" ? "stopped" : "ended";
+      const delivery = job.monitor?.delivery === "wake" ? "wake owner" : "UI only";
+      const remaining = active && job.monitor ? ` · expires in ${formatDuration(Math.max(0, job.startedAt + job.monitor.timeoutMs - snapshot.now)) || "0s"}` : "";
+      lines.push(fitLine(this.theme, width,
+        `${prefix}${colorStatus(this.theme, job.stopping ? "stopping" : job.status, circle(job.id === marked))} ${this.theme.fg("muted", job.id.slice(0, 8))} ${this.theme.fg("muted", `${status} · ${delivery}${remaining}`)}`,
+        { text: safeText(job.description ?? `Observe ${job.observes!.kind} ${job.observes!.id.slice(0, 8)}`), gap: " · ", color: "dim" }, [], []));
+    };
+    const pushObservations = (kind: "task" | "participant", id: string): void => {
+      const children = listedShells.filter(job => job.observes?.kind === kind && job.observes.id === id);
+      children.forEach((job, index) => pushObservation(job, index === children.length - 1 ? "  ╰─ " : "  ├─ "));
+    };
     const pushParticipant = (agent: FabricUiAgent, kind: "agent" | "actor", prefix = ""): void => {
       const id = kind === "actor" ? agent.actorId ?? agent.id : agent.id;
       rows.push({
@@ -627,6 +649,7 @@ export class FabricWidget implements Component, Focusable {
         line: lines.length,
       });
       lines.push(agentLine(this.theme, agent, snapshot.now, prefix, id === marked, width));
+      pushObservations("participant", agent.id);
     };
     // Trees with a running root come first, then retained ones; a child always
     // sits under its parent, whatever its own status.
@@ -660,12 +683,15 @@ export class FabricWidget implements Component, Focusable {
         [],
       );
     };
-    for (const job of listedShells) {
+    for (const job of listedShells.filter(job => !job.observes)) {
       const status = job.stopping ? "stopping" : job.status;
       const label = job.monitor && job.finishedAt === undefined && !job.stopping ? `monitor:${job.monitor.delivery}` : status;
       rows.push({ id: job.id, kind: "shell", name: safeText(job.description ?? job.command), line: lines.length });
       lines.push(shellLine(job, job.id.slice(0, 8), label, job.id));
+      pushObservations("task", job.id);
     }
+    // Retain inspectability if a target is no longer in this local view.
+    for (const job of listedShells) if (job.observes && !shownObservations.has(job.id)) pushObservation(job, "");
     return lines;
   }
 

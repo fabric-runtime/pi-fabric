@@ -777,6 +777,16 @@ interface FabricAgentsApi {
   resume(args: FabricAgentTargetArgs & { task?: string }): Promise<FabricAgentResult>;
   handoff(args: FabricHandoffRequest): Promise<FabricHandoffResult>;
   spawn(args: FabricAgentRequest): Promise<FabricAgentHandle>;
+  /** Observe local operational progress, not transcripts. Stop the returned handle with tasks.stop. */
+  observe(args: {
+    id: string;
+    delivery: "ui" | "wake";
+    events?: Array<"progress" | "blocked" | "quiet" | "terminal">;
+    timeoutMs?: number;
+    intervalMs?: number;
+    quietAfterMs?: number;
+    description?: string;
+  }): Promise<{ task: { id: string; status: string; observes: { kind: "participant"; id: string } } }>;
   wait(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
   /** Alias for wait. */
   join(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;

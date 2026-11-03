@@ -19,6 +19,7 @@ export type FabricToolShellDecorator = <TTool extends AnyTool>(
     mode?: ToolCallBackgroundMode;
     preserveSelfShell?: boolean;
     toolCallTiming?: boolean;
+    backgroundShortcut?: boolean;
   },
 ) => TTool;
 
@@ -168,6 +169,19 @@ class TimingFooter implements Component {
   }
 }
 
+const BACKGROUND_SHORTCUT = "(ctrl+b to run in background)";
+
+class BackgroundShortcutFooter implements Component {
+  constructor(private readonly component: Component, private readonly theme: Theme) {}
+  render(width: number): string[] {
+    const lines = this.component.render(width);
+    // A nested waiting shell may already have supplied the same connected hint.
+    if (width < 12 || lines.some(line => line.includes("ctrl+b"))) return lines;
+    return [...continueArcGroup(lines), truncateToWidth(this.theme.fg("muted", `╰─ ${BACKGROUND_SHORTCUT}`), width, "")];
+  }
+  invalidate(): void { this.component.invalidate?.(); }
+}
+
 const renderTimedResult = (
   context: PreviewRenderContext,
   theme: Theme,
@@ -296,9 +310,15 @@ export const withCodePreviewShell: FabricToolShellDecorator = (tool, options = {
     resultOptions: unknown,
     theme: Theme,
     context: PreviewRenderContext,
-  ): Component => originalRenderResult
-    ? originalRenderResult.call(tool, result as never, resultOptions as never, theme, context as never)
-    : new Container();
+  ): Component => {
+    const component = originalRenderResult
+      ? originalRenderResult.call(tool, result as never, resultOptions as never, theme, context as never)
+      : new Container();
+    const background = typeof context.args === "object" && context.args !== null &&
+      (context.args as Record<string, unknown>).background === true;
+    return options.backgroundShortcut && context.executionStarted && context.isPartial && !background
+      ? new BackgroundShortcutFooter(component, theme) : component;
+  };
 
   return {
     ...tool,

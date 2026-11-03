@@ -47,6 +47,7 @@ export interface ProviderParticipantStopOutcome {
 }
 
 interface Entry {
+  readonly generation: string;
   readonly ref: string;
   readonly provider: string;
   readonly id: string;
@@ -66,6 +67,7 @@ interface Entry {
 }
 
 export interface ProviderParticipantInfo {
+  generation: string;
   ref: string;
   provider: string;
   id: string;
@@ -280,6 +282,7 @@ export class ProviderParticipantRegistry {
     if (active >= MAX_ACTIVE) throw new Error(`Fabric participant limit reached (${MAX_ACTIVE} active)`);
     const now = Date.now();
     const entry: Entry = {
+      generation: randomUUID(),
       ref,
       provider,
       id: spec.id,
@@ -384,6 +387,7 @@ export class ProviderParticipantRegistry {
 
   #info(entry: Entry): ProviderParticipantInfo {
     return {
+      generation: entry.generation,
       ref: entry.ref,
       provider: entry.provider,
       id: entry.id,

@@ -32,6 +32,20 @@ You can give `fabric_exec` optional `agentBudget` and `tokenBudget` limits. Conf
 
 `agents.wait`/`join`, terminal `agents.status`, and cleanup acknowledge the result and retract any pending notification, including completion that arrived before the wait. Running status and UI/list polling do not acknowledge results. Acknowledgment means the Fabric program received the result: return the relevant outcome to Main when it needs to reason about it. Prefer `wait` over a polling loop.
 
+### Observe an existing run
+
+`agents.observe({id, delivery: "ui" | "wake", ...})` attaches bounded operational
+observation to an existing local run or `provider:` participant. It returns an
+observation task handle; use `tasks.get/watch/stop` with that handle's id. Events
+default to progress, blocked and terminal; quiet detection is opt-in and never
+proves failure. No agent is launched, and stopping or expiring the observation
+never stops the observed run. Transcript/thinking output is not exposed.
+
+`tasks.observe` provides the same contract for an existing shell or background
+program's output. There is no separate `monitors` provider. Ordinary completion
+notifications and `agents.subscribe` lifecycle routing are unchanged. See
+[attached observation](background-tasks.md#attached-task-and-participant-monitors).
+
 ### Queued spawns
 
 By default `agents.spawn` waits inside the call for a free `agents.maxConcurrent` slot. A program that spawns more children than the limit blocks there, and if its deadline passes first, the waiting spawns never launch and the program cannot return the ids of the runs that did.

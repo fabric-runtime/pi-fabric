@@ -39,9 +39,16 @@ Main takes the steer on its next request.
   `fabric_exec` runs. A nested shell that is still waiting is spilled first, as
   before; press the chord again to move the program. With text in the editor,
   Ctrl+B stays cursor-left.
+- **`/fabric background`** moves the whole running workflow to the background
+  directly, even when a nested shell is still waiting. Extension commands are
+  handled before queued chat input. It does not stop or restart any work. This
+  command applies to all currently running foreground Fabric programs; the
+  existing Ctrl+B chord remains shell-first.
 - **`background: true`** on the `fabric_exec` call starts the program as a task
-  and returns at once. The model uses it for long workflows whose result it
-  does not need before continuing.
+  and returns at once. Long workflows can keep necessary shell/agent awaits
+  inside the background program even when their results are required for the
+  assignment. Main should continue independent work or yield for completion,
+  not immediately open another foreground wait. Yielding is not task completion.
 
 The tool call returns the task ID. The program keeps running with its own
 cancellation signal: Esc and later turns no longer stop it, and `tasks.stop`,
@@ -326,6 +333,71 @@ const seen = await tools.call({ref: "tasks.watch", args: {id, match: "listening 
 - `tasks.read` offsets count every byte of combined output since launch and never reset. The live window is the 1 MiB tail; after exit 32 KiB stays readable. Older bytes are disclosed in `omittedBytes`. Text pages never split a UTF-8 character; `encoding:"base64"` is byte-exact. `waitMs` long-polls for new bytes or exit.
 - `tasks.watch` with `match` scans complete lines after a byte cursor for a case-sensitive literal chosen at watch time, like `jev-fabric watch <id> <literal>`. The cursor stops at line boundaries, so an unfinished line is matched once it ends or the task exits. Up to 64 lines per call; call again while `more` is true.
 - Neither consumes, acknowledges, wakes the agent, or stops the task. Without `match`, `tasks.watch` keeps reading a launch-time monitor as below.
+
+## Attached task and participant monitors
+
+`tasks.observe` and `agents.observe` observe work that already exists. There is no separate `monitors` provider. It does not start another shell,
+restart an agent, or invoke a model. It is available beside `tasks` in native
+full-code / Schema enforce sessions, not closed-world managed hosts.
+
+```ts
+const {task: watch} = await tools.call({ref: "tasks.observe", args: {
+  id: taskId,
+  delivery: "wake", match: "BUILD:", timeoutMs: 600000,
+}});
+return {monitorId: watch.id};
+```
+
+For a local agent run ID or a local `provider:...` participant ref:
+
+```ts
+return await tools.call({ref: "agents.observe", args: {
+  id: agentId, delivery: "ui",
+  events: ["progress", "blocked", "quiet", "terminal"],
+  quietAfterMs: 120000, timeoutMs: 600000,
+}});
+```
+
+- `delivery` is required. `ui` never wakes the owner; `wake` uses the existing
+  bounded, batched task inbox. There is at most one attached wake observer per
+  target and eight active monitors total, shared with shell launch monitors.
+- Task events default to `output, terminal`; participant events default to
+  `progress, blocked, terminal`. Task output is **new combined stdout/stderr**
+  after attachment, filtered with the optional literal `match`. Retained earlier
+  output remains in `tasks.read`. Participant observation exposes only operational
+  metadata (status, tool/turn counters, current tool/milestone, waiting state, or
+  provider phase/message), not transcripts, thinking, or tool results.
+- Output and progress are bounded and batched with `intervalMs`. Terminal outcomes
+  always bypass filters and cannot be disabled. Terminal replay is a JSON line
+  identifying the target and status; output lines otherwise retain their text.
+- `quiet` requires `quietAfterMs` and fires once per quiet period. Real output or
+  changed operational metadata re-arms it; heartbeat timestamps do not. Quiet is
+  **not evidence of a hang or failure**, and never triggers a stop or restart.
+- A participant replacement or disappearance ends observation with an unavailable
+  outcome; it is not silently followed or classified as successful completion.
+  Remote peers, resident actors and hosted/project-only participants are not
+  supported by this first local adapter.
+- `timeoutMs` defaults to five minutes, maximum thirty minutes. **Expiration,
+  `tasks.stop({id: watch.id})`, interruption and session teardown stop only the observer**, not
+  its target. This deliberately differs from a launch-time shell `monitor`, whose
+  deadline owns and stops its watcher command. No automatic renewal.
+- `tasks.list/get/watch/stop` inspect and control observation handles. In the
+  footer, observations appear beneath their task or local participant, with separate
+  work/observation counts, delivery and expiry. The inspector labels “stop watching”
+  separately from stopping the target. `tasks.watch` returns the
+  existing bounded line-cursor replay and loss records; an observation timeout or
+  cancellation never stops the observer. Stopping an observer discards pending
+  notifications. A wake observer replaces the target's ordinary completion wakeup,
+  avoiding duplicates; retrieve a participant's full result with `agents.wait`.
+  `tasks.watch` remains a bounded read/wait, not a persistent subscription.
+  `agents.subscribe` remains the separate durable lifecycle-routing API.
+  Neither observe action launches a supervisor agent or changes ordinary completion defaults.
+
+The foreground shell/program shortcut is shown as a connected status line,
+`╰─ (ctrl+b to run in background)`, joining existing output/timing arcs. The
+existing confirmation chord remains: press Ctrl+B again within one second to
+confirm. The hint disappears on completion or detachment; with editor text,
+program backgrounding retains Ctrl+B as cursor-left.
 
 ## Opt-in monitors
 

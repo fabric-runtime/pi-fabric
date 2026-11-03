@@ -35,6 +35,25 @@ describe("code preview startup", () => {
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.useRealTimers(); }
   });
+  it("connects the background shortcut to output/timing arcs and removes it on completion", () => {
+    vi.useFakeTimers(); vi.setSystemTime(10000);
+    try {
+      const theme = {fg: (_: string, text: string) => text} as any;
+      const tool = withCodePreviewShell({name:"fabric_exec",label:"Fabric",renderResult:()=>({render:()=>["output", "╰─ details"]})} as any,
+        {mode:"off",backgroundShortcut:true,toolCallTiming:true});
+      const context = {args:{},state:{},executionStarted:true,isPartial:true,invalidate:vi.fn()} as any;
+      const render = () => tool.renderResult!({content:[]} as any,{expanded:false,isPartial:context.isPartial},theme,context).render(100);
+      expect(render()).toEqual(["output","├─ details","╰─ (ctrl+b to run in background)"]);
+      vi.advanceTimersByTime(10700);
+      expect(render()).toEqual(["output","├─ details","├─ (ctrl+b to run in background)","╰─ Elapsed 10.7s"]);
+      context.isPartial=false;
+      expect(render()).toEqual(["output","├─ details","╰─ Took 10.7s"]);
+      context.isPartial=true;context.args={background:true};
+      expect(render().join("\n")).not.toContain("ctrl+b");
+      context.isPartial=false;render();
+    } finally {vi.useRealTimers();}
+  });
+
   it("keeps pi-code-previews out of the package and runtime graph", () => {
     const packageJson = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"),

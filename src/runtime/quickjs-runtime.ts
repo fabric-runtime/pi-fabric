@@ -516,6 +516,7 @@ globalThis.agents = Object.freeze({
   run: (args) => __call("agents.run", args),
   handoff: __handoff,
   spawn: (args) => __call("agents.spawn", args),
+  observe: (args) => __call("agents.observe", args),
   wait: (args) => __call("agents.wait", args),
   join: (args) => __call("agents.join", args),
   status: (args) => __call("agents.status", args),

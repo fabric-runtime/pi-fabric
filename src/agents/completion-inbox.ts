@@ -26,7 +26,7 @@ export class AgentCompletionInbox {
   #failed = false;
   #closed = false;
 
-  constructor(readonly pi: ExtensionAPI, context: ExtensionContext) {
+  constructor(readonly pi: ExtensionAPI, context: ExtensionContext, readonly observed: (id: string) => boolean = () => false) {
     this.#context = context;
     const subscribe = (event: string, handler: (...handlerArgs: any[]) => unknown): void => {
       if (typeof pi.on !== "function") return;
@@ -76,6 +76,11 @@ export class AgentCompletionInbox {
 
   enqueue(result: Completion, delivered?: () => void): void {
     if (this.#closed) return;
+    if (this.observed(result.id)) {
+      this.#acknowledged.add(result.id);
+      this.#confirmDelivery(delivered);
+      return;
+    }
     if (this.#acknowledged.has(result.id)) {
       this.#confirmDelivery(delivered);
       return;

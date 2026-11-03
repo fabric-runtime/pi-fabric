@@ -86,6 +86,20 @@ const manyAgents = (count: number): MutableSnapshot => {
 const mouse = (widget: FabricWidget, type: "move" | "click", y: number) =>
   widget.handleMouse({ type, button: type === "move" ? "none" : "left", x: 4, y, screenX: 4, screenY: y, width: 100, height: 8, shift: false, alt: false, ctrl: false });
 
+describe("participant observations", () => {
+  it("nests observer handles beneath the exact participant instead of counting them as shells", () => {
+    const current = snapshot();
+    current.shells = [{ id: "observe-123", tool: "monitor", command: "Observe reviewer", status: "spilled", startedAt: current.now - 1000, spilledAt: current.now - 1000, eventCount: 0, unread: false, stopping: false,
+      observes: { kind: "participant", id: "agent-1" }, monitor: { delivery: "wake", timeoutMs: 300000, intervalMs: 5000 } }];
+    const { widget } = setup({ current, maxRows: 8 });
+    const lines = widget.render(140);
+    const parent = lines.findIndex(line => line.includes("security-reviewer"));
+    expect(lines[parent + 1]).toContain("╰─ ○ observe- watching · wake owner");
+    expect(lines[1]).toContain("1 observation");
+    expect(lines[1]).not.toContain("1 shell");
+  });
+});
+
 describe("agent transcript projection", () => {
   it("keeps thinking text from streamed worker deltas", () => {
     const entries = projectAgentTranscript([
