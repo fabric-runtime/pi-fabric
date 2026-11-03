@@ -291,6 +291,8 @@ export const installRegisteredToolCapture = async (
   options: RegisteredToolCaptureOptions,
 ): Promise<RegisteredToolCaptureController> => {
   const hubs = (await extensionRunnerConstructors()).map(captureHub);
+  // No class to observe means no refresh will ever supply the runner.
+  if (hubs.length === 0) options.catalog.markRunnerUnavailable();
   const anchorToken = {};
   Object.defineProperty(options.anchorDefinition, ANCHOR_SYMBOL, {
     value: anchorToken,
