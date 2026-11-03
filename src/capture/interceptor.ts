@@ -263,6 +263,12 @@ const extensionRunnerConstructors = async (): Promise<ExtensionRunnerConstructor
   // them evaluated the peer package's unbundled SDK and every chunk of its
   // bundle in each durable worker.
   if (constructors.size > 0) return [...constructors];
+  // A compiled Pi binary runs every session on its embedded SDK, which Pi maps
+  // for the modules it loads, including this one: the import below. A Pi
+  // package found on disk (PI_PACKAGE_DIR pointing at an npm install) is a dead
+  // class there, and patching it would skip that import and leave nested
+  // mutating pi.* calls failing closed for good.
+  if (isCompiledPiBinary()) return inRealmExtensionRunner();
   const packageRoots = new Set(
     [process.env.PI_PACKAGE_DIR, hostPackageRoot(), entryRealmPackageRoot()]
       .filter((root): root is string => typeof root === "string" && Boolean(root))
@@ -274,17 +280,24 @@ const extensionRunnerConstructors = async (): Promise<ExtensionRunnerConstructor
       constructors.add(Runner);
     }
   }
-  if (constructors.size === 0) {
-    // The host does not advertise its package directory (tests, embeds,
-    // future layouts): fall back to resolving it in this module realm.
-    try {
-      const hostModule = (await import("@earendil-works/pi-coding-agent")) as {
-        ExtensionRunner?: ExtensionRunnerConstructor;
-      };
-      if (hostModule.ExtensionRunner) constructors.add(hostModule.ExtensionRunner);
-    } catch { /* host unavailable in this realm; tool capture stays inert */ }
+  // The host does not advertise its package directory (tests, embeds,
+  // future layouts): fall back to resolving it in this module realm.
+  return constructors.size > 0 ? [...constructors] : inRealmExtensionRunner();
+};
+
+// The markers of Pi's own test (config.ts isBunBinary): Bun runs a compiled
+// binary from a virtual file system, /$bunfs/root/pi on POSIX and
+// B:/~BUN/root/pi on Windows, and argv[1] names that virtual entry.
+const isCompiledPiBinary = (cli: string | undefined = process.argv[1]): boolean =>
+  typeof cli === "string" && /\$bunfs|~BUN|%7EBUN/.test(cli);
+
+const inRealmExtensionRunner = async (): Promise<ExtensionRunnerConstructor[]> => {
+  try {
+    const hostModule = (await import("@earendil-works/pi-coding-agent")) as { ExtensionRunner?: unknown };
+    return isExtensionRunnerConstructor(hostModule.ExtensionRunner) ? [hostModule.ExtensionRunner] : [];
+  } catch {
+    return []; // Host unavailable in this realm; tool capture stays inert.
   }
-  return [...constructors];
 };
 
 export const installRegisteredToolCapture = async (
