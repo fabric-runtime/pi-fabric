@@ -469,6 +469,7 @@ interface FabricProviderGlobal {
 // After executor.shellHangMs the await still resolves ok: true with a still-running
 // notice, pid, and live output path in details; background: true (alias
 // run_in_background) detaches immediately. The process keeps writing that file.
+// timeout bounds the process, not the wait; tasks.wait waits for the result.
 // Extended near-miss repairs: find's name/filename/glob → pattern, write's
 // data → content, ls's folder → path, bash's script → command; numeric option
 // fields (limit/offset/context/timeout) also accept numeric strings, coerced
