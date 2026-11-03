@@ -130,12 +130,58 @@ describe("Fabric agent list", () => {
     shift: false, alt: false, ctrl: false, wheelDelta: delta,
   });
 
-  it("reserves the overflow slot independently of scroll position", () => {
+  it("reclaims the overflow slot at the bottom without changing the viewport height", () => {
     expect(widgetViewport(0, 4, 10)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 0, offset: 0 });
     expect(widgetViewport(2, 4, 10)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 0, offset: 0 });
-    for (const offset of [0, 1, 7, 99]) {
-      expect(widgetViewport(10, 4, offset)).toEqual({ windowRows: 3, hasCue: true, maxOffset: 7, offset: Math.min(offset, 7) });
+    for (const offset of [0, 1, 5]) {
+      expect(widgetViewport(10, 4, offset)).toEqual({ windowRows: 3, hasCue: true, maxOffset: 6, offset });
     }
+    for (const offset of [6, 7, 99]) {
+      expect(widgetViewport(10, 4, offset)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 6, offset: 6 });
+    }
+  });
+
+  it("keeps every viewport bounded and fills the last page across content and row budgets", () => {
+    for (let count = 0; count <= 30; count++) for (let budget = 0; budget <= 8; budget++) {
+      for (let offset = -1; offset <= count + 1; offset++) {
+        const view = widgetViewport(count, budget, offset);
+        expect(view.offset).toBeGreaterThanOrEqual(0);
+        expect(view.offset).toBeLessThanOrEqual(view.maxOffset);
+        expect(view.windowRows + Number(view.hasCue)).toBe(budget);
+        const visible = Math.min(view.windowRows, count - view.offset);
+        expect(visible + Number(view.hasCue)).toBe(Math.min(count, budget));
+        if (budget > 0 && view.offset === view.maxOffset) {
+          expect(view.hasCue).toBe(false);
+          expect(view.offset + visible).toBe(count);
+        }
+        if (view.hasCue) expect(view.offset + visible).toBeLessThan(count);
+      }
+    }
+  });
+
+  it("makes the former cue row hoverable and clickable, then restores the cue when scrolling up", () => {
+    const { widget, opened } = setup({ current: manyAgents(6), maxRows: 5, interaction: { mainId: "main", hints: false } });
+    const initial = widget.render(80);
+    expect(initial.at(-1)).toBe("↓ 4 more");
+    expect(mouse(widget, "click", 4)).toBeUndefined();
+    wheel(widget, 2);
+    const beforeEnd = widget.render(80);
+    expect(beforeEnd.at(-1)).toBe("↓ 2 more");
+    expect(mouse(widget, "click", 4)).toBeUndefined();
+    wheel(widget, 1);
+    expect(widget.hasChanged()).toBe(true);
+    const end = widget.render(80);
+    expect(end).toHaveLength(initial.length);
+    expect(end.slice(2).map(line => /agent-\d+/.exec(line)?.[0])).toEqual(["agent-3", "agent-4", "agent-5"]);
+    mouse(widget, "move", 4);
+    expect(widget.render(80)[4]).toMatch(/^● agent-5/);
+    expect(mouse(widget, "click", 4)).toEqual({ handled: true, render: true });
+    expect(opened.at(-1)?.id).toBe("agent-5");
+    wheel(widget, -1);
+    expect(widget.render(80).at(-1)).toBe("↓ 2 more");
+    expect(mouse(widget, "click", 4)).toBeUndefined();
+    wheel(widget, -100);
+    expect(widget.render(80)).toEqual(initial);
   });
 
   it("scrolls only inside the overflowing widget and clamps at both ends without height jitter", () => {
@@ -160,9 +206,9 @@ describe("Fabric agent list", () => {
     expect(wheel(widget, 100)).toEqual({ handled: true, render: true });
     const last = widget.render(100);
     expect(last).toHaveLength(first.length);
-    expect(last[1]).toMatch(/↑ 5 more$/);
-    expect(last[4]).toContain("agent-7");
-    expect(last.at(-1)).toBe("");
+    expect(last[1]).toMatch(/↑ 4 more$/);
+    expect(last[2]).toContain("agent-4");
+    expect(last.at(-1)).toContain("agent-7");
     expect(wheel(widget, 100)).toEqual({ handled: true, render: false });
     wheel(widget, -100);
     expect(widget.render(100)).toEqual(first);
@@ -189,7 +235,7 @@ describe("Fabric agent list", () => {
     rows = 8;
     const small = widget.render(100);
     expect(small).toHaveLength(4);
-    expect(small[2]).toContain("agent-17");
+    expect(small[2]).toContain("agent-16");
     expect(small.at(-1)).toMatch(/^↓ /);
     current.agents = manyAgents(1).agents; widget.invalidate();
     expect(widget.render(100)).toHaveLength(3);
@@ -441,9 +487,9 @@ describe("Fabric agent list", () => {
     expect(opened.at(-1)?.id).toBe("agent-1");
     for (let i = 0; i < 10; i++) widget.handleInput("\x1b[B");
     const end = widget.render(40);
-    expect(end[1]).toMatch(/↑ 4 more$/);
-    expect(end[3]).toMatch(/^● agent-5/);
-    expect(end.at(-1)).toBe("");
+    expect(end[1]).toMatch(/↑ 3 more$/);
+    expect(end[2]).toMatch(/^○ agent-3/);
+    expect(end.at(-1)).toMatch(/^● agent-5/);
     expect(end).toHaveLength(initial.length);
     expect(end.join("\n")).not.toContain("↓ ");
     for (const width of [1, 2, 8, 12, 40]) {
@@ -525,7 +571,7 @@ describe("Fabric agent list", () => {
     }
   });
 
-  it("snapshots ANSI-colored viewport states including singular overflow", () => {
+  it("snapshots ANSI-colored viewport states through the full final page", () => {
     const current = manyAgents(4);
     const ansi = { ...theme, fg: (_color: string, text: string) => `\x1b[36m${text}\x1b[39m`, bold: (text: string) => `\x1b[1m${text}\x1b[22m` } as unknown as Theme;
     const widget = new FabricWidget(ansi, () => current, 5, () => 10, undefined, { mainId: "main", hints: false, release: () => {}, requestRender: () => {} });
@@ -535,10 +581,10 @@ describe("Fabric agent list", () => {
     for (let i = 0; i < 3; i++) widget.handleInput("\x1b[B");
     const middle = widget.render(40);
     expect(middle[1]).toMatch(/↑ 1 more\x1b\[39m$/);
-    expect(screen(40).slice(2)).toEqual(["○ agent-1", "● agent-2", "↓ 1 more"]);
+    expect(screen(40).slice(2)).toEqual(["○ agent-1", "● agent-2", "○ agent-3"]);
     widget.handleInput("\x1b[B");
-    expect(widget.render(40)[1]).toMatch(/↑ 2 more\x1b\[39m$/);
-    expect(screen(40).slice(2)).toEqual(["○ agent-2", "● agent-3", ""]);
+    expect(widget.render(40)[1]).toMatch(/↑ 1 more\x1b\[39m$/);
+    expect(screen(40).slice(2)).toEqual(["○ agent-1", "○ agent-2", "● agent-3"]);
     for (const width of [1, 4, 8, 12, 40]) expect(widget.render(width).every(line => visibleWidth(line) <= width)).toBe(true);
   });
 
@@ -552,9 +598,11 @@ describe("Fabric agent list", () => {
     widget.focused = true; widget.selectFirst(); widget.render(100);
     for (let index = 0; index < 40; index++) widget.handleInput("\x1b[B");
     const shown = widget.render(100);
-    expect(shown).toHaveLength(6); expect(shown[4]).toMatch(/^● shell-29/);
-    expect(shown.at(-1)).toBe("");
+    expect(shown).toHaveLength(6); expect(shown[2]).toMatch(/^○ shell-26/);
+    expect(shown.at(-1)).toMatch(/^● shell-29/);
     widget.handleInput("\r"); expect(opened.at(-1)?.id).toBe("shell-29-0000");
+    expect(mouse(widget, "click", 5)).toEqual({ handled: true, render: true });
+    expect(opened.at(-1)?.id).toBe("shell-29-0000");
     const firstVisible = /shell-\d+/.exec(shown[2]!)![0];
     expect(mouse(widget, "click", 2)).toEqual({ handled: true, render: true });
     expect(opened.at(-1)?.id).toBe(`${firstVisible}-0000`);

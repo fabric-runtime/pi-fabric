@@ -247,14 +247,16 @@ export const widgetRowLimit = (maxRows: number, terminalRows?: number): number =
 export const widgetFocusedRowLimit = (maxRows: number, terminalRows?: number): number =>
   widgetRowLimit(maxRows, terminalRows);
 
-/** Reserve an overflow row for the whole scroll range, not just while rows remain below. */
+/** Keep the viewport height fixed, replacing the overflow cue with content at the bottom. */
 export const widgetViewport = (contentRows: number, budget: number, offset: number) => {
   const available = Math.max(0, Math.floor(budget));
+  // Clamp against a full viewport so the last page has no empty cue slot.
+  const maxOffset = available > 0 ? Math.max(0, contentRows - available) : 0;
+  const clampedOffset = Math.max(0, Math.min(maxOffset, Math.floor(offset)));
   // At a one-child budget keep that child reachable; there is no room for a cue.
-  const hasCue = contentRows > available && available > 1;
+  const hasCue = clampedOffset < maxOffset && available > 1;
   const windowRows = Math.max(0, available - Number(hasCue));
-  const maxOffset = windowRows > 0 ? Math.max(0, contentRows - windowRows) : 0;
-  return { windowRows, hasCue, maxOffset, offset: Math.max(0, Math.min(maxOffset, Math.floor(offset))) };
+  return { windowRows, hasCue, maxOffset, offset: clampedOffset };
 };
 
 /** Pointer-only Main row id; distinct from no hover in the render-cache key. */
@@ -476,8 +478,8 @@ export class FabricWidget implements Component, Focusable {
     if (this.#hoveredId !== undefined && this.#hoveredId !== HEADER_ROW && !rows.some((row) => row.id === this.#hoveredId)) {
       this.#hoveredId = undefined;
     }
-    // Pin Main. The overflow slot depends on total content, not offset: reaching
-    // the last child must not enlarge the viewport and jump the footer.
+    // Pin Main. At the bottom a child replaces the overflow cue, keeping the
+    // viewport height fixed without leaving a blank row or moving the footer.
     let viewport = widgetViewport(lines.length - 1, body - 1, this.#scrollOffset);
     if (this.focused && this.#followSelection && viewport.windowRows > 0) {
       const selected = (rows.find(row => row.id === this.#selectedId)?.line ?? 0) - 1;
@@ -504,8 +506,7 @@ export class FabricWidget implements Component, Focusable {
     const header = headerWidth === width ? lines[0] ?? "" : this.#content(snapshot, width, headerWidth).lines[0] ?? "";
     const boundedHeader = label ? this.#withRightLabel(header, label, width) : truncateToWidth(header, width);
     const visibleLines = [boundedHeader, ...lines.slice(start, start + capacity).map(line => truncateToWidth(line, width))];
-    if (viewport.hasCue) visibleLines.push(below > 0
-      ? truncateToWidth(this.theme.fg("dim", `↓ ${below} more`), width) : "");
+    if (viewport.hasCue) visibleLines.push(truncateToWidth(this.theme.fg("dim", `↓ ${below} more`), width));
     // Only participant rows, never the overflow footer, are pointer targets.
     this.#rows = rows.filter(row => row.line === 0 || (row.line >= start && row.line < start + capacity))
       .map(row => ({ ...row, line: row.line === 0 ? 0 : row.line - start + 1 }));
