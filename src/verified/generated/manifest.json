@@ -2,7 +2,7 @@
   "version": 3,
   "prover": "gdp-wired@0.31.1",
   "inputs": {
-    "proofs/index.ts": "5645d0d6e4a62c362106b294357fc9bbbc9f6ce28216419ed7025c91298fa649",
+    "proofs/index.ts": "bc096b18e91ee1a35888d5317d529f6bd29d7a31e44ff09febe990e9ec39313f",
     "proofs/kernel.ts": "0edaa003d2ca5f33c4e30e65a427efb6d0b2135e097875f62732907f5a4b411b",
     "proofs/policy.ts": "525f2306ee56395ce5424495ea0cd7031c6b64238b1673c05be09d4292ede621",
     "proofs/compaction.ts": "b559117f9f2224ba7bace8a94fc06af0ff60dd7cd997af5d177990202b4ca9b2",
@@ -15,7 +15,8 @@
     "proofs/speculation.ts": "dc1f1b59f2e5414a439e7e62c897bd238b3470c7e608a9228fcf9e3b18dc9477",
     "proofs/budget.ts": "a6aa3ce2aaffe80d411f8addb6953cbee82c522743a7934dca12e823cf8e3f13",
     "proofs/actor-name.ts": "777738fad15d31e9367d4290f6f4f8f3178a41adbedc4c889222ba317552d358",
-    "scripts/verified-kernels.ts": "e6a6718990d1ab7c75020f0d6b62040df265610f20e0a1b6e61f6a8b3e71360d",
+    "proofs/prompt-guidance.ts": "dba83fcc37ae159fbd82187524142d87dc8bc99ad32505d7a5c1bc8fa0bb583c",
+    "scripts/verified-kernels.ts": "f16617c4442d7c3c8102a346abd02f7675340750b3f37324c163637ad1af8bfa",
     "scripts/verified-kernel-pool.ts": "7869f607e4ff87ac219fe2b14df06887fbc56a43c783118e64387f477e5ead42",
     "scripts/verified-kernel-worker.ts": "d9a9a4a6e80d92f515ee4f8018193418d6937255688cf2f7e52953813bc65a4f"
   },
@@ -41,7 +42,9 @@
     "src/verified/generated/budget.js": "d9361fc2ad9be99aa67004540ed1506742afb5220528c0f8d43ff19c845e06e1",
     "src/verified/generated/budget.d.ts": "9e5156ed081c60fb9af6a015e51356b8a473e6c3d60276817792d0eabb8116b4",
     "src/verified/generated/actor-name.js": "8eee0026642a99f7130f9ba28a7882911e2e6957cae0de4248c4176fde9065e7",
-    "src/verified/generated/actor-name.d.ts": "7b694c53e405e0b283ebec2c38d4d1bcd93693add9e0078fb57472098582f7f0"
+    "src/verified/generated/actor-name.d.ts": "7b694c53e405e0b283ebec2c38d4d1bcd93693add9e0078fb57472098582f7f0",
+    "src/verified/generated/prompt-guidance.js": "9297b840b08e4ed615c14cabc8ec07d6f01f71d8a219b84f4253b9a4e829e558",
+    "src/verified/generated/prompt-guidance.d.ts": "e5df630be45b7f9963433ea5e78d32f6a07fd9269925da5bdd8ef647d273d8d1"
   },
   "claims": {
     "policy": [
@@ -138,6 +141,12 @@
       "budgetAdmission: budget_complete: valid observations below the threshold are admitted",
       "budgetAdmission: budget_exhausted: equality and larger observations are refused",
       "budgetAdmission: budget_invalid: invalid observations are never admitted"
+    ],
+    "prompt-guidance": [
+      "promptGuidance: active guidance has exactly one portable destination and no duplicate native rules",
+      "promptGuidance: inactive guidance keeps native ownership and injects nothing",
+      "promptGuidance: an unforced structured prompt carries guidance in its section",
+      "promptGuidance: a forced or legacy prompt carries guidance in its append"
     ]
   }
 }

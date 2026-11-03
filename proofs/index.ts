@@ -1,6 +1,7 @@
 // The registered kernels. Each module is proved, refused in every broken
 // variant, cross-checked against its builders, and compiled to
 // `src/verified/generated/<module>.js`.
+import { promptGuidanceKernels, PROMPT_GUIDANCE_BUGS } from "./prompt-guidance.js";
 import { actorNameKernels, ACTOR_NAME_BUGS } from "./actor-name.js";
 import { authorityKernels, AUTHORITY_BUGS } from "./authority.js";
 import { compactionKernels, CUT_BUGS } from "./compaction.js";
@@ -37,4 +38,5 @@ export const modules: readonly KernelModule[] = [
   { stem: "speculation", source: "proofs/speculation.ts", kernels: speculationKernels as any, bugs: SPECULATION_BUGS },
   { stem: "actor-name", source: "proofs/actor-name.ts", kernels: actorNameKernels as any, bugs: ACTOR_NAME_BUGS },
   { stem: "budget", source: "proofs/budget.ts", kernels: budgetKernels as any, bugs: BUDGET_BUGS },
+  { stem: "prompt-guidance", source: "proofs/prompt-guidance.ts", kernels: promptGuidanceKernels as any, bugs: PROMPT_GUIDANCE_BUGS },
 ];

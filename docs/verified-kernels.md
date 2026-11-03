@@ -34,6 +34,7 @@ a set of small policy kernels, **not a proof of every subsystem invariant**.
 | State and Schema | `policy.ts`: `headReadable`, `certificateAccepted`, `consume` | `state/store.ts`, `schema/controller.ts` | `head_sound`, `pending_without_marker_hidden`, `committed_head_visible`, `pending_head_visible`, `certificate_sound`, `certificate_complete`, `consume_once`, `consume_retires` |
 | External mesh grants | `grants.ts`: `meshGrantTake` | `verified/grants.ts`, `mesh/grants.ts` | Exact scoped admission, expiry/refusal precedence, exact decrement, refusal preservation and kind/topic forwarding |
 | Speculation bookkeeping | `speculation.ts`: `speculationAdmission`, `speculationCheck`, `speculationAccounting`; `policy.ts`: `consume` | `verified/speculation.ts`, `speculation/store.ts` | Exact admission caps, checkpoint refusal precedence, one-use entry reservation, exact event counters and epoch successor |
+| Portable prompt guidance | `prompt-guidance.ts`: `promptGuidance` | `core/guidance-delivery.ts`, `extension.ts` | Exactly one portable destination while active, no inactive injection, structured routing, forced/legacy fallback |
 | Actor name decision | `actor-name.ts`: `actorName` | `actors/name-policy.ts`, `actors/manager.ts`, `actors/directory.ts` | Active dominates stopped, stopped is refused absent active, neither is available; host snapshot only, not a reservation |
 | Agent budget admission | `budget.ts`: `budgetAdmission` | `verified/budget.ts`, `agents/manager.ts` | Strict threshold safety/completeness, equality refusal, invalid observations refused |
 | Effect diagnostics | `policy.ts`: `unknownConflict`, `knownConflict` | `components/effect-policy.ts` | `unknown_conflict_exact`, `unknown_conflict_symmetric`, `known_conflict_exact` |
@@ -299,6 +300,28 @@ fairness remain TypeScript protocols checked by integration tests. Neither
 reducer proves that provider promises account for every subprocess or remote
 effect. Arbitrary inverses, ambient effects, liveness, schedule confluence and
 author-defined observational equivalence are not claimed.
+
+### Portable execution guidance
+
+Fabric's execution rules have one authored source in `core/execution-guidelines.ts`.
+The tool metadata exposes them to Pi, and the first-use prompt hook moves only
+those exact rules into the named `fabric` section (or the explicit append when
+a prompt is forced or the host has no sections). This keeps providers that
+project custom sections but discard Pi's generated rules, such as
+`pi-claude-bridge`, from losing batching and bounded-output instructions.
+Unrelated tool rules remain in their original place. Preparation is pure: the
+hook commits the relocation only after all renderers succeed, and removes exact
+owned bullet lines from already-rendered forced/legacy prompts before appending
+the current rules. Stale rules from a previous kernel selection are owned too.
+
+The compiled `promptGuidance` decision proves an active render selects exactly
+one portable destination and removes duplicate native ownership; an inactive
+render keeps native ownership and injects nothing. Forced prompts always take
+the append, even when a sections object exists. These are routing laws, not
+proofs about prose semantics, provider compliance, or model token savings.
+Exact string preservation, language variants, other extensions' rules, stable
+re-renders, and Pi's actual named-section/forced-prompt pipeline are tested
+offline. No model inference is needed.
 
 ## Reproducible bridge
 
