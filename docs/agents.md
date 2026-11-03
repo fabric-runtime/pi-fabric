@@ -704,7 +704,7 @@ File or git changes you did not make may be theirs: do not revert or overwrite t
 </fabric-peers>
 ```
 
-- **Display.** The full notice stays in the model context as a hidden transcript entry. The human sees a compact Pi notification, such as `Fabric peers: joined FAB-2; 1 active`, instead of a transcript card. Notification failures do not discard the model advice.
+- **Display.** The full notice stays in the model context as a hidden transcript entry. The human sees a compact Pi notification, such as `Fabric peers: joined FAB-2; 1 active`. The transcript card is hidden. Notification failures do not discard the model advice.
 - **When.** At the start of a prompt, and at the end of any turn that continues into another model call, so a peer that joins during a long run is noticed before the next request. A final turn adds nothing; the next prompt folds every change made while idle into one notice.
 - **Cache safety.** The notice is a persistent transcript message appended at a turn boundary. The system prompt, tool declarations, and every earlier message stay byte-identical, so the provider's cached prefix remains valid and only the notice itself is new input. The mid-run notice is a native `turn_end` boundary entry: it rides the request the run was about to make and never triggers an extra one. The text is deterministic for a given change. It carries labels, participant ids, and a working directory when that differs from the caller's, and no clock, run status, or model.
 - **Once per change.** Fabric rebuilds what the model was told from the notices on the active branch, so resuming or navigating a session does not repeat one. A compaction may drop earlier notices from the context, so the current peers are stated again at the next boundary.
