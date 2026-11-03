@@ -891,10 +891,21 @@ export class ParticipantDirectory implements FabricParticipantSource {
     }
     // One delete at a time, a bounded batch per sweep: every delete rewrites
     // the whole state under the mesh lock, and a burst of them would starve
-    // the lease renewals of every host, this one included. ifVersion keeps a
-    // record that its owner renewed meanwhile.
+    // the lease renewals of every host, this one included. An uncontended
+    // delete settles without a macrotask, so yield between deletes to let the
+    // heartbeat timer run. ifVersion keeps a record that its owner renewed
+    // meanwhile; a lost CAS (another host reaped it, or its owner came back)
+    // just moves on. Any other failure, such as a lock timeout, ends the batch
+    // and leaves the rest for the next beat, so close() never waits on a
+    // string of lock timeouts.
     for (const entry of reap.slice(0, REAP_BATCH)) {
-      await this.mesh.delete({ key: entry.key, ifVersion: entry.version }).catch(() => undefined);
+      if (this.#closed) return false;
+      try {
+        await this.mesh.delete({ key: entry.key, ifVersion: entry.version });
+      } catch {
+        if (this.mesh.get(entry.key)?.version === entry.version) return true;
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
     return reap.length > REAP_BATCH;
   }

@@ -230,6 +230,7 @@ class ResidentHost {
       rootId: config.rootId,
       identity: this.identity,
       ownerIncarnation: this.control.incarnation,
+      departedRetentionMs: config.mesh.departedRetentionMs,
     });
     if (config.agents.budgetUsd > 0) {
       const budgetFile = path.join(config.residencyRoot, "budget.jsonl");
