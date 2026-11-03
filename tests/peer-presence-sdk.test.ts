@@ -4,7 +4,7 @@ import path from "node:path";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PEER_PRESENCE_MESSAGE_TYPE, PeerPresenceNotifier } from "../src/topology/peer-presence.js";
 import type { FabricPeerInfo } from "../src/topology/types.js";
 
@@ -22,6 +22,7 @@ describe("peer presence with the real Pi SDK", () => {
     let notifier: PeerPresenceNotifier | undefined;
     const requests: string[][] = [];
     const errors: unknown[] = [];
+    const notify = vi.fn();
     const settingsManager = SettingsManager.inMemory({
       defaultProjectTrust: "never", compaction: { enabled: false, keepRecentTokens: 1 }, retry: { enabled: false },
     });
@@ -69,7 +70,7 @@ describe("peer presence with the real Pi SDK", () => {
       const { session } = await createAgentSession({ cwd, agentDir: cwd, settingsManager, modelRuntime, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd) });
       try {
         // A bound UI context is what makes hasUI true; print mode binds none.
-        await session.bindExtensions({ uiContext: { notify() {} } as never, onError: error => errors.push(error) });
+        await session.bindExtensions({ uiContext: { notify } as never, onError: error => errors.push(error) });
         await session.setModel(modelRuntime.getModel("offline-presence", "fixture")!);
         await session.prompt("Do the work.");
         await session.waitForIdle();
@@ -88,7 +89,11 @@ describe("peer presence with the real Pi SDK", () => {
         // Unchanged peers add nothing, and the earlier notice is replayed byte-for-byte.
         expect(requests[2]!.slice(0, requests[1]!.length)).toEqual(requests[1]);
         expect(requests[2]!.filter(message => message.includes("fabric-peers"))).toHaveLength(1);
-        expect(session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE)).toHaveLength(1);
+        const notices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
+        expect(notices).toHaveLength(1);
+        expect(notices[0]).toMatchObject({ display: false });
+        expect(notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 active", "info");
+        expect(notify).toHaveBeenCalledTimes(1);
         expect(errors).toEqual([]);
       } finally {
         notifier?.close();

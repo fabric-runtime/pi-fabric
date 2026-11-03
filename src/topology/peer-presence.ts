@@ -171,6 +171,16 @@ export const formatPeerPresenceNotice = (change: PeerPresenceChange, selfCwd?: s
   return lines.join("\n");
 };
 
+const formatPeerPresenceNotification = (change: PeerPresenceChange): string => {
+  const names = (records: PeerPresenceRecord[]) => records.slice(0, 3).map(record => record.label).join(", ") +
+    (records.length > 3 ? ` +${records.length - 3} more` : "");
+  return "Fabric peers: " + [
+    change.joined.length ? `joined ${names(change.joined)}` : "",
+    change.left.length ? `left ${names(change.left)}` : "",
+    `${change.present.length} active`,
+  ].filter(Boolean).join("; ");
+};
+
 export interface PeerPresenceNotifierOptions {
   peers: () => FabricPeerInfo[];
   enabled: () => boolean;
@@ -205,7 +215,7 @@ export class PeerPresenceNotifier {
       // A run without a UI has no reader for the notice, and the model's reply to
       // it would replace the answer in `pi -p` output. Skip before the ledger moves.
       if (ctx?.hasUI === false) return undefined;
-      const message = this.#take();
+      const message = this.#take(ctx);
       return message ? { message } : undefined;
     });
     subscribe("turn_end", (event, ctx) => {
@@ -214,7 +224,7 @@ export class PeerPresenceNotifier {
       if (ctx?.hasUI === false || ctx?.signal?.aborted || event?.message?.role !== "assistant" || event.message.stopReason !== "toolUse") {
         return undefined;
       }
-      const message = this.#take();
+      const message = this.#take(ctx);
       if (!message) return undefined;
       // A boundary entry rides the next request without forcing an extra one.
       return { entries: [...(event.entries ?? []), { type: "custom_message", ...message }] };
@@ -236,15 +246,18 @@ export class PeerPresenceNotifier {
     }
   }
 
-  #take(): PeerPresenceMessage | undefined {
+  #take(context: ExtensionContext | undefined): PeerPresenceMessage | undefined {
     try {
       if (!this.options.enabled()) return undefined;
       const change = this.#ledger.take(this.options.peers().map(peerPresenceRecord), this.#now());
       if (!change) return undefined;
+      // Human feedback is transient; the full safety advice remains in model
+      // context, without a visible transcript card or an extra model turn.
+      try { context?.ui?.notify?.(formatPeerPresenceNotification(change), "info"); } catch { /* UI failure must not lose model advice. */ }
       return {
         customType: PEER_PRESENCE_MESSAGE_TYPE,
         content: formatPeerPresenceNotice(change, this.options.cwd),
-        display: true,
+        display: false,
         details: { version: 1, present: change.present },
       };
     } catch {
