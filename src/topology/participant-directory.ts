@@ -33,6 +33,10 @@ const PARTICIPANT_LEASE_MS = 15_000;
 const TOMBSTONE_PREFIX = "topology/tombstones/";
 const DEPARTED_LIMIT = 32;
 const DEPARTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+/** How often a host sweeps records that dead hosts left behind. */
+const REAP_INTERVAL_MS = 5 * 60 * 1_000;
+/** Most records one sweep deletes; a backlog drains over successive heartbeats. */
+const REAP_BATCH = 100;
 const keyFor = (prefix: string, id: string): string =>
   prefix + createHash("sha256").update(id).digest("hex");
 
@@ -355,6 +359,8 @@ export class ParticipantDirectory implements FabricParticipantSource {
   #refreshScheduled = false;
   #refreshAgain = false;
   #quiescing = false;
+  #reapedAt = 0;
+  #reaping: Promise<void> | undefined;
 
   constructor(
     readonly mesh: MeshStore,
@@ -649,6 +655,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = undefined;
     await this.#refreshing?.catch(() => undefined);
+    await this.#reaping;
     if (!this.options.enabled) return;
     const owned = this.mesh.listAll(PARTICIPANT_PREFIX).flatMap((entry) => {
       const participant = participantFromEntry(entry);
@@ -839,6 +846,57 @@ export class ParticipantDirectory implements FabricParticipantSource {
       value: host,
       identity: this.options.identity,
     });
+
+    // The sweep runs beside the heartbeat instead of holding it up. A batch
+    // that leaves work behind brings the next sweep forward to the next beat.
+    if (!this.#reaping && leaseAt - this.#reapedAt >= REAP_INTERVAL_MS) {
+      this.#reapedAt = leaseAt;
+      this.#reaping = this.#reapDeparted(leaseAt)
+        .then((more) => {
+          if (more) this.#reapedAt = 0;
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.#reaping = undefined;
+        });
+    }
+  }
+
+  /**
+   * Delete records whose owner lease has been dead longer than the departed
+   * window. Close removes a host's own records, but a killed or crashed host
+   * never closes, and every heartbeat in the project re-reads what it left.
+   * Lost roots inside the window stay, so departed() still reports them.
+   * Returns true when records were left for a later batch.
+   */
+  async #reapDeparted(now: number): Promise<boolean> {
+    const cutoff = now - this.#departedRetentionMs;
+    const hosts = this.#hosts();
+    const retainedOwners = new Set<string>();
+    const reap: MeshStateEntry[] = [];
+    for (const entry of this.mesh.listAll(PARTICIPANT_PREFIX)) {
+      const participant = participantFromEntry(entry);
+      if (!participant) continue;
+      const owner = hosts.get(participant.ownerHostId);
+      const heartbeat = owner?.identity.id === participant.ownerIdentityId ? owner.updatedAt : 0;
+      if (!liveOwner(participant, hosts, now) && Math.max(participant.updatedAt, heartbeat) < cutoff) {
+        reap.push(entry);
+      } else {
+        retainedOwners.add(participant.ownerHostId);
+      }
+    }
+    for (const entry of this.mesh.listAll(HOST_PREFIX)) {
+      const host = hostFromEntry(entry);
+      if (host && host.expiresAt < cutoff && !retainedOwners.has(host.id)) reap.push(entry);
+    }
+    // One delete at a time, a bounded batch per sweep: every delete rewrites
+    // the whole state under the mesh lock, and a burst of them would starve
+    // the lease renewals of every host, this one included. ifVersion keeps a
+    // record that its owner renewed meanwhile.
+    for (const entry of reap.slice(0, REAP_BATCH)) {
+      await this.mesh.delete({ key: entry.key, ifVersion: entry.version }).catch(() => undefined);
+    }
+    return reap.length > REAP_BATCH;
   }
 
   /**
