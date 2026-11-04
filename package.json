@@ -1,6 +1,6 @@
 {
   "name": "pi-fabric",
-  "version": "0.132.3",
+  "version": "0.132.4",
   "description": "A programmable tool and agent runtime for Pi",
   "type": "module",
   "main": "./dist/index.js",
