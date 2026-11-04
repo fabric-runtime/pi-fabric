@@ -25,27 +25,45 @@ const extractBalancedJson = (text: string, start: number): string | null => {
   return null;
 };
 
-export const parseStructuredValue = (text: string): unknown => {
+export const parseStructuredValue = (text: string, schema?: Record<string, unknown>): unknown => {
   const trimmed = text.trim();
   try {
     return JSON.parse(trimmed);
   } catch {
     // Whole text is not JSON; try extraction below.
   }
+  // Prose around the payload is common ("Analysis complete. … {…}"), and prose
+  // itself often contains bracketed code such as `#[test]`. The first balanced
+  // run may parse as invalid or even valid-but-unrelated JSON, so collect every
+  // candidate in order and let a schema pick the one that actually matches.
+  const candidates: unknown[] = [];
   const fenced = trimmed.match(/```(?:json)?\s*\n([\s\S]*?)\n```/i);
   if (fenced?.[1]) {
     try {
-      return JSON.parse(fenced[1].trim());
+      candidates.push(JSON.parse(fenced[1].trim()));
     } catch {
       // Fenced block is not JSON; try balanced extraction below.
     }
   }
-  const start = trimmed.search(/[{\[]/);
-  if (start >= 0) {
-    const balanced = extractBalancedJson(trimmed, start);
-    if (balanced) return JSON.parse(balanced);
+  for (let i = 0; i < trimmed.length && candidates.length < 16; i++) {
+    if (trimmed[i] !== "{" && trimmed[i] !== "[") continue;
+    const balanced = extractBalancedJson(trimmed, i);
+    if (!balanced) continue;
+    try {
+      candidates.push(JSON.parse(balanced));
+    } catch {
+      // Bracketed prose such as `#[test]` extracts but does not parse; keep scanning.
+    }
   }
-  return JSON.parse(trimmed);
+  if (candidates.length === 0) {
+    // Surfaces the original whole-text parse error.
+    return JSON.parse(trimmed);
+  }
+  if (schema) {
+    const matching = candidates.find((value) => Value.Check(schema, value));
+    if (matching !== undefined) return matching;
+  }
+  return candidates[0];
 };
 
 export function validateAgentResult<T extends { status: string; text: string; value?: unknown; error?: string }>(record: T, schema?: Record<string, unknown>): T {
@@ -53,7 +71,7 @@ export function validateAgentResult<T extends { status: string; text: string; va
   let parsed = false;
   try {
     // An explicit null is a value; only a missing one falls back to the text.
-    const value = record.value !== undefined ? record.value : parseStructuredValue(record.text);
+    const value = record.value !== undefined ? record.value : parseStructuredValue(record.text, schema);
     parsed = true;
     if (!Value.Check(schema, value)) {
       const errors = [...Value.Errors(schema, value)].slice(0, 5).map((error) => error.message).join("; ");
