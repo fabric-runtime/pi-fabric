@@ -810,9 +810,11 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
       model: "deepseek/deepseek-chat",
     });
     const firstResult = await client.waitAgent(first.id);
-    expect((firstResult as typeof firstResult & { systemPrompt?: string }).systemPrompt).toBe(
-      "First durable guidance",
-    );
+    const firstPrompt = (firstResult as typeof firstResult & { systemPrompt?: string }).systemPrompt;
+    expect(firstPrompt).toMatch(/^First durable guidance\n\n/);
+    expect(firstPrompt).toContain(`Your owning Main peer (lineage root): ${state.identity.id}.`);
+    expect(firstPrompt).toContain("Use agents.self()");
+    expect(firstPrompt).not.toContain(first.id);
 
     client.updateModelGuidance(guidance("Revised durable guidance"));
     const second = await client.spawnAgent({
@@ -822,9 +824,11 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
       model: "deepseek/deepseek-chat",
     });
     const secondResult = await client.waitAgent(second.id);
-    expect((secondResult as typeof secondResult & { systemPrompt?: string }).systemPrompt).toBe(
-      "Revised durable guidance",
-    );
+    const secondPrompt = (secondResult as typeof secondResult & { systemPrompt?: string }).systemPrompt;
+    // The live component snapshot changes; the owning-Main suffix stays stable
+    // across durable runs and must not accumulate or leak per-run identities.
+    expect(secondPrompt).toBe(firstPrompt!.replace("First durable guidance", "Revised durable guidance"));
+    expect(secondPrompt).not.toContain(second.id);
 
     await client.cleanupAgent(first.id);
     await client.cleanupAgent(second.id);
