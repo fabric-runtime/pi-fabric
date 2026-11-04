@@ -1494,7 +1494,7 @@ export class FabricExecutionService {
       journal?.close();
       if (!nativeFinished) classifierUsages.push(...nativeTransaction.finish(false));
       this.#nestedRunners.delete(options.parentToolCallId);
-      await this.registry.endInvocation(options.parentToolCallId);
+      await this.registry.endInvocation(options.parentToolCallId, undefined, options.signal);
       flushEmit();
     }
 

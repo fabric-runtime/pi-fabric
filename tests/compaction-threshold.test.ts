@@ -27,6 +27,32 @@ describe("model-linked compaction thresholds", () => {
     expect(context.compact).toHaveBeenCalledOnce();
   });
 
+  it.each(["ratio", "tokens", "headroom"])("does not start %s compaction with an aborted signal", async (trigger) => {
+    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+    if (trigger === "ratio") config.compaction.thresholds["anthropic/sonnet"] = 0.8;
+    if (trigger === "tokens") config.compaction.tokenThresholds["anthropic/sonnet"] = 50_000;
+    if (trigger === "headroom") config.compaction.outputReserveTokens = 30_000;
+    const controller = new AbortController();
+    controller.abort();
+    const context = { ...contextWithUsage(80), signal: controller.signal };
+    const onTrigger = vi.fn();
+
+    await expect(compactAtConfiguredThreshold(context, config, onTrigger)).resolves.toBe(false);
+    expect(context.compact).not.toHaveBeenCalled();
+    expect(onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("checks cancellation again after reading context usage", async () => {
+    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+    config.compaction.thresholds["anthropic/sonnet"] = 0.8;
+    const controller = new AbortController();
+    const context = { ...contextWithUsage(80), signal: controller.signal,
+      getContextUsage: () => { controller.abort(); return { tokens: 80_000, contextWindow: 100_000, percent: 80 }; },
+    };
+    await expect(compactAtConfiguredThreshold(context, config)).resolves.toBe(false);
+    expect(context.compact).not.toHaveBeenCalled();
+  });
+
   it("defers Pi's earlier automatic threshold for the active model", () => {
     let handler: ((event: SessionBeforeCompactEvent, context: ExtensionContext) => unknown) | undefined;
     const pi = {

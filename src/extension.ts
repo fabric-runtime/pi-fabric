@@ -841,20 +841,24 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   // A compaction owner claim runs its own triggers, so Fabric's threshold
   // and headroom triggers stand down while it is held.
   pi.on("agent_settled", async (event, context) => {
+    // Pi clears ctx.signal before this event: the event flag is authoritative.
+    // Escape must not start compaction (or a compaction seed) on its way to idle.
+    const interrupted = event.aborted || context.signal?.aborted === true;
     if (state.managedHostOptions) {
       // Managed runtimes never construct native prewalk/compact controllers.
       // The Pi-owned mode also leaves automatic compaction scheduling to the host.
-      if (state.config.compaction.engine === "fabric") await compactAtConfiguredThreshold(context, state.config);
+      if (!interrupted && state.config.compaction.engine === "fabric") await compactAtConfiguredThreshold(context, state.config);
       if (state.initialized) await state.publishHostLifecycle("pi.agent_settled", event);
       return;
     }
     if (!state.initialized) {
-      if (!compactionOwner()) await compactAtConfiguredThreshold(context, state.config);
+      if (!interrupted && !compactionOwner()) await compactAtConfiguredThreshold(context, state.config);
       return;
     }
     const sessionId = context.sessionManager.getSessionId();
+    if (interrupted) state.compact.cancel();
     const settledInPlace = await settleInPlacePrewalk(state.prewalk, pi, context, {
-      compactOnReturn: state.config.prewalk.compactOnReturn,
+      compactOnReturn: !interrupted && state.config.prewalk.compactOnReturn,
       compact: state.compact,
     });
     if (!settledInPlace && state.prewalk.settleTask(sessionId)) {
@@ -877,8 +881,8 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     // Pi's compact API is callback-based. Await the controller's Promise here
     // so ExtensionRunner does not finish this handler (and Pi does not publish
     // its public agent_settled event) before compaction settles.
-    await state.compact.maybeCommit(context);
-    if (!compactionOwner()) {
+    if (!interrupted) await state.compact.maybeCommit(context);
+    if (!interrupted && !compactionOwner()) {
       await compactAtConfiguredThreshold(
         context,
         state.config,
