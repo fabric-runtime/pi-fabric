@@ -85,18 +85,19 @@ export class AgentMessageRouter {
       if (!(error instanceof Error && /Unknown Fabric agent/.test(error.message))) throw error;
     }
 
-    // Remote root sessions have no local Main match and are not actors.
-    const remoteRoot = this.participants.get(id);
-    if (remoteRoot?.kind === "root" && !remoteRoot.local) {
-      if (!remoteRoot.capabilities.includes(kind)) {
-        throw new Error(`Fabric participant ${remoteRoot.id} does not support ${kind}`);
+    // Remote roots and one-shot agents are not actors. This includes siblings
+    // managed by the caller's Main and runs belonging to another peer's lineage.
+    const remote = this.participants.get(id);
+    if ((remote?.kind === "root" || remote?.kind === "agent") && !remote.local) {
+      if (!remote.capabilities.includes(kind)) {
+        throw new Error(`Fabric participant ${remote.id} does not support ${kind}`);
       }
-      if (!this.control || remoteRoot.controlProtocol !== "v1") {
-        throw new Error(`Fabric root ${remoteRoot.id} has no control channel`);
+      if (!this.control || remote.controlProtocol !== "v1") {
+        throw new Error(`Fabric ${remote.kind} ${remote.id} has no control channel`);
       }
       return this.control.request(
-        remoteRoot.ownerHostId,
-        remoteRoot.id,
+        remote.ownerHostId,
+        remote.id,
         kind,
         {
           message,
@@ -104,9 +105,9 @@ export class AgentMessageRouter {
           ...(typeof options.triggerTurn === "boolean"
             ? { triggerTurn: options.triggerTurn }
             : {}),
-          ...(remoteRoot.ownerIncarnation ? { ownerIncarnation: remoteRoot.ownerIncarnation } : {}),
+          ...(remote.ownerIncarnation ? { ownerIncarnation: remote.ownerIncarnation } : {}),
         },
-        remoteRoot.ownerIdentityId,
+        remote.ownerIdentityId,
       );
     }
 

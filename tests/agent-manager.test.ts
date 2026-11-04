@@ -177,6 +177,31 @@ describe("AgentManager", () => {
     expect(manager.status(result.id).status).toBe("completed");
   });
 
+  it.each([{ extensions: true, recursive: false }, { extensions: true, recursive: true }, { extensions: false, recursive: false }])(
+    "tells a participant its owning Main peer (%j)", async ({ extensions, recursive }) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-identity-"));
+    roots.push(root);
+    const manager = new AgentManager(process.cwd(), DEFAULT_FABRIC_CONFIG.agents, {
+      workerPath: path.resolve("tests/fixtures/fake-worker.mjs"), runRoot: root,
+      mainAgentId: "session:owning-peer", identityId: "launching-agent",
+    });
+    managers.push(manager);
+    const result = await manager.run({ task: "Identify your coordinator", transport: "process", extensions, recursive,
+      systemPrompt: "Keep the preview safe." }) as AgentRunResult & { systemPrompt?: string };
+    expect(result.systemPrompt).toContain("Keep the preview safe.");
+    expect(result.systemPrompt).toContain("Your owning Main peer (lineage root): session:owning-peer");
+    expect(result.systemPrompt).not.toContain(result.id);
+    if (extensions) {
+      expect(result.systemPrompt).toContain("agents.self()");
+      expect(result.systemPrompt).toContain("agents.main()");
+      expect(result.systemPrompt).toContain('id: "main"');
+      expect(result.systemPrompt).toContain("not another peer's Main");
+    } else {
+      expect(result.systemPrompt).not.toContain("agents.steer");
+      expect(result.systemPrompt).toContain("host delivers");
+    }
+  });
+
   it("adds component guidance to direct participants without duplicating recursive guidance", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-manager-"));
     roots.push(root);
