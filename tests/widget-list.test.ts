@@ -130,6 +130,27 @@ describe("Fabric agent list", () => {
     shift: false, alt: false, ctrl: false, wheelDelta: delta,
   });
 
+  it("retains the scrolled page across footer instances and keeps Main pinned", () => {
+    const current = manyAgents(18);
+    const viewport = { offset: 0 };
+    const open = () => new FabricWidget(theme, () => current, 6, () => 24, undefined, {
+      mainId: "main", hints: false, release() {}, requestRender() {},
+    }, viewport);
+    const native = open();
+    native.render(100);
+    wheel(native, 10);
+    const before = native.render(100);
+    expect(before[2]).toContain("agent-10");
+    const conversation = open();
+    expect(conversation.render(100)).toEqual(before);
+    expect(mouse(conversation, "click", 4)).toEqual({ focus: true, render: true });
+    expect(conversation.render(100)[2]).toContain("agent-10");
+    wheel(conversation, 2);
+    const returned = native.render(100);
+    expect(returned[2]).toContain("agent-12");
+    expect(returned[1]).toContain("Fabric");
+  });
+
   it("reclaims the overflow slot at the bottom without changing the viewport height", () => {
     expect(widgetViewport(0, 4, 10)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 0, offset: 0 });
     expect(widgetViewport(2, 4, 10)).toEqual({ windowRows: 4, hasCue: false, maxOffset: 0, offset: 0 });

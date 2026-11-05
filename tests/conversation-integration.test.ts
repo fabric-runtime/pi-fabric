@@ -9,6 +9,7 @@ import type { CapturedToolCatalog } from "../src/capture/catalog.js";
 import { registerFabricCommand } from "../src/commands/fabric.js";
 import type { FabricState } from "../src/fabric-state.js";
 import { FabricUiController } from "../src/ui/controller.js";
+import { FabricWidget, type FabricWidgetInteraction } from "../src/ui/widget.js";
 import "../src/ui/dashboard.js";
 import "../src/ui/model-picker.js";
 import { readConversationAppearance } from "../src/ui/conversation-chrome.js";
@@ -442,6 +443,30 @@ describe("FabricUiController.openConversation", () => {
     expect(harness.controller.ownsInput).toBe(true);
     expect(state.shutdown).not.toHaveBeenCalled();
     expect(state.agents.stop).not.toHaveBeenCalled();
+  });
+
+  it("preserves the footer page when closing and reopening a participant window", async () => {
+    const state = stubState();
+    state.config.ui.maxRows = 6;
+    vi.mocked(state.actors.list).mockReturnValue([]);
+    vi.mocked(state.agents.listForUi).mockReturnValue(Array.from({ length: 18 }, (_, i) =>
+      agentRecord({ id: `agent-${i}`, name: `Agent ${i}`, startedAt: i + 1, nestedAgents: [] })) as never);
+    const h = createHarness(state);
+    h.open("agent-10");
+    await waitForView(1);
+    const interaction: FabricWidgetInteraction = { release() {}, requestRender() {}, mainId: "session:test" };
+    const first = (lastOptions().participants as (interaction: FabricWidgetInteraction) => FabricWidget)(interaction);
+    first.render(100);
+    first.handleMouse({ type: "wheel", button: "none", x: 4, y: 2, screenX: 4, screenY: 2,
+      width: 100, height: 6, shift: false, alt: false, ctrl: false, wheelDelta: 10 });
+    const before = first.render(100);
+    expect(before[2]).toContain("Agent 10");
+    h.done();
+    await h.pending;
+    h.open("agent-11");
+    await waitForView(2);
+    const next = (lastOptions().participants as (interaction: FabricWidgetInteraction) => FabricWidget)(interaction);
+    expect(next.render(100)).toEqual(before);
   });
 
   it("routes transcripts from the participant source and pages through the reader", async () => {

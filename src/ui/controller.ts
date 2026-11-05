@@ -111,6 +111,7 @@ export class FabricUiController {
   readonly #snapshotCache = new FabricDashboardSnapshotCache();
   #refreshGeneration = 0;
   readonly #widgetRetention = new FabricWidgetRetention();
+  readonly #widgetViewport = { offset: 0 };
 
   constructor(
     readonly state: FabricState,
@@ -183,6 +184,7 @@ export class FabricUiController {
     this.#meshOffset = 0;
     this.#snapshot = emptySnapshot();
     this.#widgetRetention.clear();
+    this.#widgetViewport.offset = 0;
     this.#lastRefreshErrorAt = 0;
     this.#lastRefreshAt = 0;
     this.#dashboardOpen = false;
@@ -455,6 +457,7 @@ export class FabricUiController {
             () => tui.terminal?.rows ?? process.stdout.rows,
             this.#widgetRetention,
             interaction,
+            this.#widgetViewport,
           ),
           onTargetChange: (id) => {
             if (this.#activeConversationReader !== id) this.#suspendConversationReader();
@@ -1008,6 +1011,7 @@ export class FabricUiController {
               rendered: () => this.#keepWidgetLast(context),
               availableRows: (width) => this.#footerDock?.availableRows(width),
             },
+            this.#widgetViewport,
           );
           // The registered widget is a zero-height anchor; the list itself docks
           // after Pi's footer, at the bottom of the screen, as in Claude Code.
