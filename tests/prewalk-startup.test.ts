@@ -5,6 +5,11 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const boundaryLoaded = vi.hoisted(() => vi.fn());
+const pastedImagesLoaded = vi.hoisted(() => vi.fn());
+vi.mock("../src/core/pasted-images.js", async original => {
+  pastedImagesLoaded();
+  return original<typeof import("../src/core/pasted-images.js")>();
+});
 vi.mock("../src/prewalk/handoff.js", async original => {
   boundaryLoaded();
   return original<typeof import("../src/prewalk/handoff.js")>();
@@ -50,6 +55,7 @@ describe("Prewalk startup boundary", () => {
       vi.resetModules();
       const { default: register } = await import("../src/index.js");
       expect(boundaryLoaded).not.toHaveBeenCalled();
+      expect(pastedImagesLoaded).not.toHaveBeenCalled();
       await register(pi);
       expect(pi.registerTool).toHaveBeenCalledWith(expect.objectContaining({ name: "fabric_exec" }));
       expect(pi.registerCommand).toHaveBeenCalledWith("fabric", expect.anything());
@@ -60,6 +66,14 @@ describe("Prewalk startup boundary", () => {
       }
       await new Promise<void>(resolve => setImmediate(resolve));
       expect(boundaryLoaded).not.toHaveBeenCalled();
+      for (const handler of handlers.get("input") ?? []) {
+        await handler({ source: "interactive", text: "ordinary prompt" }, context);
+      }
+      expect(pastedImagesLoaded).not.toHaveBeenCalled();
+      for (const handler of handlers.get("input") ?? []) {
+        await handler({ source: "interactive", text: "pi-clipboard-first-use" }, context);
+      }
+      expect(pastedImagesLoaded).toHaveBeenCalledTimes(1);
     } finally {
       await emit("session_shutdown");
       fs.rmSync(cwd, { recursive: true, force: true });

@@ -202,6 +202,15 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     return;
   }
   if (!options.managedHost) registerJevAuth(pi);
+  // Clipboard paths are attachments, not a reason to spend a model turn on read.
+  // Keep filesystem/MIME work off the registration and ordinary-input paths.
+  pi.on("input", async (event, context) => {
+    if (event.source !== "interactive" || !event.text.includes("pi-clipboard-")) return;
+    const { attachPastedImages } = await import("./core/pasted-images.js");
+    const result = await attachPastedImages(event.text, event.images);
+    for (const warning of result.warnings) context.ui.notify(warning, "warning");
+    if (result.changed) return { action: "transform", text: result.text, images: result.images };
+  });
   const codePreviewSettings = defaultCodePreviewSettings();
   const decorateShell: FabricToolShellDecorator = withCodePreviewShell;
   let compatibilityWarningShown = false;

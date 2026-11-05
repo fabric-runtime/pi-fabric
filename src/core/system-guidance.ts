@@ -22,7 +22,7 @@ export const fabricExecutionKernelGuidance = (fullCodeMode: boolean, kernel: Fab
     // Files the model has not opened (images in particular) must be read before
     // use; this line rides the turn-stable kernel guidance so provider prefix
     // caches stay warm.
-    `Read every file the user provides (images, screenshots, code, text) with the ${fullCodeMode ? "`pi.read`" : "`read`"} tool before responding — never assume its contents.`,
+    `Read files the user provides with the ${fullCodeMode ? "`pi.read`" : "`read`"} tool before relying on their contents, unless their contents are already included in the conversation. When an image or supplied vision-handoff description is present, use it without reading the path again. [Attached image: ...] labels identify source paths, not proof that image content is available. If image content is unavailable, say so; never infer it from the filename.`,
   ].join(" ");
 
 export const defaultFabricExecutionGuidance = (fullCodeMode: boolean, kernel: FabricKernel = "typescript", pythonRuntime: "cpython" | "monty" = "monty", profile: "additive" | "native" = "additive"): string =>
