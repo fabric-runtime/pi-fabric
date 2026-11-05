@@ -148,7 +148,7 @@ Execution references stay progressive: the model loads the selected kernel's ski
 
 ## Pasted images
 
-Clipboard screenshots are attached when you submit the prompt, so the model can inspect them on its first response instead of spending a turn calling `read`. Fabric recognizes Pi-generated `pi-clipboard-<uuid>` image files directly in the OS temporary directory and keeps `[Attached image: <path>]` as provenance. Existing image attachments are preserved and duplicate bytes are attached only once.
+Clipboard screenshots are attached when you submit the prompt. The model can inspect them on its first response without a separate `read` turn. Fabric recognizes Pi-generated `pi-clipboard-<uuid>` image files directly in the OS temporary directory and keeps `[Attached image: <path>]` as provenance. Existing image attachments are preserved and duplicate bytes are attached only once.
 
 Native vision models receive the image directly. With [pi-vision-handoff](https://github.com/monotykamary/pi-vision-handoff), text-only models receive its description before their first request. Install the companion extension and configure a describer for that route; Fabric does not make its own vision-model calls.
 
