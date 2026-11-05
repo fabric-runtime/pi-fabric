@@ -17,6 +17,13 @@ export class AgentMessageRouter {
     readonly control: Pick<FabricControlPlane, "request"> | undefined,
     readonly resolvePiRunBinding: (binding: FabricActorRunBinding, runner: FabricAgentRunner, context: FabricInvocationContext) => FabricActorRunBinding,
   ) {}
+
+  #reportTarget(participant: FabricParticipantInfo, context?: FabricInvocationContext): void {
+    const name = participant.label || participant.name || participant.id;
+    context?.activity?.({ type: "entity", id: participant.id, kind: "agent", name });
+    context?.attachPreview?.({ kind: "fabric-agent-target", id: participant.id, name });
+  }
+
   async routeMessage(
     id: string,
     message: string,
@@ -55,6 +62,7 @@ export class AgentMessageRouter {
       if (!this.control || participant.controlProtocol === "legacy") {
         return this.actorManager.steerRemote(this.mainAgent.id, message, kind, data);
       }
+      this.#reportTarget(participant, context);
       return this.control.request(
         participant.ownerHostId,
         participant.id,
@@ -95,6 +103,7 @@ export class AgentMessageRouter {
       if (!this.control || remote.controlProtocol !== "v1") {
         throw new Error(`Fabric ${remote.kind} ${remote.id} has no control channel`);
       }
+      this.#reportTarget(remote, context);
       return this.control.request(
         remote.ownerHostId,
         remote.id,

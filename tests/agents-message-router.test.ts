@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentMessageRouter } from "../src/providers/agents-message-router.js";
+import type { FabricInvocationContext } from "../src/protocol.js";
 import type { FabricParticipantInfo } from "../src/topology/types.js";
 
 type Ports = ConstructorParameters<typeof AgentMessageRouter>;
@@ -52,6 +53,18 @@ describe("remote one-shot agent routing", () => {
     }, "owner-agent");
     expect(actors.tell).not.toHaveBeenCalled();
     expect(actors.steerRemote).not.toHaveBeenCalled();
+  });
+
+  it.each(["steer", "followUp"] as const)("labels a peer %s with its project label before acknowledgement", async kind => {
+    const participant = remoteAgent({ id: "session:peer", kind: "root", label: "FAB-4", name: "main", transport: "host" });
+    const { router, request } = setup(participant);
+    const activity = vi.fn(), attachPreview = vi.fn();
+    await router.routeMessage(participant.id, "Protect the preview", undefined, kind,
+      { cwd: "/repo", update() {}, activity, attachPreview } as unknown as FabricInvocationContext, { triggerTurn: true });
+    expect(activity).toHaveBeenCalledWith({ type: "entity", id: participant.id, kind: "agent", name: "FAB-4" });
+    expect(attachPreview).toHaveBeenCalledWith({ kind: "fabric-agent-target", id: participant.id, name: "FAB-4" });
+    expect(request).toHaveBeenCalledWith(participant.ownerHostId, participant.id, kind,
+      expect.objectContaining({ triggerTurn: true }), participant.ownerIdentityId);
   });
 
   it("also routes a sibling owned by the caller's Main peer", async () => {

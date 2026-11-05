@@ -681,6 +681,22 @@ Local routing returns `"main"` or `"local"`. For cross-process `steer`, `followU
 
 An owner keeps its host ID across restarts (a Pi session's Main ID, or a resident host's root-derived ID), and a durable actor keeps its participant ID. Each control plane process therefore has a random `incarnation`, and every participant record it publishes carries it as `ownerIncarnation`. Requesters copy that value onto `steer`, `followUp`, `stop`, and `ask` commands. A restarted owner replays the retained control log. It refuses an unclaimed command that names an earlier incarnation and never executes it. The caller receives this error without change: `Fabric control command targets a previous owner incarnation; the owner restarted. Re-resolve the participant and retry.` Fabric does not retry. Read the participant again and decide whether to resend. A command claimed by the earlier process before it stopped still reports its recorded outcome, or an indeterminate one. Acknowledgements carry the acknowledging incarnation, and a requester ignores an acknowledgement from any other incarnation than the one it targeted, except the fencing refusal above. Commands and records without an incarnation, from older Fabric versions, behave as before. Fencing assumes one live process per owner host ID at a time.
 
+### Active peer coordination
+
+Connected does not mean active: `agents.peers()` keeps idle sessions visible so their work is not accidentally overwritten. For routine updates, choose only relevant peers whose `status` is `"running"` or whose `pendingMessages` is true; do not broadcast every progress update to every open session.
+
+Peer-root `agents.steer` and `agents.followUp` messages are **passive by default**. They reach a working session at its next turn boundary, but do not start a new model turn when the receiving session is idle. The message is retained for its next prompt. Explicit `triggerTurn: true` requests a wake when a peer must act; `false` always remains passive. Child/actor feedback to Main and human messages retain their existing behavior. Avoid acknowledgement-only replies to informational peer updates.
+
+```ts
+const activePeers = (await agents.peers()).filter(peer =>
+  peer.status === "running" || peer.pendingMessages);
+// Pick the peer whose work actually overlaps yours, rather than broadcasting.
+// Explicit wake only for an actionable request:
+await agents.steer({ id: "session:…", message: "Please resolve this blocker.", triggerTurn: true });
+```
+
+Steering activity rows show the target's project label when available, otherwise its name or a shortened session ID including characters after `session:`.
+
 ### Peer labels and queue gates
 
 Every root participant mints a project-scoped label such as `FAB-1` at its first Fabric use (a `fabric_exec` run, an agent, or an actor), so opening Pi and leaving it idle takes no number: the prefix derives from the project directory basename (initials for multi-word names, up to three letters for single-word names) and the number comes from a mesh-wide monotonic counter, so a number is never minted twice. The counter belongs to a generation (`FABRIC_PEER_LABEL_SEQUENCE`, currently 3); this generation restarted numbering at 1, retired the labels earlier generations recorded, and skips any number a still-running older session holds. Concurrent sessions claim numbers by compare-and-swap under the mesh lock, so each gets its own. A resumed session keeps its label: it reads the `pi-fabric-peer` entry it recorded for its own participant id and reuses that label, without taking a number, at once, even before its first Fabric use, unless the label belongs to another project, comes from an older counter generation, or another live participant holds it. Forks and clones have new participant ids, so they take new numbers. Labels appear on participant records, peer projections, and the dashboard, giving other sessions' tooling a stable handle to show users in place of raw session ids. A root session also shows its own label at the head of the Fabric widget (or in the Pi footer when the widget is hidden) and, when configured, in its Herdr tab or pane name, so you can tell which terminal is `FAB-3`. Headless hosts read the label and participant id from the `pi-fabric-peer` session entry through Pi's RPC `get_entries`; see `ui.sessionLabel` in [UI configuration](configuration.md#ui).
@@ -698,15 +714,15 @@ A root session's model learns that other root Pi sessions are working in the sam
 
 ```text
 <fabric-peers>
-Other Pi sessions are working in this project and share its files with you:
+Other Pi sessions are connected to this project and share its files with you:
 - FAB-2 (id session:6f1c…)
 - FAB-3 (id session:a09e…), just joined
 No longer present: FAB-1.
-File or git changes you did not make may be theirs: do not revert or overwrite them. Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and `agents.steer` to message one by id.
+File or git changes you did not make may be theirs: do not revert or overwrite them. Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and `agents.steer` to message one by id. Coordinate only with relevant peers that are running or have pending messages, not every connected session. Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.
 </fabric-peers>
 ```
 
-- **Display.** The full notice stays in the model context as a hidden transcript entry. The human sees a compact Pi notification, such as `Fabric peers: joined FAB-2; 1 active`. The transcript card is hidden. Notification failures do not discard the model advice.
+- **Display.** The full notice stays in the model context as a hidden transcript entry. The human sees a compact Pi notification, such as `Fabric peers: joined FAB-2; 1 connected`. The transcript card is hidden. Notification failures do not discard the model advice.
 - **When.** At the start of a prompt, and at the end of any turn that continues into another model call, so a peer that joins during a long run is noticed before the next request. A final turn adds nothing; the next prompt folds every change made while idle into one notice.
 - **Cache safety.** The notice is a persistent transcript message appended at a turn boundary. The system prompt, tool declarations, and every earlier message stay byte-identical, so the provider's cached prefix remains valid and only the notice itself is new input. The mid-run notice is a native `turn_end` boundary entry: it rides the request the run was about to make and never triggers an extra one. The text is deterministic for a given change. It carries labels, participant ids, and a working directory when that differs from the caller's, and no clock, run status, or model.
 - **Once per change.** Fabric rebuilds what the model was told from the notices on the active branch, so resuming or navigating a session does not repeat one. A compaction may drop earlier notices from the context, so the current peers are stated again at the next boundary.

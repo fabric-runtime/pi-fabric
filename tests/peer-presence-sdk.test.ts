@@ -93,7 +93,7 @@ describe("peer presence with the real Pi SDK", () => {
         const notices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
         expect(notices).toHaveLength(1);
         expect(notices[0]).toMatchObject({ display: false });
-        expect(notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 active", "info");
+        expect(notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 connected", "info");
         expect(notify).toHaveBeenCalledTimes(1);
 
         // The screenshot regression: a departure discovered at the next prompt
@@ -112,7 +112,7 @@ describe("peer presence with the real Pi SDK", () => {
         const updatedNotices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
         expect(updatedNotices).toHaveLength(2);
         expect(updatedNotices.every(message => message.role === "custom" && message.display === false)).toBe(true);
-        expect(notify).toHaveBeenLastCalledWith("Fabric peers: left FAB-2; 0 active", "info");
+        expect(notify).toHaveBeenLastCalledWith("Fabric peers: left FAB-2; 0 connected", "info");
         expect(notify).toHaveBeenCalledTimes(2);
         await session.prompt("Nothing changed.");
         await session.waitForIdle();

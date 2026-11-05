@@ -164,6 +164,12 @@ export class MainAgentController implements FabricMainAgentTarget {
     if (!message) throw new Error("Main agent message must not be empty");
     const messageId = randomUUID();
     const data = request.data === undefined ? undefined : serializableFeedbackData(request.data);
+    // A connected root is not necessarily working. Routine peer coordination
+    // rides an active turn or waits for the next prompt instead of waking an
+    // idle session into an acknowledgement loop. Child/actor feedback retains
+    // its existing wake behavior, and callers can explicitly request a wake.
+    const peer = request.from.kind === "main" && request.from.id !== this.id;
+    const triggerTurn = request.triggerTurn ?? !peer;
     this.pi.sendMessage(
       {
         customType: "pi-fabric-agent-message",
@@ -181,13 +187,13 @@ export class MainAgentController implements FabricMainAgentTarget {
           from: structuredClone(request.from),
           delivery: "steer",
           requestedDelivery: request.delivery,
-          triggerTurn: request.triggerTurn ?? true,
+          triggerTurn,
           ...(data === undefined ? {} : { data }),
         },
       },
       // Incoming agent feedback must not wait for Main to finish its run.
       // Pi still honors triggerTurn=false (including passive idle delivery).
-      { deliverAs: "steer", triggerTurn: request.triggerTurn ?? true },
+      { deliverAs: "steer", triggerTurn },
     );
     notifyAgentFeedback(this.context, request.from.name || request.from.id, message);
     return { queued: true, messageId, routed: "main" };

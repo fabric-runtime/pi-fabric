@@ -144,7 +144,7 @@ export const formatPeerPresenceNotice = (change: PeerPresenceChange, selfCwd?: s
   const ownCwd = selfCwd === undefined ? undefined : clean(selfCwd, 240);
   const lines = ["<fabric-peers>"];
   if (change.present.length > 0) {
-    lines.push("Other Pi sessions are working in this project and share its files with you:");
+    lines.push("Other Pi sessions are connected to this project and share its files with you:");
     for (const record of change.present.slice(0, MAX_LISTED_PEERS)) {
       lines.push(
         `- ${record.label} (id ${record.id})` +
@@ -155,7 +155,7 @@ export const formatPeerPresenceNotice = (change: PeerPresenceChange, selfCwd?: s
     const unlisted = change.present.length - MAX_LISTED_PEERS;
     if (unlisted > 0) lines.push(`- and ${unlisted} more`);
   } else {
-    lines.push("No other Pi session is working in this project any more.");
+    lines.push("No other Pi session is connected to this project any more.");
   }
   if (change.left.length > 0) {
     lines.push(`No longer present: ${change.left.map((record) => record.label).join(", ")}.`);
@@ -164,7 +164,9 @@ export const formatPeerPresenceNotice = (change: PeerPresenceChange, selfCwd?: s
     lines.push(
       "File or git changes you did not make may be theirs: do not revert or overwrite them. " +
         "Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` " +
-        "inside `fabric_exec` to see who is running and `agents.steer` to message one by id.",
+        "inside `fabric_exec` to see who is running and `agents.steer` to message one by id. " +
+        "Coordinate only with relevant peers that are running or have pending messages, not every connected session. " +
+        "Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.",
     );
   }
   lines.push("</fabric-peers>");
@@ -177,7 +179,7 @@ const formatPeerPresenceNotification = (change: PeerPresenceChange): string => {
   return "Fabric peers: " + [
     change.joined.length ? `joined ${names(change.joined)}` : "",
     change.left.length ? `left ${names(change.left)}` : "",
-    `${change.present.length} active`,
+    `${change.present.length} connected`,
   ].filter(Boolean).join("; ");
 };
 

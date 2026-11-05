@@ -233,6 +233,18 @@ const setup = (
   };
 };
 
+describe("AgentsProvider peer wake controls", () => {
+  it.each(["steer", "followUp"])("exposes and forwards %s triggerTurn explicitly", async action => {
+    const { provider, mainDeliveries } = setup();
+    const descriptor = await provider.describe(action, context);
+    expect((descriptor?.inputSchema as { properties: Record<string, unknown> }).properties.triggerTurn).toMatchObject({ type: "boolean" });
+    for (const triggerTurn of [undefined, false, true]) {
+      await provider.invoke(action, { id: "main", message: "Coordinate", ...(triggerTurn === undefined ? {} : { triggerTurn }) }, context);
+      expect(mainDeliveries.at(-1)?.triggerTurn).toBe(triggerTurn);
+    }
+  });
+});
+
 describe("AgentsProvider observation", () => {
   it("shares task observation without replacing lifecycle subscriptions or invoking an agent", async () => {
     const { provider, agents } = setup();
