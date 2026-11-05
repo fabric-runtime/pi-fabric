@@ -222,7 +222,7 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     }
   });
 
-  it("scrolls the end gap away instead of concealing a history row", () => {
+  it("keeps a fixed dock gap while scrolling without changing history rows", () => {
     const history = Array.from({ length: 100 }, (_, i) => `history ${i}`);
     vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue(history);
     const targets = makeTargets();
@@ -234,8 +234,9 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     const border = lines.findIndex((line) => /^─+ [^─\s][^─]* ──$/.test(line));
     const scroll = h.state.view("b").scroll;
     expect(h.state.view("b").following).toBe(false);
-    expect(lines.slice(0, border - 1).map(historyText)).toEqual(history.slice(scroll, scroll + border - 1));
-    expect(lines[border - 1]).toContain("Jump to latest message");
+    expect(lines.slice(0, border - 2).map(historyText)).toEqual(history.slice(scroll, scroll + border - 2));
+    expect(lines[border - 2]).toContain("Jump to latest message");
+    expect(lines[border - 1]).toBe("");
     h.view.handleInput("\x1b[1;5F");
     const latest = h.view.render(100);
     expect(latest.slice(border - 2, border).map(historyText)).toEqual(["history 99", ""]);
@@ -256,10 +257,11 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     lines = h.view.render(100);
     editorTop = editorStatusRow(lines);
     expect(editorTop).toBeGreaterThan(0);
-    // Scrolled back: the transcript end left the window, the dock kept the status.
-    expect(historyText(lines[editorTop - 2]!)).toMatch(/^history \d+$/);
-    expect(lines[editorTop - 1]).toContain("Jump to latest message");
-    expect(lines[editorTop - 1]).not.toContain("history 99");
+    // Scrolled back: the transcript end left the window; the dock kept its gap and status.
+    expect(historyText(lines[editorTop - 3]!)).toMatch(/^history \d+$/);
+    expect(lines[editorTop - 2]).toContain("Jump to latest message");
+    expect(lines[editorTop - 2]).not.toContain("history 99");
+    expect(lines[editorTop - 1]).toBe("");
     h.view.handleInput("\x1b[1;5F");
     lines = h.view.render(100);
     editorTop = editorStatusRow(lines);
@@ -278,8 +280,9 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     const editorTop = editorStatusRow(lines);
     expect(editorTop).toBeGreaterThan(0);
     expect(lines.slice(0, editorTop).join("\n")).not.toContain("Working");
-    expect(lines[editorTop - 1]).toContain("history 99");
-    expect(lines[editorTop - 1]).toContain("Jump to latest message");
+    expect(lines[editorTop - 2]).toContain("history 99");
+    expect(lines[editorTop - 2]).toContain("Jump to latest message");
+    expect(lines[editorTop - 1]).toBe("");
   });
 
   it("preserves the prepend anchor when Working ends during a page load", () => {
@@ -319,7 +322,7 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     expect(rows).toHaveLength(100_000);
   });
 
-  it("reserves exactly one gap at the transcript end without trimming native trailing rows", () => {
+  it("reserves exactly one gap above the editor without trimming native trailing rows", () => {
     const tail = "\x1b[44m  \x1b[0m";
     vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue([
       ...Array.from({ length: 100 }, (_, i) => `history ${i}`), "history-last", tail,

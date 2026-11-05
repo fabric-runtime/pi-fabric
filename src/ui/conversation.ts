@@ -624,6 +624,11 @@ export class FabricConversationView implements Component, Focusable {
       head.push(feedback);
       remaining--;
     }
+    // Match Pi's fixed above-editor spacer: it stays below the scrolling
+    // viewport (and any queued messages), including while reading old history.
+    // On tiny screens, keep one transcript row instead of reserving the gap.
+    const editorGap = editorShowsTopBorder && remaining > 1 ? [""] : [];
+    remaining -= editorGap.length;
     const queueBudget = Math.max(0, remaining - 1);
     if (queueLines.length > queueBudget) {
       const cursor = queueLines.findIndex((line) => line.includes(CURSOR_MARKER));
@@ -668,7 +673,7 @@ export class FabricConversationView implements Component, Focusable {
       this.latest.paint(body, width, head.length, !imageRows?.has(body.length - 1) && !!entry && latestRow > 0,
         this.scrollbar.visible, this.theme);
     } else this.scrollbar.reset();
-    return [...head, ...body.slice(0, remaining), ...queueLines, ...editorLines, ...footer, ...list]
+    return [...head, ...body.slice(0, remaining), ...queueLines, ...editorGap, ...editorLines, ...footer, ...list]
       .slice(0, rows)
       .map((line) => isKittyImageLine(line) || visibleWidth(line) <= width ? line : truncateToWidth(line, width, ""));
   }
@@ -1370,7 +1375,10 @@ export class FabricConversationView implements Component, Focusable {
       while (tail.length < reserved) tail.push("");
     }
     if (!editorVisible && !this.observedTranscript?.hasNewer) tail.push(...this.working?.render(width) ?? []);
-    if (budget > 1) tail.push("");
+    // The mounted editor owns its fixed separator. Keep a history row only for
+    // the fallback or the latest overlay, so it cannot cover a command result
+    // on an older page and the live bottom does not get two gaps.
+    if (budget > 1 && (!editorVisible || this.observedTranscript?.hasNewer)) tail.push("");
     return tail;
   }
 
