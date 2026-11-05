@@ -1,10 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { matchesKey } from "@earendil-works/pi-tui";
 import type { FabricProgramTasks } from "../core/program-tasks.js";
 import type { FabricShellJobStore } from "../core/shell-jobs.js";
 import { installFabricEscapeHalt } from "./escape-halt.js";
 
-const CTRL_B = "\x02";
-const CTRL_K = "\x0b";
 const CTRL_B_CHORD_MS = 1_000;
 
 interface ShellHangKeyOptions {
@@ -41,12 +40,13 @@ export function installFabricShellHangKeys(
     }
     const jobs = options.jobs();
     const shells = jobs?.waiting().length ?? 0;
-    const programs = shells === 0 && data === CTRL_B && editorEmpty(context) ? options.programs?.() : undefined;
+    const ctrlB = matchesKey(data, "ctrl+b");
+    const programs = shells === 0 && ctrlB && editorEmpty(context) ? options.programs?.() : undefined;
     if (!jobs || (shells === 0 && !programs?.waiting())) {
       chordArmedAt = 0;
       return undefined;
     }
-    if (data === CTRL_B) {
+    if (ctrlB) {
       const now = Date.now();
       if (chordArmedAt > 0 && now - chordArmedAt <= CTRL_B_CHORD_MS) {
         chordArmedAt = 0;
@@ -78,7 +78,7 @@ export function installFabricShellHangKeys(
       return { consume: true };
     }
     chordArmedAt = 0;
-    if (data === CTRL_K) {
+    if (matchesKey(data, "ctrl+k")) {
       const count = jobs.killWaiting();
       if (count > 0) {
         context.ui.notify(

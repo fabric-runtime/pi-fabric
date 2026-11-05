@@ -684,6 +684,17 @@ export class FabricConversationView implements Component, Focusable {
     if (this.disposed) return false;
     this.updateTargets();
     const changed = this.observe();
+    // Byte-bounded tail pages can contain only a hidden message or a collapsed
+    // tool, leaving older visible history offscreen until the first scroll.
+    // Fill at most one page per existing refresh tick, outside render(), and
+    // never move a user's pinned history window or fetch newer records.
+    if (this.currentId && this.state.view(this.currentId).following &&
+      this.observedTranscript?.hasMore && !this.observedTranscript.hasNewer &&
+      this.lastBody.length > 0 && this.lastBody.length < this.lastBodyBudget &&
+      this.options.loadOlder(this.currentId)) {
+      this.observe();
+      return true;
+    }
     return changed || this.selectedTargetIsWorking();
   }
 

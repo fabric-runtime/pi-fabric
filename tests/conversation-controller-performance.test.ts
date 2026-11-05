@@ -75,6 +75,32 @@ afterEach(() => {
 });
 
 describe("controller preview performance", () => {
+  it.each([false, true])("fills a sparse byte-bounded tail without scrolling (partial=%s)", async (partial) => {
+    vi.useFakeTimers();
+    const h = harness();
+    const history = Array.from({ length: 40 }, (_, i) => `older visible history ${i}`).join("\n");
+    fs.writeFileSync(h.logFile, JSON.stringify({ type: "message_end", message: userMessage(history) }) + "\n");
+    // Whole hidden records consume the initial byte page but contribute no
+    // visible rows. Older visible messages should be fetched by the idle poll.
+    for (let i = 0; i < 6; i++) fs.appendFileSync(h.logFile, JSON.stringify({ type: "message_end", message: {
+      role: "custom", customType: "private-fixture", display: false,
+      content: "private hidden data ".repeat(3_000), timestamp: 5 + i,
+    } }) + "\n");
+    if (partial) fs.appendFileSync(h.logFile, JSON.stringify({ type: "message_end", message: assistantMessage("visible tail") }) + "\n");
+    await h.open();
+    expect(h.view().render(100).join("\n")).not.toContain("older visible history");
+    h.requestRender.mockClear();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.requestRender).toHaveBeenCalled();
+    const frame = h.view().render(100).join("\n");
+    expect(frame).toContain("older visible history 39");
+    expect(frame).not.toContain("private hidden data");
+    // A filled viewport goes back to the ordinary idle no-repaint fast path.
+    h.requestRender.mockClear();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.requestRender).not.toHaveBeenCalled();
+  });
+
   it("reuses hierarchy/model lookups across frames and skips unchanged idle poll projection/repaint", async () => {
     vi.useFakeTimers();
     const project = vi.spyOn(targetProjection, "conversationTargets");

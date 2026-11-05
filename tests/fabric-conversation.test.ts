@@ -285,6 +285,37 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     expect(lines[editorTop - 1]).toBe("");
   });
 
+  it("fills at most one older page per refresh and does no paging inside render", () => {
+    let transcript = nativeTranscript([assistantMessage("short tail")], { hasMore: true });
+    const h = makeHarness({ initialTargetId: "b", transcript: () => transcript });
+    h.loadOlder.mockImplementation(() => {
+      transcript = nativeTranscript([assistantMessage(`page ${h.loadOlder.mock.calls.length}`)], { hasMore: true });
+      return true;
+    });
+    h.view.render(100);
+    expect(h.loadOlder).not.toHaveBeenCalled();
+    expect(h.view.refresh()).toBe(true);
+    expect(h.loadOlder).toHaveBeenCalledTimes(1);
+    expect(h.view.render(100).join("\n")).toContain("page 1");
+    expect(h.loadOlder).toHaveBeenCalledTimes(1);
+    h.view.refresh();
+    expect(h.loadOlder).toHaveBeenCalledTimes(2);
+    h.loadOlder.mockReturnValue(false);
+    h.view.render(100);
+    expect(h.view.refresh()).toBe(false);
+  });
+
+  it.each(["pinned", "has newer", "full", "complete"])("does not auto-fill a %s viewport", (kind) => {
+    const transcript = nativeTranscript([
+      assistantMessage(kind === "full" ? Array.from({ length: 100 }, (_, i) => `line ${i}`).join("\n") : "short tail"),
+    ], { hasMore: kind !== "complete", hasNewer: kind === "has newer" });
+    const h = makeHarness({ initialTargetId: "b", transcript: () => transcript });
+    h.view.render(100);
+    if (kind === "pinned") h.state.view("b").following = false;
+    h.view.refresh();
+    expect(h.loadOlder).not.toHaveBeenCalled();
+  });
+
   it("preserves the prepend anchor when Working ends during a page load", () => {
     vi.useFakeTimers();
     let history = Array.from({ length: 100 }, (_, i) => `history ${i}`);
