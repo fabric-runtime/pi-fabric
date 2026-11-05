@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { FabricManagedHost, type FabricManagedHostOptions } from "../src/managed-host.js";
 import { FABRIC_MANAGED_HOST_VERSION } from "../src/index.js";
@@ -38,7 +40,7 @@ const boot = async (options: FabricManagedHostOptions) => {
   const discovery = await run("resources_discover", {});
   const placement = () => { let result: any; listeners.get(FABRIC_TOOL_PLACEMENT_EVENT)!({ tools: active, reply: (value: any) => { result = value; } }); return result; };
   return { run, discovery, placement, active, getContextUsage, tool: definitions.at(-1)!,
-    execute: () => definitions.at(-1)!.execute("managed-probe", { code: "return 7;" }, undefined, undefined, { ...context, tools: [], executeTool: vi.fn() } as never),
+    execute: (args: { code: string; maxOutputTokens?: number } = { code: "return 7;" }) => definitions.at(-1)!.execute("managed-probe", args, undefined, undefined, { ...context, tools: [], executeTool: vi.fn() } as never),
   };
 };
 
@@ -118,6 +120,28 @@ describe("managed host v2", () => {
       }
     } finally { await host.run("session_shutdown", {}); }
   });
+
+  it("applies the host output ceiling end to end and lets per-call budgets lower it only", async () => {
+    const host = await boot({ providers: [], compaction: "pi", executor: { maxOutputChars: 70_000 } });
+    const artifacts: string[] = [];
+    const output = async (args: { code: string; maxOutputTokens?: number }) => {
+      const result = await host.execute(args);
+      const text = result.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+      const artifact = /Full output \(\d+ chars\) saved to: ([^\n]+)/.exec(text)?.[1];
+      if (artifact) artifacts.push(artifact);
+      expect(result.isError).not.toBe(true);
+      return text;
+    };
+    try {
+      expect(await output({ code: 'return "x ".repeat(30_000);' })).toBe("x ".repeat(30_000));
+      expect((await output({ code: 'return "y ".repeat(30_000);', maxOutputTokens: 250 })).length).toBeLessThanOrEqual(1000);
+      expect((await output({ code: 'return "z ".repeat(40_000);', maxOutputTokens: 100_000 })).length).toBeLessThanOrEqual(70_000);
+      expect(artifacts).toHaveLength(2);
+    } finally {
+      await host.run("session_shutdown", {});
+      for (const artifact of artifacts) fs.rmSync(path.dirname(artifact), { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("leaves skill loading to the host unless a reader is supplied", () => {
     const prompt = '<skill name="wrapper" location="/wrapper/SKILL.md">\n\nRun /reader\n</skill>';

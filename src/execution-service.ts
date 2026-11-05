@@ -1,5 +1,6 @@
 import { NativeCodemodeProvider, validateScriptStore } from "./native-codemode.js";
 import { nativeMcpIdentity } from "./core/native-mcp-identity.js";
+import { providerHumanWait } from "./verified/execution.js";
 import { nativeToolRef, nativeToolIdentifier } from "./core/native-tool-names.js";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -769,7 +770,7 @@ export class FabricExecutionService {
       const traceOperation = traceRecorder.issueCall(ref, args);
       // An approval prompt waits for a person, so the program deadline pauses
       // while it is open. An explicit hard timeout still bounds everything.
-      const approvalWait = options.hardTimeoutMs === undefined ? humanWait : undefined;
+      const approvalWait = providerHumanWait(humanWait, options.hardTimeoutMs);
       try {
         guardFullCodeRef(ref);
         guardAgentCall(ref);
@@ -785,6 +786,8 @@ export class FabricExecutionService {
       const separator = ref.indexOf(".");
       const value = await this.registry.invoke(ref, args, {
         ...callContext,
+        // Trusted providers may pause only while awaiting a human decision.
+        humanWait: approvalWait,
         // The registry resolves `provider.action` by this exact prefix, so the
         // view is bound to the provider that receives it.
         ...(participants && separator > 0

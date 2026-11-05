@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path: string): string => readFileSync(resolve(root, path), "utf8");
 const hash = (text: string): string => createHash("sha256").update(text).digest("hex");
 const receipt = "src/verified/generated/manifest.json";
-const stems = ["policy", "compaction", "resources", "lifecycle", "storage", "provider", "authority", "grants", "speculation", "budget", "actor-name", "prompt-guidance"];
+const stems = ["policy", "compaction", "resources", "lifecycle", "storage", "provider", "authority", "grants", "speculation", "budget", "execution", "actor-name", "prompt-guidance"];
 const sources = ["proofs/index.ts", "proofs/kernel.ts", ...stems.map((stem) => `proofs/${stem}.ts`), "scripts/verified-kernels.ts", "scripts/verified-kernel-pool.ts", "scripts/verified-kernel-worker.ts"];
 const artifacts = stems.flatMap((stem) => [`src/verified/generated/${stem}.js`, `src/verified/generated/${stem}.d.ts`]);
 const pinned = (): string => {

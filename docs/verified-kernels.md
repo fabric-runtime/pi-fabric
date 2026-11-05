@@ -36,6 +36,7 @@ a set of small policy kernels, **not a proof of every subsystem invariant**.
 | Speculation bookkeeping | `speculation.ts`: `speculationAdmission`, `speculationCheck`, `speculationAccounting`; `policy.ts`: `consume` | `verified/speculation.ts`, `speculation/store.ts` | Exact admission caps, checkpoint refusal precedence, one-use entry reservation, exact event counters and epoch successor |
 | Portable prompt guidance | `prompt-guidance.ts`: `promptGuidance` | `core/guidance-delivery.ts`, `extension.ts` | Exactly one portable destination while active, no inactive injection, structured routing, forced/legacy fallback |
 | Actor name decision | `actor-name.ts`: `actorName` | `actors/name-policy.ts`, `actors/manager.ts`, `actors/directory.ts` | Active dominates stopped, stopped is refused absent active, neither is available; host snapshot only, not a reservation |
+| Execution limits and human waits | `execution.ts`: `outputCeiling`, `humanWaitAdmission` | `verified/execution.ts`, `managed-host.ts`, `execution-service.ts` | Valid positive host overrides only, exact defaults/overrides, positive accepted ceilings; native pause capability only with runtime support and no hard deadline |
 | Agent budget admission | `budget.ts`: `budgetAdmission` | `verified/budget.ts`, `agents/manager.ts` | Strict threshold safety/completeness, equality refusal, invalid observations refused |
 | Effect diagnostics | `policy.ts`: `unknownConflict`, `knownConflict` | `components/effect-policy.ts` | `unknown_conflict_exact`, `unknown_conflict_symmetric`, `known_conflict_exact` |
 
@@ -249,6 +250,29 @@ spending ceiling. Nonfinite spend and invalid present budgets now fail closed
 (previously a `NaN` aggregate could pass the JavaScript comparison). No active
 budget remains distinct from an invalid observation of an active budget. Ledger
 parsing, aggregation, file I/O and recursive environment propagation remain tested.
+
+### Execution ceiling and human-wait boundaries
+
+`execution.outputCeiling` selects a host default for an omitted option and accepts
+a present override only when it is valid and positive. Accepted overrides retain
+the exact value, even above the default. The bridge derives validity from a
+positive-safe-integer check without coercion and validates the default too.
+`undefined` and `null` mean omitted, preserving nullish-default compatibility;
+other malformed present values throw. The
+generated acceptance flag is checked before a ceiling is returned. Final and nested ceilings are separate host-owned settings;
+this decision does not prove serialization sizes, token estimates, log bounds,
+truncation, or the separate native-result ceiling.
+
+`execution.humanWaitAdmission` exposes the existing native callback exactly when
+one is supplied and `hardTimeoutMs` is absent. The bridge forwards the same
+callback; it does not synthesize authority. During `fabric_exec`, the invocation
+context always has the property, with `undefined` when the callback is unavailable.
+These are admission laws, not a proof of elapsed
+time, timer precision, balanced pause ownership, or provider behavior. The
+existing pause counter and floating-point clock remain unchanged. Integration
+tests exercise real runtimes, overlapping waits, rejection, cancellation and
+resumed work. Trusted providers must wrap only authenticated human decisions and
+honor the abort signal; malicious host code is outside the claim.
 
 ### Producer/checker boundaries
 

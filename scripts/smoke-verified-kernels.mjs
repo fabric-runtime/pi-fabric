@@ -11,6 +11,7 @@ import { storageTransition } from "../dist/verified/generated/storage.js";
 import { resourceScope, resourceConflict } from "../dist/verified/generated/resources.js";
 import { meshGrantTake } from "../dist/verified/generated/grants.js";
 import { budgetAdmission } from "../dist/verified/generated/budget.js";
+import { outputCeiling, humanWaitAdmission } from "../dist/verified/generated/execution.js";
 import { promptGuidance } from "../dist/verified/generated/prompt-guidance.js";
 import { speculationAdmission, speculationCheck, speculationAccounting } from "../dist/verified/generated/speculation.js";
 
@@ -18,7 +19,7 @@ import { speculationAdmission, speculationCheck, speculationAccounting } from ".
 await assert.rejects(import("pi-fabric/verified/cell-provider"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 await assert.rejects(import("pi-fabric/verified/goal-provider"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 const root = new URL("../", import.meta.url);
-const stems = ["policy", "compaction", "resources", "lifecycle", "storage", "provider", "authority", "grants", "speculation", "budget", "prompt-guidance"];
+const stems = ["policy", "compaction", "resources", "lifecycle", "storage", "provider", "authority", "grants", "speculation", "budget", "execution", "prompt-guidance"];
 for (const file of [...stems.flatMap((stem) => [`${stem}.js`, `${stem}.d.ts`]), "manifest.json"]) {
   assert.equal(readFileSync(new URL(`src/verified/generated/${file}`, root), "utf8"), readFileSync(new URL(`dist/verified/generated/${file}`, root), "utf8"));
 }
@@ -30,6 +31,10 @@ assert.deepEqual(call(policy.consume, { active: 1 }), { "out.released": 1, "out.
 assert.equal(call(policy.headReadable, { sequence: 1, version: 1, committed: 0, pending: 1, marker: 1 })["out.readable"], 1);
 assert.deepEqual(call(promptGuidance, { active: 1, sections: 1, forced: 0 }), { "out.section": 1, "out.append": 0, "out.native": 0 });
 assert.deepEqual(call(promptGuidance, { active: 1, sections: 1, forced: 1 }), { "out.section": 0, "out.append": 1, "out.native": 0 });
+assert.deepEqual(call(outputCeiling, { present: 1, valid: 1, requested: 262144, fallback: 50000 }), { "out.accepted": 1, "out.limit": 262144 });
+assert.equal(call(outputCeiling, { present: 1, valid: 0, requested: 0, fallback: 50000 })["out.accepted"], 0);
+assert.equal(call(humanWaitAdmission, { available: 1, hardDeadline: 0 })["out.allowed"], 1);
+assert.equal(call(humanWaitAdmission, { available: 1, hardDeadline: 1 })["out.allowed"], 0);
 const budget = { valid: 1, spentHigh: 10, spentLow: 3, limitHigh: 10, limitLow: 4 };
 assert.equal(call(budgetAdmission, budget)["out.admitted"], 1);
 assert.equal(call(budgetAdmission, { ...budget, spentLow: 4 })["out.admitted"], 0);
