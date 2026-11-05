@@ -94,6 +94,53 @@ describe("expensive skill program behavior", () => {
     ]);
   });
 
+  it("parks council reports create-only and moves to the next key on collision", async () => {
+    const puts: Array<{ key: string; ifVersion?: number }> = [];
+    const result = await runSkill("fabric-council", {
+      π: { task: "decide", roles: JSON.stringify(["a", "b", "c"]) },
+      workflow,
+      phase,
+      parallel,
+      agent: async (_prompt: string, options: { label: string }) =>
+        options.label === "council synthesis" ? "decision" : `${options.label} report`,
+      mesh: {
+        put: async (args: { key: string; ifVersion?: number }) => {
+          puts.push({ key: args.key, ...(args.ifVersion === undefined ? {} : { ifVersion: args.ifVersion }) });
+          if (puts.length === 1) {
+            throw new Error(`Mesh compare-and-swap failed for ${args.key}: expected version 0, found 498938`);
+          }
+          return { key: args.key, version: 2 };
+        },
+      },
+    });
+    expect(puts).toHaveLength(2);
+    expect(puts.every((put) => put.ifVersion === 0)).toBe(true);
+    expect(puts[1]!.key).toMatch(/-2\/reports$/);
+    expect(result.reports).toBe(puts[1]!.key);
+    expect(result.status).toBe("success");
+  });
+
+  it("surfaces a real mesh failure without retry spin and still synthesizes", async () => {
+    const puts: unknown[] = [];
+    const result = await runSkill("fabric-council", {
+      π: { task: "decide", roles: JSON.stringify(["a", "b", "c"]) },
+      workflow,
+      phase,
+      parallel,
+      agent: async (_prompt: string, options: { label: string }) =>
+        options.label === "council synthesis" ? "decision" : `${options.label} report`,
+      mesh: {
+        put: async () => {
+          puts.push(null);
+          throw new Error("mesh unavailable");
+        },
+      },
+    });
+    expect(puts).toHaveLength(1);
+    expect(result.reports).toEqual({ error: "mesh unavailable" });
+    expect(result.status).toBe("success");
+  });
+
   it("keeps RLM coverage compact and uses recursion only for oversized partitions", async () => {
     const recursive: string[] = [];
     const result = await runSkill("fabric-rlm", {

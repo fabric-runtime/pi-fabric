@@ -102,21 +102,29 @@ if not completed:
     return dict(summary, status="failed", failures=failures, result=None)
 # Park completed reports in mesh before synthesis: an audit trail that survives this
 # program, and full-text recovery when synthesis fails or a budget runs out.
-# The run id keeps same-second councils from overwriting each other: mesh.put is create-or-update.
-# datetime microseconds instead of uuid: the guest Python stdlib has no uuid module.
-_run_now = datetime.now(timezone.utc)
-reports_key = "council/" + _run_now.strftime("%Y-%m-%d-%H-%M-%S") + "-" + str(_run_now.microsecond) + "/reports"
-try:
-    await mesh.put(
-        key=reports_key,
-        value=[
-            {"role": item.get("role"), **({"model": item["model"]} if item.get("model") else {}), "report": item["report"]}
-            for item in completed
-        ],
-    )
-    reports = reports_key
-except Exception as error:
-    reports = {"error": str(error)}
+# ifVersion=0 makes each put create-only, so a same-second council moves to the
+# next key suffix instead of overwriting an earlier run's reports.
+_parked = [
+    {"role": item.get("role"), **({"model": item["model"]} if item.get("model") else {}), "report": item["report"]}
+    for item in completed
+]
+reports = None
+_park_error = None
+for _attempt in range(4):
+    _suffix = "" if _attempt == 0 else "-" + str(_attempt + 1)
+    reports_key = "council/" + datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S") + _suffix + "/reports"
+    try:
+        await mesh.put(key=reports_key, value=_parked, ifVersion=0)
+        reports = reports_key
+        break
+    except Exception as error:
+        _park_error = error
+        # Only a same-timestamp collision retries with the next suffix; any other
+        # storage failure surfaces immediately as the {"error": ...} object.
+        if "compare-and-swap" not in str(error):
+            break
+if reports is None:
+    reports = {"error": str(_park_error)}
 if len(completed) == 1:
     return dict(summary, status="partial", failures=failures, result=completed[0]["report"], reports=reports, synthesisSkipped="Only one role completed; another agent adds no diversity.")
 try:
@@ -126,4 +134,4 @@ except Exception as error:
     return dict(summary, status="partial", failures=failures, result=None, synthesisError=str(error), reports=reports, fallback=[{"role": item.get("role"), "status": "completed", "report": item["report"] if isinstance(reports, dict) else item["report"][:1200]} for item in completed])
 ```
 
-Reserve at least the role count plus one agent call. Concurrency remains host-limited; usage settles afterward, not as a hard token reservation. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the program refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Whenever at least one seat completes, full role reports are parked to mesh under a `council/<timestamp>-<run>/reports` key carried by every outcome as `reports`: `mesh.get` it for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed; on synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. When mesh storage itself fails, `reports` is an `{"error": ...}` object instead of a key — never pass it to `mesh.get` or `mesh.delete` — and the synthesis-failure fallback then carries the full untruncated reports. A single completed role returns its full report directly as `result` without a synthesis call. Every result lists `seats` with each role's pinned model, thinking, and status, plus `synthesisModel` when one was pinned. These are the models the program requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed); raw reports return only on synthesis failure. A partial result is useful evidence with named gaps, not permission for an automatic whole-council rerun. Retry only the failed role or synthesis when needed. Do not use a council for a lookup.
+Reserve at least the role count plus one agent call. Concurrency remains host-limited; usage settles afterward, not as a hard token reservation. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the program refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Whenever at least one seat completes, full role reports are parked to mesh under a create-only `council/<timestamp>/reports` key carried by every outcome as `reports` — a same-second collision parks under the next suffix (`-2`, `-3`, …) rather than overwriting: `mesh.get` it for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed; on synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. When mesh storage itself fails, `reports` is an `{"error": ...}` object instead of a key — never pass it to `mesh.get` or `mesh.delete` — and the synthesis-failure fallback then carries the full untruncated reports. A single completed role returns its full report directly as `result` without a synthesis call. Every result lists `seats` with each role's pinned model, thinking, and status, plus `synthesisModel` when one was pinned. These are the models the program requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed); raw reports return on synthesis failure or when one role completes and synthesis is skipped. A partial result is useful evidence with named gaps, not permission for an automatic whole-council rerun. Retry only the failed role or synthesis when needed. Do not use a council for a lookup.

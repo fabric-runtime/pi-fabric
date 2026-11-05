@@ -113,21 +113,29 @@ if (completed.length === 0) {
 }
 // Park completed reports in mesh before synthesis: an audit trail that survives this
 // program, and full-text recovery when synthesis fails or a budget runs out.
-// The run suffix keeps same-second councils from overwriting each other: mesh.put is create-or-update.
-const reportsKey = `council/${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}-${Math.random().toString(36).slice(2, 8)}/reports`;
-let reports: string | { error: string } = reportsKey;
-try {
-  await mesh.put({
-    key: reportsKey,
-    value: completed.map((outcome) => ({
-      role: outcome.role,
-      ...(outcome.model ? { model: outcome.model } : {}),
-      report: outcome.report,
-    })),
-  });
-} catch (error) {
-  reports = { error: error instanceof Error ? error.message : String(error) };
+// ifVersion: 0 makes each put create-only, so a same-second council moves to the
+// next key suffix instead of overwriting an earlier run's reports.
+const parked = completed.map((outcome) => ({
+  role: outcome.role,
+  ...(outcome.model ? { model: outcome.model } : {}),
+  report: outcome.report,
+}));
+let reports: string | { error: string } | null = null;
+let parkError = "";
+for (let attempt = 0; attempt < 4 && reports === null; attempt++) {
+  const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
+  const reportsKey = `council/${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}${suffix}/reports`;
+  try {
+    await mesh.put({ key: reportsKey, value: parked, ifVersion: 0 });
+    reports = reportsKey;
+  } catch (error) {
+    parkError = error instanceof Error ? error.message : String(error);
+    // Only a same-timestamp collision retries with the next suffix; any other
+    // storage failure surfaces immediately as the { error } object.
+    if (!parkError.includes("compare-and-swap")) break;
+  }
 }
+if (reports === null) reports = { error: parkError };
 if (completed.length === 1) {
   return {
     status: "partial",
@@ -175,7 +183,7 @@ try {
 }
 ```
 
-Pass the task as `strings.task`, the JSON role array as `strings.roles`, and the synthesis model key as `strings.synthesis`; an empty `strings.synthesis` keeps the session default. A role is a string or `{ "role": "security", "model": "provider/id", "thinking": "high" }`, and a role without `model` runs on the session default. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the skill refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Every result lists `seats`, each with its role, pinned model and thinking, and status, plus `synthesisModel` when one was pinned. These are the models the skill requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed). Whenever at least one seat completes, the full role reports are parked to mesh under a `council/<timestamp>-<run>/reports` key and every outcome carries it as `reports`: check `typeof reports === "string"` first, because a failed `mesh.put` yields an `{ error }` object instead of a key — never pass that to `mesh.get` or `mesh.delete`, and the synthesis-failure fallback then carries the full untruncated reports. Otherwise `mesh.get` the key for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed. On synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. One surviving role returns directly without spending another agent call.
+Pass the task as `strings.task`, the JSON role array as `strings.roles`, and the synthesis model key as `strings.synthesis`; an empty `strings.synthesis` keeps the session default. A role is a string or `{ "role": "security", "model": "provider/id", "thinking": "high" }`, and a role without `model` runs on the session default. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the skill refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Every result lists `seats`, each with its role, pinned model and thinking, and status, plus `synthesisModel` when one was pinned. These are the models the skill requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed). Whenever at least one seat completes, the full role reports are parked to mesh under a create-only `council/<timestamp>/reports` key — a same-second collision parks under the next suffix rather than overwriting — and every outcome carries it as `reports`: check `typeof reports === "string"` first, because a failed `mesh.put` yields an `{ error }` object instead of a key — never pass that to `mesh.get` or `mesh.delete`, and the synthesis-failure fallback then carries the full untruncated reports. Otherwise `mesh.get` the key for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed. On synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. One surviving role returns directly without spending another agent call.
 
 Concurrent calls can overshoot an observational `tokenBudget` because usage settles afterward. Reserve at least `seats.length + 1` top-level agent calls when synthesis may run, and use a finite role set rather than relying on token accounting as a hard concurrent ceiling. A budget-exhausted synthesis loses nothing: the parked reports are complete, so re-run only the synthesis step.
 
