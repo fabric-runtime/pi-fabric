@@ -390,7 +390,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
     } catch (error) {
       initialError = error;
     }
-    if (this.options.enabled) {
+    if (this.options.enabled && !this.#closed) {
       // The heartbeat doubles as the recovery path: even when the initial
       // publish fails (for example a contended mesh lock at startup), keep
       // retrying so this host joins the mesh once the lock clears instead of
@@ -849,7 +849,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
 
     // The sweep runs beside the heartbeat instead of holding it up. A batch
     // that leaves work behind brings the next sweep forward to the next beat.
-    if (!this.#reaping && leaseAt - this.#reapedAt >= REAP_INTERVAL_MS) {
+    if (!this.#closed && !this.#quiescing && !this.#reaping && leaseAt - this.#reapedAt >= REAP_INTERVAL_MS) {
       this.#reapedAt = leaseAt;
       this.#reaping = this.#reapDeparted(leaseAt)
         .then((more) => {
@@ -893,15 +893,36 @@ export class ParticipantDirectory implements FabricParticipantSource {
     // the whole state under the mesh lock, and a burst of them would starve
     // the lease renewals of every host, this one included. An uncontended
     // delete settles without a macrotask, so yield between deletes to let the
-    // heartbeat timer run. ifVersion keeps a record that its owner renewed
-    // meanwhile; a lost CAS (another host reaped it, or its owner came back)
-    // just moves on. Any other failure, such as a lock timeout, ends the batch
-    // and leaves the rest for the next beat, so close() never waits on a
+    // heartbeat timer run. Target CAS protects rewritten records; the locked
+    // guard also protects unchanged participants whose owner renewed, and
+    // hosts that acquired new participants after the snapshot. A lost CAS
+    // (another host reaped it, or its owner came back) just moves on. Any
+    // other failure, such as a lock timeout, ends the batch and leaves the
+    // rest for the next beat, so close() never waits on a
     // string of lock timeouts.
     for (const entry of reap.slice(0, REAP_BATCH)) {
-      if (this.#closed) return false;
+      if (this.#closed || this.#quiescing) return false;
       try {
-        await this.mesh.delete({ key: entry.key, ifVersion: entry.version });
+        await this.mesh.delete({ key: entry.key, ifVersion: entry.version }, (entries) => {
+          if (this.#closed || this.#quiescing) return false;
+          const currentNow = Date.now();
+          const currentCutoff = currentNow - this.#departedRetentionMs;
+          const participant = participantFromEntry(entry);
+          if (participant) {
+            const ownerKey = keyFor(HOST_PREFIX, participant.ownerHostId);
+            const ownerEntry = entries.find((item) => item.key === ownerKey);
+            const owner = ownerEntry && hostFromEntry(ownerEntry);
+            // An unparseable owner is unknown, not proof that its records died.
+            if (ownerEntry && !owner) return false;
+            const owners = new Map(owner ? [[owner.id, owner]] : []);
+            const heartbeat = owner?.identity.id === participant.ownerIdentityId ? owner.updatedAt : 0;
+            return !liveOwner(participant, owners, currentNow) &&
+              Math.max(participant.updatedAt, heartbeat) < currentCutoff;
+          }
+          const host = hostFromEntry(entry);
+          return !!host && host.expiresAt < currentCutoff && !entries.some((item) =>
+            item.key.startsWith(PARTICIPANT_PREFIX) && isObject(item.value) && item.value.ownerHostId === host.id);
+        });
       } catch {
         if (this.mesh.get(entry.key)?.version === entry.version) return true;
       }

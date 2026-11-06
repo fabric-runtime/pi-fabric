@@ -928,15 +928,24 @@ export class MeshStore {
     });
   }
 
+  /** The internal guard observes a detached snapshot under the mutation lock. */
   async delete(input: {
     key: string;
     ifVersion?: number;
-  }): Promise<{ deleted: boolean; version?: number }> {
+  }, guard?: (entries: readonly MeshStateEntry[]) => boolean): Promise<{ deleted: boolean; version?: number }> {
     const { key, ifVersion } = input;
     this.#validateKey(key);
     const request = captureStorageDelete({ key, ifVersion });
     return this.#withLock(() => {
       const state = readState(this.#statePath, this.#maxStateBytes, false);
+      // This is a deny-only precondition, not a replacement for the verified
+      // target CAS. Cross-key decisions must use this fresh locked snapshot,
+      // never the caller's earlier get/list result. Keep mutations to the
+      // callback's copies from changing either the state or the cache.
+      if (guard && !guard(jsonClone(Object.values(state.entries)))) {
+        this.#cacheState(state);
+        return { deleted: false };
+      }
       const slot = stateSlot(state, request.key);
       const plan = request.transition(slot.present, slot.version, slot.highWater);
       if (plan.kind === "unchanged") {

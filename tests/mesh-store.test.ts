@@ -322,6 +322,43 @@ describe("MeshStore", () => {
     expect(store.listAll("shared/").map((entry) => entry.key)).toEqual(["shared/a", "shared/z"]);
   });
 
+  it("evaluates delete guards against fresh detached entries while holding the mutation lock", async () => {
+    const store = createStore();
+    const target = await store.put({ key: "tasks/target", value: { nested: { count: 1 } }, identity });
+    // Prime this instance's cache before another writer changes the owner.
+    store.listAll();
+    const other = new MeshStore(store.root, 64 * 1024, 100);
+    const owner = await other.put({ key: "owners/live", value: { active: true }, identity });
+    const guard = vi.fn((entries: readonly MeshStateEntry[]) => {
+      expect(fs.existsSync(path.join(store.root, ".lock"))).toBe(true);
+      expect(entries.find((entry) => entry.key === owner.key)).toEqual(owner);
+      const copy = entries.find((entry) => entry.key === target.key)!;
+      (copy.value as { nested: { count: number } }).nested.count = 99;
+      copy.version = 99;
+      return false;
+    });
+    expect(await store.delete({ key: target.key, ifVersion: target.version }, guard)).toEqual({ deleted: false });
+    expect(guard).toHaveBeenCalledOnce();
+    expect(store.get(target.key)).toEqual(target);
+    expect(store.get(owner.key)).toEqual(owner);
+    expect(other.get(target.key)).toEqual(target);
+    // A denied delete consumes no revision. An allowed one still runs target CAS.
+    await expect(store.delete({ key: target.key, ifVersion: target.version + 1 }, () => true))
+      .rejects.toThrow("compare-and-swap failed");
+    expect(await store.delete({ key: target.key, ifVersion: target.version }, () => true))
+      .toEqual({ deleted: true, version: 2 });
+  });
+
+  it("releases the lock and leaves state unchanged when a delete guard throws", async () => {
+    const store = createStore();
+    const target = await store.put({ key: "tasks/target", value: { count: 1 }, identity });
+    await expect(store.delete({ key: target.key }, () => { throw new Error("guard failed"); }))
+      .rejects.toThrow("guard failed");
+    expect(store.get(target.key)).toEqual(target);
+    expect(fs.existsSync(path.join(store.root, ".lock"))).toBe(false);
+    expect(await store.delete({ key: target.key, ifVersion: target.version })).toEqual({ deleted: true, version: 2 });
+  });
+
   it("supports compare-and-swap shared state", async () => {
     const store = createStore();
     const created = await store.put({
