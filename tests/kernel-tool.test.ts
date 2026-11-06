@@ -92,6 +92,11 @@ describe("exclusive kernel tool surface", () => {
     expect(context.invalidate).toHaveBeenCalledOnce();
   });
 
+  it("says a shell timeout bounds the process, not the hang hand-off", () => {
+    expect(defaultFabricExecutionGuidance(true, "typescript")).toContain("shell `timeout` bounds the process, not this wait");
+    expect(defaultFabricExecutionGuidance(true, "python")).toContain("shell timeout bounds the process, not this wait");
+  });
+
   it("advertises native models without replacing legacy model listing", () => {
     const guidance = defaultFabricExecutionGuidance(true, "typescript");
     expect(guidance).toContain("models === tools.models");

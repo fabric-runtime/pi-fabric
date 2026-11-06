@@ -66,6 +66,19 @@ Known actions keep first-class proxies, and they still cross the same registry p
 
 Refs are namespaced: `pi.grep`, `extensions.<tool>`, `mcp.<server>.<tool>`, `schema.<action>`. Calls with bare names are rejected. `tools.describe({ref})` falls back to a bare action name when exactly one provider exposes it, and ambiguous names return an error that lists the qualified refs. `tools.providers()` → `[{name,description}]`; `tools.catalog({provider?,limit?})` → the deterministic current provider/action head tree with descriptor hashes and explicit non-historical metadata; `tools.search({query,limit?})` → `FabricAction[]`; `tools.describe({ref})` → the full `FabricAction` (read its `inputSchema` first); `tools.call({ref,args?})`; `tools.list({provider?,namespace?,query?,limit?})`; `tools.models()` → Pi `[{provider,id,name,key}]`; `agents.models({runner:"claude"})` → Claude Code runtime models. For the exact signatures and the read → describe → retry error loop, see the model-facing `fabric-exec` skill.
 
+Catalog action descriptions are navigation previews: trim the source description,
+keep its first LF/CRLF-delimited line, and cap it at 320 Unicode code points.
+`tools.describe` retains the full description and schemas, and descriptor hashes
+still cover the full contract. Search splits at `_` in both queries and
+indexed identities, so natural-language terms can find snake-case operation names.
+Catalog `complete` describes enumeration, not whether a serialized result fits the
+final output budget; project fields or narrow the provider when needed.
+
+Auto/YAML output hoists multiline strings verbatim. Identical whole strings share
+one section within that result, with every occurrence pointing to its first path.
+Whitespace, line endings and opaque identifiers are not normalized; JSON and text
+formats are unchanged.
+
 `tools.list` pages at 100 entries by default (hard cap 1000) and the bare-array result carries no truncation marker, so a short result never proves an action is absent. `tools.list({envelope: true})` returns a `{kind: "pi-fabric.action-list", version, actions, total, truncated, limit}` envelope whose totals are computed after guest-visibility filtering; targeted discovery should prefer `tools.search`. See [tool entropy](entropy.md) for how observed rejection rates relate to discovery friction.
 
 ## Tool-call robustness

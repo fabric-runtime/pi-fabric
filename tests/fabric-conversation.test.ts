@@ -4,7 +4,7 @@ import type { TUI } from "@earendil-works/pi-tui";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { NativeConversationReader } from "../src/ui/conversation-native-reader.js";
+import { NativeConversationReader, type NativeConversationSource } from "../src/ui/conversation-native-reader.js";
 import { WorkingStatusIndicator } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/status-indicator.js";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -222,7 +222,7 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     }
   });
 
-  it("scrolls the end gap away instead of concealing a history row", () => {
+  it("keeps a fixed dock gap while scrolling without changing history rows", () => {
     const history = Array.from({ length: 100 }, (_, i) => `history ${i}`);
     vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue(history);
     const targets = makeTargets();
@@ -234,8 +234,9 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     const border = lines.findIndex((line) => /^─+ [^─\s][^─]* ──$/.test(line));
     const scroll = h.state.view("b").scroll;
     expect(h.state.view("b").following).toBe(false);
-    expect(lines.slice(0, border - 1).map(historyText)).toEqual(history.slice(scroll, scroll + border - 1));
-    expect(lines[border - 1]).toContain("Jump to latest message");
+    expect(lines.slice(0, border - 2).map(historyText)).toEqual(history.slice(scroll, scroll + border - 2));
+    expect(lines[border - 2]).toContain("Jump to latest message");
+    expect(lines[border - 1]).toBe("");
     h.view.handleInput("\x1b[1;5F");
     const latest = h.view.render(100);
     expect(latest.slice(border - 2, border).map(historyText)).toEqual(["history 99", ""]);
@@ -256,10 +257,11 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     lines = h.view.render(100);
     editorTop = editorStatusRow(lines);
     expect(editorTop).toBeGreaterThan(0);
-    // Scrolled back: the transcript end left the window, the dock kept the status.
-    expect(historyText(lines[editorTop - 2]!)).toMatch(/^history \d+$/);
-    expect(lines[editorTop - 1]).toContain("Jump to latest message");
-    expect(lines[editorTop - 1]).not.toContain("history 99");
+    // Scrolled back: the transcript end left the window; the dock kept its gap and status.
+    expect(historyText(lines[editorTop - 3]!)).toMatch(/^history \d+$/);
+    expect(lines[editorTop - 2]).toContain("Jump to latest message");
+    expect(lines[editorTop - 2]).not.toContain("history 99");
+    expect(lines[editorTop - 1]).toBe("");
     h.view.handleInput("\x1b[1;5F");
     lines = h.view.render(100);
     editorTop = editorStatusRow(lines);
@@ -278,8 +280,40 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     const editorTop = editorStatusRow(lines);
     expect(editorTop).toBeGreaterThan(0);
     expect(lines.slice(0, editorTop).join("\n")).not.toContain("Working");
-    expect(lines[editorTop - 1]).toContain("history 99");
-    expect(lines[editorTop - 1]).toContain("Jump to latest message");
+    expect(lines[editorTop - 2]).toContain("history 99");
+    expect(lines[editorTop - 2]).toContain("Jump to latest message");
+    expect(lines[editorTop - 1]).toBe("");
+  });
+
+  it("fills at most one older page per refresh and does no paging inside render", () => {
+    let transcript = nativeTranscript([assistantMessage("short tail")], { hasMore: true });
+    const h = makeHarness({ initialTargetId: "b", transcript: () => transcript });
+    h.loadOlder.mockImplementation(() => {
+      transcript = nativeTranscript([assistantMessage(`page ${h.loadOlder.mock.calls.length}`)], { hasMore: true });
+      return true;
+    });
+    h.view.render(100);
+    expect(h.loadOlder).not.toHaveBeenCalled();
+    expect(h.view.refresh()).toBe(true);
+    expect(h.loadOlder).toHaveBeenCalledTimes(1);
+    expect(h.view.render(100).join("\n")).toContain("page 1");
+    expect(h.loadOlder).toHaveBeenCalledTimes(1);
+    h.view.refresh();
+    expect(h.loadOlder).toHaveBeenCalledTimes(2);
+    h.loadOlder.mockReturnValue(false);
+    h.view.render(100);
+    expect(h.view.refresh()).toBe(false);
+  });
+
+  it.each(["pinned", "has newer", "full", "complete"])("does not auto-fill a %s viewport", (kind) => {
+    const transcript = nativeTranscript([
+      assistantMessage(kind === "full" ? Array.from({ length: 100 }, (_, i) => `line ${i}`).join("\n") : "short tail"),
+    ], { hasMore: kind !== "complete", hasNewer: kind === "has newer" });
+    const h = makeHarness({ initialTargetId: "b", transcript: () => transcript });
+    h.view.render(100);
+    if (kind === "pinned") h.state.view("b").following = false;
+    h.view.refresh();
+    expect(h.loadOlder).not.toHaveBeenCalled();
   });
 
   it("preserves the prepend anchor when Working ends during a page load", () => {
@@ -319,7 +353,7 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     expect(rows).toHaveLength(100_000);
   });
 
-  it("reserves exactly one gap at the transcript end without trimming native trailing rows", () => {
+  it("reserves exactly one gap above the editor without trimming native trailing rows", () => {
     const tail = "\x1b[44m  \x1b[0m";
     vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue([
       ...Array.from({ length: 100 }, (_, i) => `history ${i}`), "history-last", tail,
@@ -925,5 +959,70 @@ describe("FabricConversationView", () => {
     const text = lines.join("\n");
     expect(text).toContain("tiny");
     expect(text).toContain("Agent A");
+  });
+});
+
+describe("partial message whose first blocks are outside the loaded window", () => {
+  const delta = (type: string, contentIndex: number, text?: string) => ({
+    type: "message_update",
+    assistantMessageEvent: { type, contentIndex, ...(text === undefined ? {} : { delta: text }) },
+  });
+  const prefix = [
+    { type: "message_start", message: { role: "assistant", content: [], api: "openai-responses", provider: "openai", model: "m", timestamp: 1 } },
+    delta("thinking_start", 0),
+    delta("thinking_delta", 0, "Synthetic reasoning."),
+    delta("text_start", 1),
+  ];
+  const withEvents = (records: unknown[], run: (reader: NativeConversationReader, h: Harness, source: NativeConversationSource) => void): void => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "fabric-sparse-partial-"));
+    try {
+      const eventsFile = path.join(directory, "events.jsonl");
+      writeFileSync(eventsFile, records.map((record) => JSON.stringify(record) + "\n").join(""));
+      const reader = new NativeConversationReader();
+      const source = { id: "a", status: "running", eventsFile };
+      const h = makeHarness({ transcript: (_id, follow) => reader.read(source, follow) });
+      run(reader, h, source);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  };
+
+  it("renders a tail that starts at a text delta for content index 1", () => {
+    withEvents([delta("text_delta", 1, "VISIBLE_REPRO")], (_reader, h) => {
+      expect(renderText(h.view, 100)).toContain("VISIBLE_REPRO");
+    });
+  });
+
+  it("keeps the original block index when a delta arrives after publishing a sparse snapshot", () => {
+    withEvents([delta("text_delta", 1, "BEFORE")], (reader, h, source) => {
+      const first = reader.read(source);
+      expect(first.streaming.partialAssistant?.content).toEqual([{ type: "text", text: "BEFORE" }]);
+      appendFileSync(source.eventsFile!, JSON.stringify(delta("text_delta", 1, "AFTER")) + "\n");
+      expect(reader.read(source).streaming.partialAssistant?.content).toEqual([
+        { type: "text", text: "BEFOREAFTER" },
+      ]);
+      // An already published snapshot must not change when the internal block does.
+      expect(first.streaming.partialAssistant?.content).toEqual([{ type: "text", text: "BEFORE" }]);
+      h.view.refresh();
+      expect(renderText(h.view, 100)).toContain("BEFOREAFTER");
+    });
+  });
+
+  it("renders the initial page of a large stream and recovers the earlier blocks after loadOlder", () => {
+    const records = [
+      ...prefix,
+      ...Array.from({ length: 320 }, () => delta("text_delta", 1, "x".repeat(1024) + "\n")),
+      delta("text_delta", 1, "VISIBLE_REPRO"),
+    ];
+    withEvents(records, (reader, h, source) => {
+      expect(renderText(h.view, 100)).toContain("VISIBLE_REPRO");
+      expect(reader.read(source).hasMore).toBe(true);
+      const older = reader.loadOlder();
+      expect(older?.hasMore).toBe(false);
+      expect(older?.streaming.partialAssistant?.content.map((block) => block.type)).toEqual(["thinking", "text"]);
+      expect(older?.streaming.partialAssistant?.content[0]).toMatchObject({ thinking: "Synthetic reasoning." });
+      h.view.refresh();
+      expect(renderText(h.view, 100)).toContain("VISIBLE_REPRO");
+    });
   });
 });

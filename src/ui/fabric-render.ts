@@ -485,7 +485,9 @@ export const renderFabricWriteArgumentPreview = (
 };
 
 const shortIdOf = (value: unknown): string | undefined =>
-  typeof value === "string" ? value.slice(0, 8) : undefined;
+  typeof value === "string"
+    ? value.startsWith("session:") ? `session:${value.slice(8, 16)}` : value.slice(0, 8)
+    : undefined;
 
 const countOf = (result: unknown): string =>
   Array.isArray(result) ? String(result.length) : "";
@@ -500,6 +502,12 @@ const providerCallDetail = (
 ): string => {
   if (provider === "agents") {
     if (previewHeadline) return previewHeadline;
+    if (preview && typeof preview === "object" && !Array.isArray(preview)) {
+      const target = preview as Record<string, unknown>;
+      if (target.kind === "fabric-agent-target" && target.id === args.id && typeof target.name === "string" && target.name.trim()) {
+        return truncateOneLine(target.name, 80);
+      }
+    }
     const name = argString(args, "name");
     const previewName = isFabricAgentToolPreview(preview) ? preview.name : undefined;
     const id = shortIdOf(args.id);
@@ -1236,7 +1244,9 @@ export const restoreFabricCallHeadlinePreviews = (
     const index = remaining.findIndex((preview) => preview.ref === audit.ref);
     if (index < 0) return audit;
     const [preview] = remaining.splice(index, 1);
-    if (headlineArg(audit.args) || !preview) return audit;
+    // Peer steering headlines carry the resolved label, not just the raw id.
+    const peerControl = audit.ref === "agents.steer" || audit.ref === "agents.followUp";
+    if ((!peerControl && headlineArg(audit.args)) || !preview) return audit;
     return { ...audit, previewHeadline: preview.headline };
   });
 };

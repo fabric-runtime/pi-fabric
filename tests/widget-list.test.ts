@@ -86,6 +86,31 @@ const manyAgents = (count: number): MutableSnapshot => {
 const mouse = (widget: FabricWidget, type: "move" | "click", y: number) =>
   widget.handleMouse({ type, button: type === "move" ? "none" : "left", x: 4, y, screenX: 4, screenY: y, width: 100, height: 8, shift: false, alt: false, ctrl: false });
 
+describe("ellipsis text colour", () => {
+  it("keeps truncated agent and shell rows in the footer text colour", () => {
+    const muted = "\x1b[38;2;140;145;150m";
+    const reset = "\x1b[0m";
+    const styledTheme = { ...theme,
+      fg: (color: string, text: string) => `${color === "muted" ? muted : "\x1b[36m"}${text}${reset}`,
+    } as unknown as Theme;
+    const current = snapshot();
+    current.actors = [];
+    current.agents[0]!.milestone = "checking a very long list of files and commands";
+    current.shells = [{ id: "shell-12345", tool: "bash", command: "supercomputer run --jobs a-very-long-filename.jobs.json --out runs/check",
+      status: "spilled", startedAt: current.now - 1000, spilledAt: current.now - 1000,
+      eventCount: 0, unread: false, stopping: false }];
+    const rows = new FabricWidget(styledTheme, () => current, 6).render(50);
+    const clipped = rows.filter(row => row.includes("…"));
+    expect(clipped).toHaveLength(2);
+    for (const row of clipped) {
+      expect(row).toContain(muted);
+      expect(row.slice(row.lastIndexOf(muted))).not.toContain(`${reset}…`);
+      expect(row).toContain(`…${reset}`);
+      expect(visibleWidth(row)).toBeLessThanOrEqual(50);
+    }
+  });
+});
+
 describe("participant observations", () => {
   it("nests observer handles beneath the exact participant instead of counting them as shells", () => {
     const current = snapshot();
@@ -128,6 +153,27 @@ describe("Fabric agent list", () => {
   const wheel = (widget: FabricWidget, delta: number, y = 2, x = 4) => widget.handleMouse({
     type: "wheel", button: "none", x, y, screenX: x, screenY: y, width: 100, height: 6,
     shift: false, alt: false, ctrl: false, wheelDelta: delta,
+  });
+
+  it("retains the scrolled page across footer instances and keeps Main pinned", () => {
+    const current = manyAgents(18);
+    const viewport = { offset: 0 };
+    const open = () => new FabricWidget(theme, () => current, 6, () => 24, undefined, {
+      mainId: "main", hints: false, release() {}, requestRender() {},
+    }, viewport);
+    const native = open();
+    native.render(100);
+    wheel(native, 10);
+    const before = native.render(100);
+    expect(before[2]).toContain("agent-10");
+    const conversation = open();
+    expect(conversation.render(100)).toEqual(before);
+    expect(mouse(conversation, "click", 4)).toEqual({ focus: true, render: true });
+    expect(conversation.render(100)[2]).toContain("agent-10");
+    wheel(conversation, 2);
+    const returned = native.render(100);
+    expect(returned[2]).toContain("agent-12");
+    expect(returned[1]).toContain("Fabric");
   });
 
   it("reclaims the overflow slot at the bottom without changing the viewport height", () => {

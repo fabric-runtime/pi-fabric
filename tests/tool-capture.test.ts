@@ -460,6 +460,37 @@ describe("registered extension tool capture", () => {
     }
   });
 
+  it.each(["/$bunfs/root/pi", "B:/~BUN/root/pi.exe", "file:///B:/%7EBUN/root/pi.exe"])("patches the mapped SDK instead of PI_PACKAGE_DIR for compiled entry %s", async (entry) => {
+    // A release binary runs its embedded SDK from Bun's virtual file system and
+    // maps that SDK for the extensions it loads. A Pi package on disk is a dead
+    // class there, even when PI_PACKAGE_DIR names it.
+    const packageRoot = await mkdtemp(path.join(tmpdir(), "fabric-binary-pkg-"));
+    const savedArgv1 = process.argv[1]!;
+    const savedRoot = process.env.PI_PACKAGE_DIR;
+    try {
+      await mkdir(path.join(packageRoot, "dist"), { recursive: true });
+      await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", type: "module" }));
+      await writeFile(path.join(packageRoot, "dist", "index.js"), "export class ExtensionRunner { getAllRegisteredTools() { return []; } }\n");
+      const DiskRunner = ((await import(pathToFileURL(path.join(packageRoot, "dist", "index.js")).href)) as { ExtensionRunner: typeof ExtensionRunner }).ExtensionRunner;
+      const diskOriginal = DiskRunner.prototype.getAllRegisteredTools;
+      process.env.PI_PACKAGE_DIR = packageRoot;
+      process.argv[1] = entry;
+      const anchor = tool("fabric_exec");
+      const catalog = new CapturedToolCatalog();
+      controllers.push(await installRegisteredToolCapture({ anchorDefinition: anchor, catalog }));
+      expect(DiskRunner.prototype.getAllRegisteredTools).toBe(diskOriginal);
+      const runner = runnerWith(registered(anchor, "/fabric/compiled.js"), registered(tool("binary_tool"), "/fixture.js"));
+      runner.getAllRegisteredTools();
+      expect(catalog.runner).toBe(runner);
+      expect(catalog.runnerUnavailable).toBe(false);
+    } finally {
+      process.argv[1] = savedArgv1;
+      if (savedRoot === undefined) delete process.env.PI_PACKAGE_DIR;
+      else process.env.PI_PACKAGE_DIR = savedRoot;
+      await rm(packageRoot, { recursive: true, force: true });
+    }
+  });
+
   describe("in a running Pi CLI", () => {
     const hostRoot = path.dirname(path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))));
     const bundledRunner = async () => ((await import(

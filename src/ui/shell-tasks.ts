@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type KeybindingsManager } from "@earendil-works/pi-tui";
+import { getKeybindings, visibleWidth, wrapTextWithAnsi, type Component, type KeybindingsManager } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { FabricShellJobInfo, FabricShellJobStore } from "../core/shell-jobs.js";
 import { formatDuration, padToWidth, safeText, wrapPlainText } from "./format.js";
 import { spinnerFrame } from "./spinner.js";

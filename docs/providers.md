@@ -51,6 +51,27 @@ async invoke(actionName, args, context) {
 }
 ```
 
+## Provider-owned human waits
+
+During `fabric_exec`, a trusted provider can use `context.humanWait` to pause the
+native program deadline around an authenticated human decision:
+
+```ts
+const wait = () => askAuthorizedPerson(context.signal);
+const decision = await (context.humanWait ? context.humanWait(wait) : wait());
+// Perform authorized tool work after the wait, outside the paused interval.
+```
+
+During `fabric_exec`, the invocation context always has a `humanWait` property.
+Its value is `undefined` under an explicit hard whole-script deadline (`timeout_ms`)
+or when the caller has no native pause capability. Cancellation still uses
+`context.signal`; providers must honor it. Overlapping waits keep the deadline
+paused until the last one settles. CPU-slice and memory limits are unchanged.
+Never wrap tool dispatch, network work, or guest execution in this callback. It
+changes deadline accounting only and grants no permission to perform an action.
+`executor.humanWaitRefs` controls whole-call pauses separately; an empty list does
+not disable a trusted provider's explicit human-decision pause.
+
 ## Provider participants
 
 A provider that starts its own long-running work, such as a delegate that launches runs on another system, can register each run as a participant. Inside `fabric_exec`, `context.participants` is present (it is absent in other host contexts such as speculation, so check it):
@@ -243,7 +264,7 @@ await piFabric(pi, { managedHost: {
   foreground: ["ask_user_questions", "ai_todo_write", "run_delegated_task"],
   guidance: "Apply the host's workflow and receipt-reconciliation policy.",
   skillReader: "mcp.files.read",
-  executor: { maxCpuSliceMs: 1000 },
+  executor: { maxCpuSliceMs: 1000, maxOutputChars: 262144, maxNestedResultChars: 2000000 },
   compaction: "pi",
 } });
 ```
@@ -252,6 +273,8 @@ await piFabric(pi, { managedHost: {
 - Stable execution guidance names only the host-authorized provider namespaces and is emitted once through the execution-guidance slot. Tool and `code` descriptions stay short and refer to it. `guidance` appends trusted host instructions once to the system prompt; the existing execution guidance slot can still replace the default. Provider registration remains v1: its event and payload do not change.
 - `skillReader` names the host's dotted callable reader, for example `mcp.files.read`. Without it, Fabric omits its skill-loading instruction and delegated-skill hint. Managed hosts supply their own skill resources; Fabric does not contribute bundled coding workflows.
 - `executor.maxCpuSliceMs` defaults to `1000`, must be a positive safe integer, and limits uninterrupted guest CPU, not host-provider execution. Whole-program timeouts remain separate.
+- `executor.maxOutputChars` defaults to `50000`; `executor.maxNestedResultChars` defaults to `2000000`. Both accept positive safe integers from host code only, without coercion or clamping to the default. Omitted, `undefined`, or `null` options keep the default; other invalid values throw. Final model output and nested provider results are bounded independently. Native-result calls retain their separate 16,777,216-character ceiling.
+- `fabric_exec.maxOutputTokens` can lower the final output ceiling (estimated at four characters per token), never raise it. Omit it when returning full contracts to use the host ceiling; large results still need projection or paging.
 - `compaction` is `"fabric"` by default, preserving existing behavior; `"pi"` leaves compaction to the embedding host and its saved formats.
 
 Options are copied when the host is created. Later mutation of the caller's arrays or executor object cannot widen the host policy. See the [migration and changelog](managed-host-migration.md).

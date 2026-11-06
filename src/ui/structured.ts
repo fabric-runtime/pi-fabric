@@ -47,9 +47,13 @@ const hoistMultilineStrings = (
   path: string,
   sections: HoistedSection[],
   seen: Set<unknown>,
+  sectionByText: Map<string, string>,
 ): unknown => {
   if (typeof value === "string") {
     if (!value.includes("\n")) return value;
+    const priorPath = sectionByText.get(value);
+    if (priorPath !== undefined) return `<multi-line string, see section: ${priorPath}>`;
+    sectionByText.set(value, path);
     sections.push({ path, text: value });
     return `<multi-line string, see section: ${path}>`;
   }
@@ -57,7 +61,7 @@ const hoistMultilineStrings = (
     if (seen.has(value)) return "[circular reference]";
     seen.add(value);
     const skeleton = value.map((item, index) =>
-      hoistMultilineStrings(item, `${path}[${index}]`, sections, seen),
+      hoistMultilineStrings(item, `${path}[${index}]`, sections, seen, sectionByText),
     );
     seen.delete(value);
     return skeleton;
@@ -72,6 +76,7 @@ const hoistMultilineStrings = (
         path ? `${path}.${key}` : key,
         sections,
         seen,
+        sectionByText,
       );
     }
     seen.delete(value);
@@ -142,7 +147,7 @@ export const formatFabricValue = (
   if (typeof value === "string") return { text: value };
   if (format === "auto" || format === "yaml") {
     const sections: HoistedSection[] = [];
-    const skeleton = hoistMultilineStrings(value, "", sections, new Set());
+    const skeleton = hoistMultilineStrings(value, "", sections, new Set(), new Map());
     const yaml = formatJsonAsYaml(skeleton);
     if (yaml !== undefined) {
       if (sections.length === 0) return { text: yaml, language: "yaml" };

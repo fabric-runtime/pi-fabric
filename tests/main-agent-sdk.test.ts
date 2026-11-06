@@ -12,13 +12,19 @@ const text = "FEEDBACK_AT_TOOL_BOUNDARY_" + "x".repeat(20_000);
 const data = { body: "FULL_STRUCTURED_DATA_" + "y".repeat(20_000) };
 
 describe("Main feedback through the real Pi 1.5 host", () => {
-  it.each(["active", "idle-passive", "idle-active"] as const)("delivers once in %s state without user impersonation", async scenario => {
+  it.each(["active", "idle-passive", "idle-active", "peer-active", "peer-idle", "peer-wake"] as const)("delivers once in %s state without user impersonation", async scenario => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "fabric-feedback-sdk-"));
     let main: MainAgentController | undefined;
     const requests: unknown[][] = [], events: string[] = [], errors: unknown[] = [];
     let inputs = 0, sends = 0;
     const settingsManager = SettingsManager.inMemory({ defaultProjectTrust: "never", compaction: { enabled: false }, retry: { enabled: false } });
-    const feedback = () => main!.deliverAgent({ from: { id: "child", name: "Reviewer", kind: "agent" }, message: text, data, delivery: "followUp", triggerTurn: scenario !== "idle-passive" });
+    const active = scenario === "active" || scenario === "peer-active";
+    const peer = scenario.startsWith("peer-");
+    const feedback = () => main!.deliverAgent({
+      from: peer ? { id: "session:peer", name: "main", kind: "main" } : { id: "child", name: "Reviewer", kind: "agent" },
+      message: text, data, delivery: "followUp",
+      ...(!peer ? { triggerTurn: scenario !== "idle-passive" } : scenario === "peer-wake" ? { triggerTurn: true } : {}),
+    });
     const loader = new DefaultResourceLoader({
       cwd, agentDir: cwd, settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
       agentsFilesOverride: () => ({ agentsFiles: [] }),
@@ -38,7 +44,7 @@ describe("Main feedback through the real Pi 1.5 host", () => {
           streamSimple(model, context) {
             requests.push(context.messages);
             events.push(`request-${requests.length}`);
-            const tool = scenario === "active" && requests.length === 1;
+            const tool = active && requests.length === 1;
             const message: AssistantMessage = {
               role: "assistant", content: tool ? [{ type: "toolCall", id: "tool-1", name: "receive_feedback", arguments: {} }] : [{ type: "text", text: "Finished." }],
               api: model.api, provider: model.provider, model: model.id, usage, timestamp: Date.now(), stopReason: tool ? "toolUse" : "stop",
@@ -61,13 +67,13 @@ describe("Main feedback through the real Pi 1.5 host", () => {
         await session.setModel(modelRuntime.getModel("offline-feedback", "fixture")!);
         session.setActiveToolsByName(["receive_feedback"]);
         expect(session.getActiveToolNames()).toEqual(["receive_feedback"]);
-        if (scenario === "active") {
+        if (active) {
           await session.prompt("Run the fixture tool.");
           expect(events).toEqual(["request-1", "tool", "request-2", "settled"]);
           expect(requests).toHaveLength(2);
         } else {
           feedback();
-          if (scenario === "idle-passive") {
+          if (scenario === "idle-passive" || scenario === "peer-idle") {
             expect(session.isIdle).toBe(true);
             expect(requests).toHaveLength(0);
             await session.prompt("Read stored feedback.");
@@ -78,7 +84,7 @@ describe("Main feedback through the real Pi 1.5 host", () => {
           expect(requests).toHaveLength(1);
         }
         // Only original human input traverses input hooks; no duplicate continuation.
-        expect(inputs).toBe(scenario === "idle-active" ? 0 : 1);
+        expect(inputs).toBe(scenario === "idle-active" || scenario === "peer-wake" ? 0 : 1);
         expect(sends).toBe(1);
         expect(JSON.stringify(requests.at(-1))).toContain(text);
         expect(JSON.stringify(requests.at(-1))).toContain(data.body);

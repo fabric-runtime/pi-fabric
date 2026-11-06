@@ -5,6 +5,8 @@ import {
   ToolExecutionComponent,
   UserMessageComponent,
   type Theme,
+  type ExtensionAPI,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Text, stripTerminalSequences, visibleWidth, type TUI } from "@earendil-works/pi-tui";
@@ -13,6 +15,9 @@ import { createFabricPersistedExecutionDetails } from "../src/audit/index.js";
 import { FabricExecutionTraceRecorder } from "../src/audit/trace.js";
 import { createFabricExecTool } from "../src/fabric-exec-tool.js";
 import type { FabricState } from "../src/fabric-state.js";
+import { MainAgentController } from "../src/main-agent.js";
+import { deliverActorFeedback } from "../src/actors/feedback.js";
+import type { FabricActorDeliveryRequest } from "../src/actors/types.js";
 import { defaultCodePreviewSettings } from "../src/ui/code-preview.js";
 import {
   FabricConversationTranscriptRenderer,
@@ -116,6 +121,47 @@ const render = (
 const plain = (lines: string[]) => lines.map(stripTerminalSequences);
 
 describe("focused conversation native component rendering", () => {
+  it.each(["agent", "actor"] as const)("projects hidden %s feedback like Main's notification without exposing its payload", (kind) => {
+    initTheme("dark", false);
+    const sendMessage = vi.fn();
+    const notify = vi.fn();
+    const pi = { sendMessage } as unknown as ExtensionAPI;
+    const context = { hasUI: true, ui: { notify } } as unknown as ExtensionContext;
+    const text = "Review <result> & &lt;verify&gt;\n\x1b[31mcarefully\x1b[0m " + "x".repeat(500);
+    if (kind === "agent") {
+      new MainAgentController(pi, "main", true, "/repo", "session", context).deliverAgent({
+        from: { id: "reviewer", name: "Reviewer", kind: "agent" }, message: text,
+        data: { secret: "never display structured data" }, delivery: "steer",
+      });
+    } else {
+      deliverActorFeedback(pi, context, {
+        actor: { id: "reviewer", name: "Reviewer" },
+        message: { id: "out-1", text, data: { secret: "never display structured data" } },
+        delivery: "steer", triggerTurn: true,
+      } as FabricActorDeliveryRequest);
+    }
+    const sent = sendMessage.mock.calls[0]![0];
+    const message = { ...sent, role: "custom" as const, timestamp: 5 };
+    const renderer = new FabricConversationTranscriptRenderer(tui, theme);
+    const frame = render(renderer, makeTranscript({ messages: [message] }), 60);
+    const expected = new Text(theme.fg("dim", notify.mock.calls[0]![0]), 1, 0).render(60);
+    expect(frame).toEqual(expected);
+    expect(frame.join("\n")).not.toMatch(/never display|fabric-agent-message|fabric-actor|<data>/);
+    expect(sent.display).toBe(false);
+    expect(sent.content).toContain("never display structured data");
+    renderer.dispose();
+  });
+
+  it("keeps unrelated hidden messages out of the participant view", () => {
+    const renderer = new FabricConversationTranscriptRenderer(tui, theme);
+    const frame = render(renderer, makeTranscript({ messages: [{
+      role: "custom", customType: "private-extension", display: false,
+      content: "private text", details: { from: { name: "Impostor" } }, timestamp: 5,
+    }] }));
+    expect(frame).toEqual([]);
+    renderer.dispose();
+  });
+
   it("dispatches user and assistant messages through the exact native components with native spacing", () => {
     initTheme("dark", false);
     const renderer = new FabricConversationTranscriptRenderer(tui, theme);

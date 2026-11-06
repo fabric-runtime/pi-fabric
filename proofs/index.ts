@@ -6,6 +6,7 @@ import { actorNameKernels, ACTOR_NAME_BUGS } from "./actor-name.js";
 import { authorityKernels, AUTHORITY_BUGS } from "./authority.js";
 import { compactionKernels, CUT_BUGS } from "./compaction.js";
 import { budgetKernels, BUDGET_BUGS } from "./budget.js";
+import { executionKernels, EXECUTION_BUGS } from "./execution.js";
 import { grantKernels, GRANT_BUGS } from "./grants.js";
 import { speculationKernels, SPECULATION_BUGS } from "./speculation.js";
 import type { Kernel } from "./kernel.js";
@@ -38,5 +39,6 @@ export const modules: readonly KernelModule[] = [
   { stem: "speculation", source: "proofs/speculation.ts", kernels: speculationKernels as any, bugs: SPECULATION_BUGS },
   { stem: "actor-name", source: "proofs/actor-name.ts", kernels: actorNameKernels as any, bugs: ACTOR_NAME_BUGS },
   { stem: "budget", source: "proofs/budget.ts", kernels: budgetKernels as any, bugs: BUDGET_BUGS },
+  { stem: "execution", source: "proofs/execution.ts", kernels: executionKernels as any, bugs: EXECUTION_BUGS },
   { stem: "prompt-guidance", source: "proofs/prompt-guidance.ts", kernels: promptGuidanceKernels as any, bugs: PROMPT_GUIDANCE_BUGS },
 ];

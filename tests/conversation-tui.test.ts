@@ -221,7 +221,7 @@ describe("conversation through the real Pi TUI", () => {
   );
 
   it.each([["main screen", TuiMainScreen], ["alternate screen", TuiAltScreen]] as const)(
-    "scrolls the gap with history on the first normalized wheel event (%s)", async (_name, Renderer) => {
+    "keeps the upstream-style dock gap while scrolling history (%s)", async (_name, Renderer) => {
       initTheme("dark", false);
       const terminal = new ProbeTerminal();
       const tui = new Renderer(terminal);
@@ -247,6 +247,7 @@ describe("conversation through the real Pi TUI", () => {
         const editorTop = before.findIndex((line) => /^── [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Working ─+ .+ ──$/.test(line));
         expect(editorTop).toBeGreaterThan(1);
         expect(before[editorTop - 1]).toBe("");
+        expect(before[editorTop - 2]).toContain("final history marker");
         const start = state.view("child").scroll;
         terminal.input("\x1b[<64;4;4M");
         const after = view.render(terminal.columns).map(stripTerminalSequences);
@@ -254,9 +255,21 @@ describe("conversation through the real Pi TUI", () => {
         expect(delta).toBeGreaterThan(0);
         expect(state.view("child").following).toBe(false);
         const history = (line: string) => line.slice(0, terminal.columns - 1).trimEnd();
-        expect(after.slice(delta, editorTop - 1).map(history)).toEqual(before.slice(0, editorTop - delta - 1).map(history));
-        expect(after[editorTop - 1]).toContain("Jump to latest message");
-        expect(after.slice(0, editorTop).some((line) => line.endsWith("┃"))).toBe(true);
+        expect(after.slice(delta, editorTop - 2).map(history)).toEqual(before.slice(0, editorTop - delta - 2).map(history));
+        expect(after[editorTop - 1]).toBe("");
+        expect(after[editorTop - 2]).toContain("Jump to latest message");
+        expect(after.slice(0, editorTop - 1).some((line) => line.endsWith("┃"))).toBe(true);
+        // The fixed gap is neither selectable history nor the jump-to-latest hitbox.
+        terminal.input(`\x1b[<0;45;${editorTop}M`);
+        terminal.input(`\x1b[<0;45;${editorTop}m`);
+        expect(state.view("child").following).toBe(false);
+        terminal.input(`\x1b[<0;45;${editorTop - 1}M`);
+        terminal.input(`\x1b[<0;45;${editorTop - 1}m`);
+        const latest = view.render(terminal.columns).map(stripTerminalSequences);
+        expect(state.view("child").following).toBe(true);
+        expect(latest[editorTop - 1]).toBe("");
+        expect(latest[editorTop - 2]).toContain("final history marker");
+        expect(latest.join("\n")).not.toContain("Jump to latest message");
       } finally {
         view.dispose();
         handle.hide();
