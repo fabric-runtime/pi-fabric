@@ -6,7 +6,7 @@ import { AGENTS_ACTION_DESCRIPTORS } from "../src/providers/agents-actions.js";
 import { validateCatalogArgs } from "../src/core/action-arguments.js";
 import { availablePythonBackends } from "./fixtures/python-backends.js";
 
-const completed = (value: unknown = "finding") => ({ status: "completed", text: typeof value === "string" ? value : "", value });
+const completed = (value: unknown = "finding") => ({ id: "test-run-id", status: "completed", text: typeof value === "string" ? value : "", value });
 const failed = { status: "failed", text: "", error: "worker unavailable" };
 const model = (id: string) => ({ provider: "test", id, name: id, key: `test/${id}` });
 const models = [model("one"), model("two"), model("three")];

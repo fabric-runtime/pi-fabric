@@ -11,16 +11,16 @@ Use one Python `fabric_exec`. Pass `payloads.task`, a JSON array in `payloads.ro
 ```python
 import asyncio
 import json
-from datetime import datetime, timezone
 
-async def ask(task, name, options=None):
+async def ask(task, name, options=None, include_id=False):
     request = {"task": task, "name": name, "tools": ["read", "grep", "find", "ls"]}
     if options:
         request.update(options)
     result = await agents.run(request)
     if result["status"] != "completed":
         raise RuntimeError(result.get("error") or result["status"])
-    return result["value"] if result.get("value") is not None else result["text"]
+    report = result["value"] if result.get("value") is not None else result["text"]
+    return {"report": report, "runId": result["id"]} if include_id else report
 
 def text(value):
     return value.strip() if isinstance(value, str) else ""
@@ -84,8 +84,8 @@ async def review(seat):
     if seat.get("thinking"):
         options["thinking"] = seat["thinking"]
     try:
-        report = await ask("Act as the " + seat["role"] + " council member. Independently analyze. Reports are persisted in project-shared mesh: never reproduce credentials, secret values, or private data; describe locations and remediation instead:\n" + π.task, seat["role"], options)
-        outcome.update({"status": "completed", "report": report})
+        report = await ask("Act as the " + seat["role"] + " council member. Independently analyze. Reports are persisted in project-shared mesh: never reproduce credentials, secret values, or private data; describe locations and remediation instead:\n" + π.task, seat["role"], options, include_id=True)
+        outcome.update({"status": "completed", **report})
     except Exception as error:
         outcome.update({"status": "failed", "error": str(error)})
     return outcome
@@ -102,15 +102,15 @@ if not completed:
     return dict(summary, status="failed", failures=failures, result=None)
 # Park completed reports in mesh before synthesis: an audit trail that survives this
 # program, and full-text recovery when synthesis fails or a budget runs out.
-# ifVersion=0 makes each put create-only, so a same-second council moves to the
-# next key suffix instead of overwriting an earlier run's reports.
+# Use a host-assigned completed agent run ID: Monty has no native clock.
+# ifVersion=0 keeps retries create-only instead of overwriting prior reports.
 _parked = [
     {"role": item.get("role"), **({"model": item["model"]} if item.get("model") else {}), "report": item["report"]}
     for item in completed
 ]
 reports = None
 _park_error = None
-_reports_base = "council/" + datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
+_reports_base = "council/" + completed[0]["runId"]
 for _attempt in range(4):
     _suffix = "" if _attempt == 0 else "-" + str(_attempt + 1)
     reports_key = _reports_base + _suffix + "/reports"
@@ -120,7 +120,7 @@ for _attempt in range(4):
         break
     except Exception as error:
         _park_error = error
-        # Only a same-timestamp collision retries with the next suffix; any other
+        # Only a key collision retries with the next suffix; any other
         # storage failure surfaces immediately as the {"error": ...} object.
         if "compare-and-swap" not in str(error):
             break
@@ -135,4 +135,4 @@ except Exception as error:
     return dict(summary, status="partial", failures=failures, result=None, synthesisError=str(error), reports=reports, fallback=[{"role": item.get("role"), "status": "completed", "report": item["report"] if isinstance(reports, dict) else item["report"][:1200]} for item in completed])
 ```
 
-Reserve at least the role count plus one agent call. Concurrency remains host-limited; usage settles afterward, not as a hard token reservation. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the program refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Whenever at least one seat completes, full role reports are parked to mesh under a create-only `council/<timestamp>/reports` key carried by every outcome as `reports` — a same-second collision parks under the next suffix (`-2`, `-3`, …) rather than overwriting: `mesh.get` it for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed; on synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. When mesh storage itself fails, `reports` is an `{"error": ...}` object instead of a key — never pass it to `mesh.get` or `mesh.delete` — and the synthesis-failure fallback then carries the full untruncated reports. A single completed role returns its full report directly as `result` without a synthesis call. Every result lists `seats` with each role's pinned model, thinking, and status, plus `synthesisModel` when one was pinned. These are the models the program requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed); raw reports return on synthesis failure or when one role completes and synthesis is skipped. A partial result is useful evidence with named gaps, not permission for an automatic whole-council rerun. Retry only the failed role or synthesis when needed. Do not use a council for a lookup.
+Reserve at least the role count plus one agent call. Concurrency remains host-limited; usage settles afterward, not as a hard token reservation. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the program refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Whenever at least one seat completes, full role reports are parked to mesh under a create-only `council/<run-id>/reports` key (using the first completed agent's host-assigned run ID, with no native clock requirement) carried by every outcome as `reports` — a key collision parks under the next suffix (`-2`, `-3`, …) rather than overwriting: `mesh.get` it for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed; on synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. When mesh storage itself fails, `reports` is an `{"error": ...}` object instead of a key — never pass it to `mesh.get` or `mesh.delete` — and the synthesis-failure fallback then carries the full untruncated reports. A single completed role returns its full report directly as `result` without a synthesis call. Every result lists `seats` with each role's pinned model, thinking, and status, plus `synthesisModel` when one was pinned. These are the models the program requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed); raw reports return on synthesis failure or when one role completes and synthesis is skipped. A partial result is useful evidence with named gaps, not permission for an automatic whole-council rerun. Retry only the failed role or synthesis when needed. Do not use a council for a lookup.
