@@ -5,38 +5,104 @@ export class PiRecoveryWatchdog {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #reason: string | undefined;
   #disposed = false;
+  // What Pi did after the error, for the failure message.
+  #armedAt = 0;
+  #retry: { attempt: number | undefined; maxAttempts: number | undefined; at: number } | undefined;
+  #turnStartedAt: number | undefined;
+  #responseStartedAt: number | undefined;
+  #lastOutputAt: number | undefined;
 
   constructor(private readonly fail: (error: string) => void) {}
 
   arm(reason: string): void {
     if (this.#disposed) return;
+    if (!this.#reason) this.#armedAt = Date.now();
     this.#reason = reason;
     // Repeated errors, retry announcements and lifecycle chatter are not progress.
     if (this.#timer) return;
     this.#timer = setTimeout(() => {
       const error = this.#reason;
+      const recovery = this.#describeRecovery();
       this.dispose();
-      this.fail(`${error}; Pi made no recovery progress for ${PI_RECOVERY_TIMEOUT_MS}ms; terminating child`);
+      this.fail(`${error}; Pi made no recovery progress for ${PI_RECOVERY_TIMEOUT_MS}ms; terminating child. ${recovery}`);
     }, PI_RECOVERY_TIMEOUT_MS);
     this.#timer.unref?.();
   }
 
+  /** Pi announced a retry (`auto_retry_start`). A later attempt replaces an earlier one. */
+  retryAnnounced(attempt?: number, maxAttempts?: number): void {
+    if (!this.#reason || this.#disposed) return;
+    this.#retry = { attempt, maxAttempts, at: Date.now() };
+    this.#turnStartedAt = undefined;
+    this.#responseStartedAt = undefined;
+    this.#lastOutputAt = undefined;
+  }
+
+  /** Pi started a turn (`agent_start`) while recovery was pending. */
+  turnStarted(): void {
+    if (!this.#reason || this.#disposed) return;
+    this.#turnStartedAt = Date.now();
+    this.#responseStartedAt = undefined;
+    this.#lastOutputAt = undefined;
+  }
+
+  /** An assistant message started (`message_start`) while recovery was pending. */
+  responseStarted(): void {
+    if (!this.#reason || this.#disposed) return;
+    this.#responseStartedAt ??= Date.now();
+  }
+
+  /** Pi streamed output: restart the window, keeping the error and what recovery did. */
   progress(): void {
     if (!this.#reason || this.#disposed) return;
-    const reason = this.#reason;
-    this.clear();
-    this.arm(reason);
+    this.#lastOutputAt = Date.now();
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = undefined;
+    this.arm(this.#reason);
   }
 
   clear(): void {
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#reason = undefined;
+    this.#retry = undefined;
+    this.#turnStartedAt = undefined;
+    this.#responseStartedAt = undefined;
+    this.#lastOutputAt = undefined;
   }
 
   dispose(): void {
     this.clear();
     this.#disposed = true;
+  }
+
+  /** Says how far Pi's recovery got, in seconds after the error that armed the watchdog. */
+  #describeRecovery(): string {
+    const after = (at: number) => `${Math.round((at - this.#armedAt) / 1000)}s after the error`;
+    const retry = this.#retry;
+    const parts: string[] = [];
+    if (!retry) parts.push("Pi announced no retry");
+    else {
+      const { attempt, maxAttempts } = retry;
+      const which = attempt === undefined ? "a retry" : `retry ${attempt}${maxAttempts === undefined ? "" : ` of ${maxAttempts}`}`;
+      parts.push(`Pi announced ${which} ${after(retry.at)}`);
+    }
+    if (this.#turnStartedAt === undefined) {
+      if (retry) parts.push("the retry turn never started");
+    } else {
+      parts.push(`${retry ? "the retry turn" : "a turn"} started ${after(this.#turnStartedAt)}`);
+      if (this.#responseStartedAt === undefined) {
+        if (retry) parts.push("no assistant response started");
+      } else if (this.#lastOutputAt === undefined) {
+        parts.push(`an assistant response started ${after(this.#responseStartedAt)} but produced no output`);
+      } else {
+        parts.push(`an assistant response started ${after(this.#responseStartedAt)}; its last output came ${after(this.#lastOutputAt)}`);
+      }
+    }
+    if (this.#lastOutputAt !== undefined && this.#responseStartedAt === undefined) {
+      parts.push(`the last output came ${after(this.#lastOutputAt)}`);
+    }
+    return `Recovery: ${parts.join("; ")}.`;
   }
 }
 
