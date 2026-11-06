@@ -460,7 +460,7 @@ describe("registered extension tool capture", () => {
     }
   });
 
-  it("patches the SDK Pi maps for extensions in a compiled binary, not a package PI_PACKAGE_DIR names", async () => {
+  it.each(["/$bunfs/root/pi", "B:/~BUN/root/pi.exe", "file:///B:/%7EBUN/root/pi.exe"])("patches the mapped SDK instead of PI_PACKAGE_DIR for compiled entry %s", async (entry) => {
     // A release binary runs its embedded SDK from Bun's virtual file system and
     // maps that SDK for the extensions it loads. A Pi package on disk is a dead
     // class there, even when PI_PACKAGE_DIR names it.
@@ -474,7 +474,7 @@ describe("registered extension tool capture", () => {
       const DiskRunner = ((await import(pathToFileURL(path.join(packageRoot, "dist", "index.js")).href)) as { ExtensionRunner: typeof ExtensionRunner }).ExtensionRunner;
       const diskOriginal = DiskRunner.prototype.getAllRegisteredTools;
       process.env.PI_PACKAGE_DIR = packageRoot;
-      process.argv[1] = "/$bunfs/root/pi";
+      process.argv[1] = entry;
       const anchor = tool("fabric_exec");
       const catalog = new CapturedToolCatalog();
       controllers.push(await installRegisteredToolCapture({ anchorDefinition: anchor, catalog }));
