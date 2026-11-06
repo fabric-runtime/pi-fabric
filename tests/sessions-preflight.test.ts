@@ -16,7 +16,7 @@ type Hook = (event: { toolName: string; parentToolCallId: string; input: Record<
 const bridgeOf = (provider: SessionsProvider) => provider.bridge as unknown as { resolve: () => Promise<unknown> };
 
 // The provider is wired the way the runtime wires it: through the shared preflight and a runner.
-const setup = (hook: Hook, options: { runner?: boolean } = {}) => {
+const setup = (hook: Hook, options: { runner?: boolean; runnerUnavailable?: boolean } = {}) => {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "fabric-sessions-preflight-")));
   const binary = path.join(root, "jev-fabric");
   fs.writeFileSync(binary, `#!/bin/sh\nexec "${process.execPath}" "${fake}" "$@"\n`, { mode: 0o755 });
@@ -26,7 +26,7 @@ const setup = (hook: Hook, options: { runner?: boolean } = {}) => {
   const provider = new SessionsProvider(bridge, {
     cwd: root,
     shellOverride: () => false,
-    preflight: toolCallShellPreflight(() => options.runner === false ? undefined : runner),
+    preflight: toolCallShellPreflight(() => options.runner === false ? undefined : runner, () => options.runnerUnavailable === true),
   });
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   cleanups.push(() => provider.close());
@@ -123,6 +123,14 @@ describe.skipIf(process.platform === "win32")("sessions run the shell tool_call 
     const resolve = vi.spyOn(bridgeOf(provider), "resolve");
     await expect(call("open", { argv: ["true"] })).rejects.toThrow("sessions.open is unavailable until extension tool hooks initialize");
     expect(resolve).not.toHaveBeenCalled();
+    expect(emitToolCall).not.toHaveBeenCalled();
+  });
+
+  it("says a retry cannot help when the host's extension runner was never found", async () => {
+    const { call, emitToolCall } = setup(async () => undefined, { runner: false, runnerUnavailable: true });
+    const message = await call("open", { argv: ["true"] }).then(() => "opened", (error: Error) => error.message);
+    expect(message).toContain("sessions.open is unavailable: Pi Fabric could not find this Pi host's ExtensionRunner");
+    expect(message).not.toContain("retry once tools are ready");
     expect(emitToolCall).not.toHaveBeenCalled();
   });
 

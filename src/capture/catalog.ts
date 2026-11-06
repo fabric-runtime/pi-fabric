@@ -24,9 +24,20 @@ export class CapturedToolCatalog {
   // (pi-vision-handoff, auditors, etc.) would never fire for pi core tools.
   #runner: ExtensionRunner | undefined;
   #suspended = false;
+  // Set when capture found no ExtensionRunner class in this host: the runner
+  // above can then never be set, so guards must not ask the caller to retry.
+  #runnerUnavailable = false;
 
   get runner(): ExtensionRunner | undefined {
     return this.#runner;
+  }
+
+  get runnerUnavailable(): boolean {
+    return this.#runnerUnavailable && !this.#runner;
+  }
+
+  markRunnerUnavailable(): void {
+    this.#runnerUnavailable = true;
   }
 
   // True while capture is suspended between sessions/reloads. Derived

@@ -260,6 +260,19 @@ const normalizeResult = (
 type PiToolResult = AgentToolResult<unknown>;
 
 /**
+ * Why a nested mutating call is refused while no ExtensionRunner can run the
+ * other extensions' `tool_call` hooks. `unavailable` means capture found no
+ * runner class in this host, so no refresh will ever supply one: a retry
+ * cannot succeed, and the message says so instead.
+ */
+export function missingToolHooksMessage(subject: string, unavailable: boolean): string {
+  return unavailable
+    ? `${subject} is unavailable: Pi Fabric could not find this Pi host's ExtensionRunner, so other extensions' tool hooks cannot run for nested calls and retrying will not help. ` +
+      "Read-only tools still work. Run Pi from its npm package or a release binary, or point PI_PACKAGE_DIR at the Pi package the host runs, then restart Pi."
+    : `${subject} is unavailable until extension tool hooks initialize; retry once tools are ready`;
+}
+
+/**
  * Emit a `tool_call` event for a nested call and throw when a hook blocks it.
  * Hooks may mutate `input` in place. Shared by pi.* tools and by interactive
  * sessions, so a command guard sees both through one code path.
@@ -690,14 +703,12 @@ export class PiToolsProvider implements FabricProvider {
     // preflight extensions rely on — is not yet available. This is the
     // transient window before the first tool refresh populates the runner.
     // Running a mutating tool here would silently skip that preflight, so fail
-    // closed for non-read tools and let the model retry once hooks are live.
+    // closed for non-read tools; the error says whether a retry can succeed.
     // The no-catalog path (tests, embeds) has no extension system to guard and
     // keeps the direct-execute fallback below unchanged, unless a host policy
     // relies on those hooks: then a non-read tool never runs without them.
     if ((this.#catalog || this.#requireToolHooks?.()) && !runner && !this.#requireCapturedOverrides && riskForTool(name) !== "read") {
-      throw new Error(
-        `Pi tool ${name} is unavailable until extension tool hooks initialize; retry once tools are ready`,
-      );
+      throw new Error(missingToolHooksMessage(`Pi tool ${name}`, this.#catalog?.runnerUnavailable === true));
     }
     let preflightEmitted = false;
     if (

@@ -5,7 +5,7 @@ import type { FabricActionDescriptor, FabricInvocationContext, FabricProvider, F
 import { validationMessage } from "../core/action-arguments.js";
 import type { DurableShellBridge } from "../jev-fabric/bridge.js";
 import type { JevFabricServe } from "../jev-fabric/serve.js";
-import { emitToolCallPreflight } from "./pi-tools-provider.js";
+import { emitToolCallPreflight, missingToolHooksMessage } from "./pi-tools-provider.js";
 
 const DAY_MS = 24 * 3_600_000;
 const id = { type: "string", minLength: 1, maxLength: 128, description: "Session ID from sessions.open (`s-…` for session lifetime) or a durable jev-fabric job ID." };
@@ -69,10 +69,13 @@ type Opened = { id: string; lifetime: "session" | "durable"; label?: string; own
 export type ShellPreflight = (input: Record<string, unknown>, context: Pick<FabricInvocationContext, "signal" | "nestedToolCallId" | "parentToolCallId">, action: "open" | "write") => Promise<void>;
 
 /** The `bash` `tool_call` preflight `pi.bash` runs, through the captured catalog's runner. */
-export const toolCallShellPreflight = (runner: () => ExtensionRunner | undefined): ShellPreflight => async (input, context, action) => {
+export const toolCallShellPreflight = (
+  runner: () => ExtensionRunner | undefined,
+  runnerUnavailable: () => boolean = () => false,
+): ShellPreflight => async (input, context, action) => {
   const current = runner();
   // Like pi.bash: without a runner no tool_call hook can judge the command, so refuse it.
-  if (!current) throw new Error(`sessions.${action} is unavailable until extension tool hooks initialize; retry once tools are ready`);
+  if (!current) throw new Error(missingToolHooksMessage(`sessions.${action}`, runnerUnavailable()));
   await emitToolCallPreflight(current, "bash", input, context, `sessions.${action} was blocked by a bash tool_call hook`);
 };
 
