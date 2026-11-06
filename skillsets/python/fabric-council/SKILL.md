@@ -110,9 +110,10 @@ _parked = [
 ]
 reports = None
 _park_error = None
+_reports_base = "council/" + datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
 for _attempt in range(4):
     _suffix = "" if _attempt == 0 else "-" + str(_attempt + 1)
-    reports_key = "council/" + datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S") + _suffix + "/reports"
+    reports_key = _reports_base + _suffix + "/reports"
     try:
         await mesh.put(key=reports_key, value=_parked, ifVersion=0)
         reports = reports_key

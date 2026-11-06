@@ -122,9 +122,10 @@ const parked = completed.map((outcome) => ({
 }));
 let reports: string | { error: string } | null = null;
 let parkError = "";
+const reportsBase = `council/${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
 for (let attempt = 0; attempt < 4 && reports === null; attempt++) {
   const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
-  const reportsKey = `council/${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}${suffix}/reports`;
+  const reportsKey = `${reportsBase}${suffix}/reports`;
   try {
     await mesh.put({ key: reportsKey, value: parked, ifVersion: 0 });
     reports = reportsKey;
