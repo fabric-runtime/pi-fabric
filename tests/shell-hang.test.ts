@@ -143,6 +143,7 @@ describe("pi.bash auto-spill", () => {
     expect(result.output).toContain("Its timeout (30s) bounds the process, not this wait");
     expect(result.output).toContain(`call tasks.wait with {"id":"${taskId}","timeoutMs":300000} until it reports a terminal status`);
     expect(result.output).not.toContain("call tools.call");
+    expect(result.output).toContain("Set the enclosing fabric_exec timeoutMs long enough for the wait");
     jobs.get(taskId)!.abort.abort();
   });
 
