@@ -1197,7 +1197,12 @@ export class NativeConversationReader {
     }
     if (this.#streamingDirty) {
       const tools = [...this.#tools.values()];
-      const partialAssistant = this.#partial ? { ...this.#partial, content: [...this.#partial.content] } : undefined;
+      // Deltas address blocks by contentIndex, so a window that starts mid-message
+      // leaves holes for blocks it has not loaded yet. Keep the indexed array for
+      // later deltas and older-page replay; publish only the blocks that exist.
+      const partialAssistant = this.#partial
+        ? { ...this.#partial, content: this.#partial.content.filter((block) => block !== undefined) }
+        : undefined;
       this.#streaming = {
         active: partialAssistant !== undefined || tools.some((tool) => tool.status === "running"),
         ...(partialAssistant ? { partialAssistant } : {}),

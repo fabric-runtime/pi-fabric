@@ -4,7 +4,7 @@ import type { TUI } from "@earendil-works/pi-tui";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { NativeConversationReader } from "../src/ui/conversation-native-reader.js";
+import { NativeConversationReader, type NativeConversationSource } from "../src/ui/conversation-native-reader.js";
 import { WorkingStatusIndicator } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/status-indicator.js";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -959,5 +959,55 @@ describe("FabricConversationView", () => {
     const text = lines.join("\n");
     expect(text).toContain("tiny");
     expect(text).toContain("Agent A");
+  });
+});
+
+describe("partial message whose first blocks are outside the loaded window", () => {
+  const delta = (type: string, contentIndex: number, text?: string) => ({
+    type: "message_update",
+    assistantMessageEvent: { type, contentIndex, ...(text === undefined ? {} : { delta: text }) },
+  });
+  const prefix = [
+    { type: "message_start", message: { role: "assistant", content: [], api: "openai-responses", provider: "openai", model: "m", timestamp: 1 } },
+    delta("thinking_start", 0),
+    delta("thinking_delta", 0, "Synthetic reasoning."),
+    delta("text_start", 1),
+  ];
+  const withEvents = (records: unknown[], run: (reader: NativeConversationReader, h: Harness, source: NativeConversationSource) => void): void => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "fabric-sparse-partial-"));
+    try {
+      const eventsFile = path.join(directory, "events.jsonl");
+      writeFileSync(eventsFile, records.map((record) => JSON.stringify(record) + "\n").join(""));
+      const reader = new NativeConversationReader();
+      const source = { id: "a", status: "running", eventsFile };
+      const h = makeHarness({ transcript: (_id, follow) => reader.read(source, follow) });
+      run(reader, h, source);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  };
+
+  it("renders a tail that starts at a text delta for content index 1", () => {
+    withEvents([delta("text_delta", 1, "VISIBLE_REPRO")], (_reader, h) => {
+      expect(renderText(h.view, 100)).toContain("VISIBLE_REPRO");
+    });
+  });
+
+  it("renders the initial page of a large stream and recovers the earlier blocks after loadOlder", () => {
+    const records = [
+      ...prefix,
+      ...Array.from({ length: 320 }, () => delta("text_delta", 1, "x".repeat(1024) + "\n")),
+      delta("text_delta", 1, "VISIBLE_REPRO"),
+    ];
+    withEvents(records, (reader, h, source) => {
+      expect(renderText(h.view, 100)).toContain("VISIBLE_REPRO");
+      expect(reader.read(source).hasMore).toBe(true);
+      const older = reader.loadOlder();
+      expect(older?.hasMore).toBe(false);
+      expect(older?.streaming.partialAssistant?.content.map((block) => block.type)).toEqual(["thinking", "text"]);
+      expect(older?.streaming.partialAssistant?.content[0]).toMatchObject({ thinking: "Synthetic reasoning." });
+      h.view.refresh();
+      expect(renderText(h.view, 100)).toContain("VISIBLE_REPRO");
+    });
   });
 });
