@@ -993,6 +993,21 @@ describe("partial message whose first blocks are outside the loaded window", () 
     });
   });
 
+  it("keeps the original block index when a delta arrives after publishing a sparse snapshot", () => {
+    withEvents([delta("text_delta", 1, "BEFORE")], (reader, h, source) => {
+      const first = reader.read(source);
+      expect(first.streaming.partialAssistant?.content).toEqual([{ type: "text", text: "BEFORE" }]);
+      appendFileSync(source.eventsFile!, JSON.stringify(delta("text_delta", 1, "AFTER")) + "\n");
+      expect(reader.read(source).streaming.partialAssistant?.content).toEqual([
+        { type: "text", text: "BEFOREAFTER" },
+      ]);
+      // An already published snapshot must not change when the internal block does.
+      expect(first.streaming.partialAssistant?.content).toEqual([{ type: "text", text: "BEFORE" }]);
+      h.view.refresh();
+      expect(renderText(h.view, 100)).toContain("BEFOREAFTER");
+    });
+  });
+
   it("renders the initial page of a large stream and recovers the earlier blocks after loadOlder", () => {
     const records = [
       ...prefix,
