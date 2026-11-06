@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { compositeTuiLine, getKeybindings, truncateToWidth, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { compositeTuiLine, getKeybindings, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 
 /** Pi 1.0 tui-renderer.ts label and TuiAltScreen's transcript-bottom overlay. */
 export class ConversationLatest {

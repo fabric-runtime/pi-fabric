@@ -7,10 +7,10 @@ import {
   Key,
   Text,
   matchesKey,
-  truncateToWidth,
   visibleWidth,
   type EditorTheme,
 } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import { BorderStatusEditor, BorderWorkingIndicator } from "./border-status-editor.js";
 import { FabricConversationTranscriptRenderer, type FabricConversationTranscriptRendererOptions } from "./conversation-render.js";
 import { conversationFooter, type FabricConversationAppearance } from "./conversation-chrome.js";

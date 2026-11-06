@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 
 export const safeText = (value: unknown): string =>
   String(value ?? "")
