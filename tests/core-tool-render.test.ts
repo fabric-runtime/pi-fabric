@@ -109,6 +109,39 @@ describe("Fabric core tool parity rendering", () => {
     expect(repainted).toContain("\x1b[48;2;64;132;82m");
   });
 
+  it.each([false, true])("renders oversized read-line warnings as metadata (expanded=%s)", (expanded) => {
+    const notice = "[Line 1 is 54.3KB, exceeds 50.0KB limit. Use bash: sed -n '1p' /tmp/queue.json | head -c 51200]";
+    const metadataTheme = {
+      ...theme,
+      fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+    } as unknown as Theme;
+    const rendered = renderCoreToolBody(
+      audit("read", {
+        args: { path: "/tmp/queue.json", offset: 1, limit: 130 },
+        result: { content: [{ type: "text", text: notice }], details: { truncation: { truncated: true } } },
+        success: true,
+      }),
+      metadataTheme,
+      options({ expanded }),
+    );
+    expect(rendered!.lines).toHaveLength(1);
+    expect(rendered!.lines[0]).toBe(`<muted>╰─ ${notice.slice(1, -1)}</muted>`);
+    expect(rendered!.lines[0]).not.toContain("1 │");
+    expect(rendered!.lines[0]).not.toContain("\x1b[");
+    expect(rendered!.lines[0]).not.toContain("Empty file");
+  });
+
+  it("does not mistake literal file text for an oversized-read diagnostic", () => {
+    const notice = "[Line 1 is 54.3KB, exceeds 50.0KB limit. Use bash: sed -n '1p' /tmp/queue.json | head -c 51200]";
+    const rendered = renderCoreToolBody(
+      audit("read", { args: { path: "/tmp/notes.txt" }, result: notice, success: true }),
+      theme,
+      options({ settings: { ...settings, syntaxHighlighting: false } }),
+    );
+    expect(rendered!.lines[0]).toContain("1 │");
+    expect(rendered!.lines[0]).toContain(notice);
+  });
+
   it("renders offset-aware read gutters and secret warnings", () => {
     const rendered = renderCoreToolBody(
       audit("read", {
