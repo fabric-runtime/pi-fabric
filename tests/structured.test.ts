@@ -27,6 +27,44 @@ describe("formatFabricValue", () => {
   });
 });
 
+describe("exact multiline deduplication", () => {
+  const contract = "/** Preserve the original opaque identifier. */\nfunction lookup(id: string): Promise<unknown>;";
+  it("renders one body and keeps every occurrence pointing to the first path", () => {
+    const value = { tools: [{ description: contract }], contracts: [contract] };
+    const original = structuredClone(value);
+    const text = formatFabricValue(value, "yaml").text;
+    expect(text.split(contract)).toHaveLength(2);
+    expect(text.match(/<multi-line string, see section: tools\[0\]\.description>/g)).toHaveLength(2);
+    expect(text).not.toContain("--- contracts[0]");
+    expect(value).toEqual(original);
+  });
+  it("does not merge whitespace, line ending or identifier differences", () => {
+    const first = "Case_A-ß\nrepository: 123";
+    const value = { first, other: "Case_A-ß\nrepository: 124", padded: first + " ", crlf: first.replace("\n", "\r\n") };
+    const text = formatFabricValue(value, "auto").text;
+    for (const content of Object.values(value)) expect(text).toContain(content);
+    expect(text.match(/^--- .+ \(\d+ chars\) ---$/gm)).toHaveLength(4);
+  });
+  it("keeps dictionaries per result and preserves a full body within the same budget", () => {
+    const full = "required identifier semantics\n".repeat(100);
+    const text = formatFabricValue({ first: full, second: full }, "yaml", 3400).text;
+    expect(text).toContain(full);
+    expect(text).not.toContain("chars omitted");
+    expect(text.length).toBeLessThanOrEqual(3400);
+    expect(formatFabricValue({ current: full }, "yaml").text).toContain("--- current");
+    expect(formatFabricValue({ current: full }, "yaml").text).not.toContain("section: first");
+  });
+  it("leaves JSON, text and circular handling unchanged", () => {
+    const value = { a: contract, b: contract };
+    expect(JSON.parse(formatFabricValue(value, "json").text)).toEqual(value);
+    expect(formatFabricValue({ text: contract }, "text").text).toBe(contract);
+    expect(formatFabricValue(contract, "yaml").text).toBe(contract);
+    const cycle: Record<string, unknown> = { description: contract };
+    cycle.self = cycle;
+    expect(formatFabricValue(cycle, "auto").text).toContain("[circular reference]");
+  });
+});
+
 describe("multi-line string fidelity", () => {
   // A multi-line string nested in a returned object must reach the model with
   // its exact bytes. YAML literal block scalars indent every content line, so

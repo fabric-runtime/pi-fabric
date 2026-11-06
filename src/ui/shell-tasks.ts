@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type KeybindingsManager } from "@earendil-works/pi-tui";
+import { getKeybindings, visibleWidth, wrapTextWithAnsi, type Component, type KeybindingsManager } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { FabricShellJobInfo, FabricShellJobStore } from "../core/shell-jobs.js";
 import { formatDuration, padToWidth, safeText, wrapPlainText } from "./format.js";
 import { spinnerFrame } from "./spinner.js";
@@ -103,7 +104,8 @@ export class ShellTasksView implements Component {
     const active = job.finishedAt === undefined;
     const color = job.stopping ? "warning" : active ? "accent" : failed ? "error" : job.status === "exited" ? "success" : "dim";
     const glyph = active ? spinnerFrame() : failed ? "✗" : job.status === "exited" ? "✓" : "■";
-    return this.options.theme.fg(color, `${glyph} ${job.stopping ? "stopping" : job.status}`);
+    const status = job.observes ? (job.stopping ? "stopping observation" : active ? "observing" : job.status === "timed_out" ? "observation expired" : job.status === "killed" ? "observation stopped" : "observation ended") : job.stopping ? "stopping" : job.status;
+    return this.options.theme.fg(color, `${glyph} ${status}`);
   }
 
   #section(label: string, width: number): string {
@@ -123,6 +125,14 @@ export class ShellTasksView implements Component {
     if (job.monitor) {
       meta.push(theme.fg("muted", `Monitor: ${job.monitor.delivery === "wake" ? "wake owning agent" : "UI only"} · deadline ${formatDuration(job.monitor.timeoutMs)} · ${job.eventCount} events`));
       if (job.lastEvent) meta.push(theme.fg("dim", `Latest event: ${safeText(job.lastEvent.lines.at(-1))}`));
+    }
+    if (job.observes) {
+      const target = job.observes.kind === "task" ? this.options.jobs.get(job.observes.id)?.info() : undefined;
+      meta.splice(1, 0,
+        theme.fg("muted", `Target: ${job.observes.kind} ${safeText(target?.description ?? job.observes.id)}${target ? ` · ${target.status}` : ""}`),
+        theme.fg("dim", "Stopping observation leaves the target running."));
+      if (job.finishedAt === undefined && job.monitor) meta.splice(3, 0,
+        theme.fg("dim", `Observation expires in ${formatDuration(Math.max(0, job.startedAt + job.monitor.timeoutMs - Date.now())) || "0s"}`));
     }
     const rows = meta.slice(0, Math.max(0, height - 6));
     if (height >= 5) {
@@ -153,17 +163,18 @@ export class ShellTasksView implements Component {
     const job = this.options.jobs.get(this.options.id)?.info();
     const active = job !== undefined && job.finishedAt === undefined;
     const armed = active && this.#stopArmed !== undefined && Date.now() - this.#stopArmed < 3000;
-    const hint = armed ? "Press x again to stop this task · esc close"
-      : width < 70 ? `↑↓ · G tail${active ? " · x×2 stop" : ""} · esc`
-      : `↑↓/pg scroll · G tail${active ? " · x twice stop" : ""} · esc close`;
-    const title = `Fabric · task ${this.options.id}`;
+    const stopLabel = job?.observes ? "stop watching" : "stop";
+    const hint = armed ? `${job?.observes ? "Press x again to stop watching; target continues" : "Press x again to stop this task"} · esc close`
+      : width < 70 ? `↑↓ · G tail${active ? ` · x×2 ${stopLabel}` : ""} · esc`
+      : `↑↓/pg scroll · G tail${active ? ` · x twice ${stopLabel}` : ""} · esc close`;
+    const title = `Fabric · ${job?.observes ? "observation" : "task"} ${this.options.id}`;
     if (width < 8 || height < 7) return [title, hint].slice(0, height).map(row => truncateToWidth(row, width));
     const inner = width - 4;
     const border = (text: string) => theme.fg("borderMuted", text);
     const row = (text: string) => `${border("│")} ${padToWidth(text, inner)} ${border("│")}`;
     const heading = truncateToWidth(title, width - 6);
     const top = border("╭─") + ` ${theme.fg("accent", heading)} ` + border("─".repeat(Math.max(0, width - visibleWidth(heading) - 6)) + "─╮");
-    const summary = job ? `${this.#status(job)} · Elapsed ${elapsed(job)}${job.exitCode !== undefined ? ` · exit ${job.exitCode}` : ""}` : "Task no longer retained.";
+    const summary = job ? `${this.#status(job)} · Elapsed ${elapsed(job)}${!job.observes && job.exitCode !== undefined ? ` · exit ${job.exitCode}` : ""}` : "Task no longer retained.";
     const bodyHeight = height - 6;
     const body = job ? this.#detail(job, inner, bodyHeight) : ["Task no longer retained."];
     while (body.length < bodyHeight) body.push("");

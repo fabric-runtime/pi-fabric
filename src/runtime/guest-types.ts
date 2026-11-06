@@ -469,6 +469,7 @@ interface FabricProviderGlobal {
 // After executor.shellHangMs the await still resolves ok: true with a still-running
 // notice, pid, and live output path in details; background: true (alias
 // run_in_background) detaches immediately. The process keeps writing that file.
+// timeout bounds the process, not the wait; tasks.wait waits for the result.
 // Extended near-miss repairs: find's name/filename/glob → pattern, write's
 // data → content, ls's folder → path, bash's script → command; numeric option
 // fields (limit/offset/context/timeout) also accept numeric strings, coerced
@@ -777,6 +778,16 @@ interface FabricAgentsApi {
   resume(args: FabricAgentTargetArgs & { task?: string }): Promise<FabricAgentResult>;
   handoff(args: FabricHandoffRequest): Promise<FabricHandoffResult>;
   spawn(args: FabricAgentRequest): Promise<FabricAgentHandle>;
+  /** Observe local operational progress, not transcripts. Stop the returned handle with tasks.stop. */
+  observe(args: {
+    id: string;
+    delivery: "ui" | "wake";
+    events?: Array<"progress" | "blocked" | "quiet" | "terminal">;
+    timeoutMs?: number;
+    intervalMs?: number;
+    quietAfterMs?: number;
+    description?: string;
+  }): Promise<{ task: { id: string; status: string; observes: { kind: "participant"; id: string } } }>;
   wait(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
   /** Alias for wait. */
   join(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
@@ -836,8 +847,8 @@ interface FabricAgentsApi {
   }): Promise<FabricActorInfo>;
   ask(args: { id: string; message: string; data?: unknown; model?: string; thinking?: FabricThinking }): Promise<FabricActorMessage>;
   tell(args: { id: string; message: string; data?: unknown; model?: string; thinking?: FabricThinking }): Promise<{ queued: true; messageId: string }>;
-  steer(args: { id: string; message: string; data?: unknown }): Promise<{ queued: true; messageId: string; routed?: "local" | "main" | "mesh"; acknowledged?: boolean }>;
-  followUp(args: { id: string; message: string; data?: unknown }): Promise<{ queued: true; messageId: string; routed?: "local" | "main" | "mesh"; acknowledged?: boolean }>;
+  steer(args: { id: string; message: string; data?: unknown; triggerTurn?: boolean }): Promise<{ queued: true; messageId: string; routed?: "local" | "main" | "mesh"; acknowledged?: boolean }>;
+  followUp(args: { id: string; message: string; data?: unknown; triggerTurn?: boolean }): Promise<{ queued: true; messageId: string; routed?: "local" | "main" | "mesh"; acknowledged?: boolean }>;
   setSteeringMode(args: { id: string; mode: "all" | "one-at-a-time" }): Promise<{ queued: true; messageId: string }>;
   setFollowUpMode(args: { id: string; mode: "all" | "one-at-a-time" }): Promise<{ queued: true; messageId: string }>;
   /** Advisory compaction of a running Pi-runner child at its next safe turn boundary. */

@@ -1,3 +1,4 @@
+import { observationAction } from "../core/observation-actions.js";
 import { FABRIC_ACTOR_HOST_EVENTS } from "../actors/types.js";
 import {
   MAX_COMPACTION_INSTRUCTIONS_CHARS,
@@ -264,6 +265,7 @@ const lifecycleEventSchema = {
 };
 
 export const AGENTS_ACTION_DESCRIPTORS: FabricActionDescriptor[] = [
+  observationAction("participant"),
   {
     name: "run",
     description: "Run a child agent through Pi or Claude Code and wait for its final result",
@@ -595,10 +597,13 @@ export const AGENTS_ACTION_DESCRIPTORS: FabricActionDescriptor[] = [
   {
     name: "steer",
     description:
-      "Steer Main, a running one-shot agent between turns, or a persistent actor through its mailbox. The stable id alias main targets the root user-facing Pi session. Non-local targets route over the project mesh.",
+      "Steer Main, a running one-shot agent between turns, or a persistent actor through its mailbox. The stable id alias main targets the root user-facing Pi session. Peer-root messages are passive by default; set triggerTurn: true only when an idle peer must act. Child-to-Main feedback still wakes by default. Non-local targets route over the project mesh.",
     inputSchema: {
       type: "object",
-      properties: { id: { type: "string" }, message: { type: "string" }, data: {} },
+      properties: {
+        id: { type: "string" }, message: { type: "string" }, data: {},
+        triggerTurn: { type: "boolean", description: "Root Main targets only: start a turn when idle. Defaults to false for peer-root messages and true for child/actor feedback. False still delivers during an active run." },
+      },
       required: ["id", "message"],
       additionalProperties: false,
     },
@@ -607,10 +612,13 @@ export const AGENTS_ACTION_DESCRIPTORS: FabricActionDescriptor[] = [
   {
     name: "followUp",
     description:
-      "Queue a follow-up for a running one-shot agent, or enqueue a persistent actor mailbox message. Incoming Main feedback is delivered as hidden steering with a sender notification, even through this legacy followUp method. The stable id alias main targets the root user-facing Pi session. Non-local targets route over the project mesh.",
+      "Queue a follow-up for a running one-shot agent, or enqueue a persistent actor mailbox message. Incoming Main feedback is delivered as hidden steering with a sender notification, even through this legacy followUp method. The stable id alias main targets the root user-facing Pi session. Peer-root messages are passive by default; set triggerTurn: true only when an idle peer must act. Child-to-Main feedback still wakes by default. Non-local targets route over the project mesh.",
     inputSchema: {
       type: "object",
-      properties: { id: { type: "string" }, message: { type: "string" }, data: {} },
+      properties: {
+        id: { type: "string" }, message: { type: "string" }, data: {},
+        triggerTurn: { type: "boolean", description: "Root Main targets only: start a turn when idle. Defaults to false for peer-root messages and true for child/actor feedback. False still delivers during an active run." },
+      },
       required: ["id", "message"],
       additionalProperties: false,
     },

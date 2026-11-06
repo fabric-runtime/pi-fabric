@@ -7,6 +7,9 @@ import { FabricShellJobStore } from "../src/core/shell-jobs.js";
 import { FabricShellTimingBridge } from "../src/core/shell-timing.js";
 import { createFabricExecTool } from "../src/fabric-exec-tool.js";
 import type { FabricState } from "../src/fabric-state.js";
+import { registerFabricCommand } from "../src/commands/fabric.js";
+import type { FabricUiController } from "../src/ui/controller.js";
+import type { CapturedToolCatalog } from "../src/capture/catalog.js";
 import { defaultCodePreviewSettings } from "../src/ui/code-preview.js";
 import { installFabricShellHangKeys } from "../src/ui/shell-hang-keys.js";
 
@@ -70,13 +73,49 @@ const harness = () => {
   cleanups.push(() => jobs.close());
   const run = (params: Record<string, unknown>, signal?: AbortSignal, onUpdate = vi.fn()) =>
     tool.execute!("call-1", { code: "return await workflow();", display: { name: "seven beads" }, ...params } as never, signal, onUpdate, context as never);
-  return { jobs, programTasks, pending, requests, state, run, events };
+  return { jobs, programTasks, pending, requests, state, tool, run, events };
 };
 
 const textOf = (result: { content: Array<{ type: string; text?: string }> }): string =>
   result.content.map((part) => part.text ?? "").join("\n");
 
 describe("fabric_exec background programs", () => {
+  it("backgrounds the entire awaited workflow on command without restarting or spilling its nested shell", async () => {
+    const h = harness();
+    const parent = new AbortController();
+    const call = h.run({}, parent.signal);
+    await vi.waitFor(() => expect(h.requests).toHaveLength(1));
+    const nested = h.jobs.begin("bash", "required remote validation");
+    const notify = vi.fn();
+    let command: any;
+    const pi = { registerCommand: (_name: string, value: any) => { command = value; } } as unknown as ExtensionAPI;
+    registerFabricCommand(pi, { state: h.state, fabricUi: {} as FabricUiController,
+      capturedTools: {} as CapturedToolCatalog, applyFabricMode() {}, suspendToolCapture() {} });
+    const initialized = vi.mocked(h.state.ensure).mock.calls.length;
+    expect(h.jobs.list().filter(job => job.tool === "fabric_exec")).toHaveLength(0);
+    expect(command.getArgumentCompletions("back")).toContainEqual({ value: "background", label: "background" });
+    await command.handler("background", { mode: "tui", ui: { notify } });
+    const receipt = await call;
+    expect(textOf(receipt)).toContain("end this turn if you need the result");
+    expect(textOf(receipt)).toContain("Do not start the same program again");
+    expect(h.state.ensure).toHaveBeenCalledTimes(initialized);
+    expect(h.requests).toHaveLength(1);
+    expect(nested.spilled).toBe(false);
+    expect(nested.abort.signal.aborted).toBe(false);
+    parent.abort();
+    expect(h.requests[0]!.signal!.aborted).toBe(false);
+    const [job] = h.jobs.list().filter(job => job.tool === "fabric_exec");
+    expect(job!.finishedAt).toBeUndefined();
+    await command.handler("background", { mode: "tui", ui: { notify } });
+    expect(h.jobs.list().filter(job => job.tool === "fabric_exec")).toHaveLength(1);
+    h.pending.resolve(executionResult({ verified: true }));
+    await vi.waitFor(() => expect(h.events.some(event => event.type === "finished" && event.output?.includes("verified"))).toBe(true));
+    expect(h.state.claimHandoff).not.toHaveBeenCalled();
+    const schema = JSON.stringify(h.tool.parameters);
+    expect(schema).toContain("keep dependent awaits inside this program");
+    expect(schema).toContain("Backgrounding is not task completion");
+  });
+
   it("detaches a running program, frees the tool call, and finishes the task with the program's result", async () => {
     const h = harness();
     const parent = new AbortController();

@@ -96,6 +96,12 @@ export class ShellMonitor {
     this.emit(batch);
   }
 
+  flush(): void {
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = undefined;
+    this.#flush();
+  }
+
   close(flush = true): void {
     if (this.#closed) return;
     if (flush) {

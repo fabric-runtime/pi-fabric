@@ -2,6 +2,7 @@ import { DEFAULT_FABRIC_CONFIG, type FabricConfig } from "./config.js";
 import { createProviderComponent, type FabricProviderComponent } from "./components/provider-component.js";
 import type { FabricProvider } from "./protocol.js";
 import { foregroundConfigValue, MAX_FOREGROUND_TOOLS } from "./core/foreground-tools.js";
+import { hostOutputCeiling } from "./verified/execution.js";
 
 const REPLACEABLE = new Set(["agents", "memory", "compact", "schema", "state", "mesh", "mcp"]);
 export interface FabricManagedHostOptions {
@@ -16,7 +17,13 @@ export interface FabricManagedHostOptions {
   /** Keep Fabric compaction by default, or delegate to the embedding Pi host. */
   compaction?: "fabric" | "pi";
   /** Host-only limits; ambient executor settings are ignored. */
-  executor?: { readonly maxCpuSliceMs?: number };
+  executor?: {
+    readonly maxCpuSliceMs?: number;
+    /** Host-owned final output ceiling; nullish values use the default. Ambient executor settings are ignored. */
+    readonly maxOutputChars?: number | null;
+    /** Host-owned nested result ceiling; nullish values use the default. Final model output is bounded separately. */
+    readonly maxNestedResultChars?: number | null;
+  };
 }
 
 /** Closed-world provider authority for embedded hosts. Native providers cannot return on reload. */
@@ -35,7 +42,11 @@ export class FabricManagedHost {
     if (options.compaction !== undefined && !["fabric", "pi"].includes(options.compaction)) throw new Error("Invalid managedHost.compaction");
     const maxCpuSliceMs = options.executor?.maxCpuSliceMs ?? 1000;
     if (!Number.isSafeInteger(maxCpuSliceMs) || maxCpuSliceMs <= 0) throw new Error("managedHost.executor.maxCpuSliceMs must be a positive safe integer");
-    this.options = Object.freeze({ ...options, providers: Object.freeze([...options.providers]), foreground: Object.freeze([...foreground]), executor: Object.freeze({ maxCpuSliceMs }) });
+    const maxOutputChars = hostOutputCeiling(options.executor?.maxOutputChars,
+      DEFAULT_FABRIC_CONFIG.executor.maxOutputChars, "managedHost.executor.maxOutputChars");
+    const maxNestedResultChars = hostOutputCeiling(options.executor?.maxNestedResultChars,
+      DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars, "managedHost.executor.maxNestedResultChars");
+    this.options = Object.freeze({ ...options, providers: Object.freeze([...options.providers]), foreground: Object.freeze([...foreground]), executor: Object.freeze({ maxCpuSliceMs, maxOutputChars, maxNestedResultChars }) });
     this.#allowed = new Set(this.options.providers);
     for (const name of this.#allowed) if (!REPLACEABLE.has(name)) throw new Error(`Managed host cannot replace provider: ${name}`);
   }
@@ -78,6 +89,8 @@ export class FabricManagedHost {
     config.executor.kernel = "typescript";
     config.executor.runtime = "quickjs";
     config.executor.maxCpuSliceMs = this.options.executor!.maxCpuSliceMs!;
+    config.executor.maxOutputChars = this.options.executor!.maxOutputChars!;
+    config.executor.maxNestedResultChars = this.options.executor!.maxNestedResultChars!;
     config.foreground = { tools: this.options.foreground!.map(name => ({ name, owner: "managed-host", reason: "human-input" })), maxTools: MAX_FOREGROUND_TOOLS };
     config.mcp.enabled = false;
     config.mcp.allowDynamicServers = false;

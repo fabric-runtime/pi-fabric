@@ -17,6 +17,13 @@ export class AgentMessageRouter {
     readonly control: Pick<FabricControlPlane, "request"> | undefined,
     readonly resolvePiRunBinding: (binding: FabricActorRunBinding, runner: FabricAgentRunner, context: FabricInvocationContext) => FabricActorRunBinding,
   ) {}
+
+  #reportTarget(participant: FabricParticipantInfo, context?: FabricInvocationContext): void {
+    const name = participant.label || participant.name || participant.id;
+    context?.activity?.({ type: "entity", id: participant.id, kind: "agent", name });
+    context?.attachPreview?.({ kind: "fabric-agent-target", id: participant.id, name });
+  }
+
   async routeMessage(
     id: string,
     message: string,
@@ -55,6 +62,7 @@ export class AgentMessageRouter {
       if (!this.control || participant.controlProtocol === "legacy") {
         return this.actorManager.steerRemote(this.mainAgent.id, message, kind, data);
       }
+      this.#reportTarget(participant, context);
       return this.control.request(
         participant.ownerHostId,
         participant.id,
@@ -85,18 +93,20 @@ export class AgentMessageRouter {
       if (!(error instanceof Error && /Unknown Fabric agent/.test(error.message))) throw error;
     }
 
-    // Remote root sessions have no local Main match and are not actors.
-    const remoteRoot = this.participants.get(id);
-    if (remoteRoot?.kind === "root" && !remoteRoot.local) {
-      if (!remoteRoot.capabilities.includes(kind)) {
-        throw new Error(`Fabric participant ${remoteRoot.id} does not support ${kind}`);
+    // Remote roots and one-shot agents are not actors. This includes siblings
+    // managed by the caller's Main and runs belonging to another peer's lineage.
+    const remote = this.participants.get(id);
+    if ((remote?.kind === "root" || remote?.kind === "agent") && !remote.local) {
+      if (!remote.capabilities.includes(kind)) {
+        throw new Error(`Fabric participant ${remote.id} does not support ${kind}`);
       }
-      if (!this.control || remoteRoot.controlProtocol !== "v1") {
-        throw new Error(`Fabric root ${remoteRoot.id} has no control channel`);
+      if (!this.control || remote.controlProtocol !== "v1") {
+        throw new Error(`Fabric ${remote.kind} ${remote.id} has no control channel`);
       }
+      this.#reportTarget(remote, context);
       return this.control.request(
-        remoteRoot.ownerHostId,
-        remoteRoot.id,
+        remote.ownerHostId,
+        remote.id,
         kind,
         {
           message,
@@ -104,9 +114,9 @@ export class AgentMessageRouter {
           ...(typeof options.triggerTurn === "boolean"
             ? { triggerTurn: options.triggerTurn }
             : {}),
-          ...(remoteRoot.ownerIncarnation ? { ownerIncarnation: remoteRoot.ownerIncarnation } : {}),
+          ...(remote.ownerIncarnation ? { ownerIncarnation: remote.ownerIncarnation } : {}),
         },
-        remoteRoot.ownerIdentityId,
+        remote.ownerIdentityId,
       );
     }
 

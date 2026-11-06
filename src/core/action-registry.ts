@@ -256,7 +256,7 @@ const actionDescriptorHash = (action: ResolvedFabricAction): string =>
   });
 
 const discoveryTerms = (value: string): string[] =>
-  [...value.normalize("NFKC").matchAll(/[\p{L}\p{N}_]+/gu)]
+  [...value.normalize("NFKC").matchAll(/[\p{L}\p{N}]+/gu)]
     .map((match) => match[0].toLowerCase());
 
 export const scoreActionSearch = (
@@ -799,7 +799,8 @@ export class ActionRegistry {
           parentKey: `provider:${provider.name}`,
           ref: action.ref,
           name: action.name,
-          description: action.description,
+          // Navigation only: full contracts and their hashes stay untouched.
+          description: Array.from(action.description.trim().split(/\r?\n/, 1)[0]!).slice(0, 320).join(""),
           descriptorHash: actionDescriptorHash(action),
           risk: action.risk,
           ...(action.namespace === undefined ? {} : { namespace: action.namespace }),
@@ -1443,7 +1444,7 @@ export class ActionRegistry {
     }
   }
 
-  async endInvocation(parentToolCallId: string, timeoutMs = 1_000): Promise<void> {
+  async endInvocation(parentToolCallId: string, timeoutMs = 1_000, signal?: AbortSignal): Promise<void> {
     this.#speculation?.onInvocationEnd?.(parentToolCallId);
     const providers = new Set(
       this.#providerBindings.entries().map((binding) => binding.provider),
@@ -1453,7 +1454,9 @@ export class ActionRegistry {
         ? [this.#providerBindings.trackProvider(provider, () => provider.invocationEnded!(parentToolCallId), true)]
         : [],
     );
-    await settleWithin(finalizers, timeoutMs);
+    // Cancellation releases the foreground wait, not the tracked cleanup.
+    // Provider retirement still owns these operations until they settle.
+    await settleWithin(finalizers, timeoutMs, signal);
   }
 
   /** Revocation is distinct from rolling withdrawal: pinned old generations may

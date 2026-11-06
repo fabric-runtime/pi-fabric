@@ -35,6 +35,19 @@ describe("guest agents surface", () => {
     expect(IMPLEMENTED.filter((name) => !declared.has(name))).toEqual([]);
   });
 
+  it("types and dispatches local agent observation without starting a worker", async () => {
+    const code = 'const watch = await agents.observe({id:"worker",delivery:"ui",events:["progress","terminal"]}); return watch.task.id;';
+    expect(typeCheckFabricCode(code, guestTypeDeclarations(true), true).errors).toEqual([]);
+    expect(typeCheckFabricCode('await agents.observe({id:"worker"});', guestTypeDeclarations(true), true).errors.length).toBeGreaterThan(0);
+    const calls: string[] = [];
+    const result = await new QuickJsRuntime().execute(code, async (ref) => {
+      calls.push(ref); return { task: { id: "observation" } };
+    }, {timeoutMs: 5000, memoryLimitBytes: 32 * 1024 * 1024});
+    expect(result.terminationReason).toBe("completed");
+    expect(result.value).toBe("observation");
+    expect(calls).toEqual(["agents.observe"]);
+  });
+
   it("types an exact model lookup through agents.models", () => {
     const declarations = guestTypeDeclarations(true);
     const accepted = typeCheckFabricCode(

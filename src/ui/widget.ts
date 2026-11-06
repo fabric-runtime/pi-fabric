@@ -1,5 +1,6 @@
 import type { Component, Focusable, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { FabricUiWidgetMode } from "../config.js";
 import { isRoutineInternalCall } from "../core/call-presentation.js";
@@ -247,15 +248,22 @@ export const widgetRowLimit = (maxRows: number, terminalRows?: number): number =
 export const widgetFocusedRowLimit = (maxRows: number, terminalRows?: number): number =>
   widgetRowLimit(maxRows, terminalRows);
 
-/** Reserve an overflow row for the whole scroll range, not just while rows remain below. */
+/** Keep the viewport height fixed, replacing the overflow cue with content at the bottom. */
 export const widgetViewport = (contentRows: number, budget: number, offset: number) => {
   const available = Math.max(0, Math.floor(budget));
+  // Clamp against a full viewport so the last page has no empty cue slot.
+  const maxOffset = available > 0 ? Math.max(0, contentRows - available) : 0;
+  const clampedOffset = Math.max(0, Math.min(maxOffset, Math.floor(offset)));
   // At a one-child budget keep that child reachable; there is no room for a cue.
-  const hasCue = contentRows > available && available > 1;
+  const hasCue = clampedOffset < maxOffset && available > 1;
   const windowRows = Math.max(0, available - Number(hasCue));
-  const maxOffset = windowRows > 0 ? Math.max(0, contentRows - windowRows) : 0;
-  return { windowRows, hasCue, maxOffset, offset: Math.max(0, Math.min(maxOffset, Math.floor(offset))) };
+  return { windowRows, hasCue, maxOffset, offset: clampedOffset };
 };
+
+/** Shared by the native footer and participant windows so opening one never resets the list. */
+export interface FabricWidgetViewportState {
+  offset: number;
+}
 
 /** Pointer-only Main row id; distinct from no hover in the render-cache key. */
 const HEADER_ROW = "\0main";
@@ -270,6 +278,7 @@ export class FabricWidget implements Component, Focusable {
     readonly terminalRows?: () => number | undefined,
     readonly retention = new FabricWidgetRetention(),
     readonly interaction?: FabricWidgetInteraction,
+    readonly viewport: FabricWidgetViewportState = { offset: 0 },
   ) {}
 
   /** Set by the TUI when the widget gains or loses keyboard focus. */
@@ -282,7 +291,8 @@ export class FabricWidget implements Component, Focusable {
   /** Rows above the header in the last render: the spacer, or none on a one-row budget. */
   #spacerRows = 1;
   #renderedInteraction: string | undefined;
-  #scrollOffset = 0;
+  get #scrollOffset(): number { return this.viewport.offset; }
+  set #scrollOffset(offset: number) { this.viewport.offset = offset; }
   #maxScrollOffset = 0;
   #followSelection = false;
 
@@ -476,8 +486,8 @@ export class FabricWidget implements Component, Focusable {
     if (this.#hoveredId !== undefined && this.#hoveredId !== HEADER_ROW && !rows.some((row) => row.id === this.#hoveredId)) {
       this.#hoveredId = undefined;
     }
-    // Pin Main. The overflow slot depends on total content, not offset: reaching
-    // the last child must not enlarge the viewport and jump the footer.
+    // Pin Main. At the bottom a child replaces the overflow cue, keeping the
+    // viewport height fixed without leaving a blank row or moving the footer.
     let viewport = widgetViewport(lines.length - 1, body - 1, this.#scrollOffset);
     if (this.focused && this.#followSelection && viewport.windowRows > 0) {
       const selected = (rows.find(row => row.id === this.#selectedId)?.line ?? 0) - 1;
@@ -504,8 +514,7 @@ export class FabricWidget implements Component, Focusable {
     const header = headerWidth === width ? lines[0] ?? "" : this.#content(snapshot, width, headerWidth).lines[0] ?? "";
     const boundedHeader = label ? this.#withRightLabel(header, label, width) : truncateToWidth(header, width);
     const visibleLines = [boundedHeader, ...lines.slice(start, start + capacity).map(line => truncateToWidth(line, width))];
-    if (viewport.hasCue) visibleLines.push(below > 0
-      ? truncateToWidth(this.theme.fg("dim", `↓ ${below} more`), width) : "");
+    if (viewport.hasCue) visibleLines.push(truncateToWidth(this.theme.fg("dim", `↓ ${below} more`), width));
     // Only participant rows, never the overflow footer, are pointer targets.
     this.#rows = rows.filter(row => row.line === 0 || (row.line >= start && row.line < start + capacity))
       .map(row => ({ ...row, line: row.line === 0 ? 0 : row.line - start + 1 }));
@@ -588,7 +597,13 @@ export class FabricWidget implements Component, Focusable {
     }
     if (activeAgents.length > 0) parts.push(`${activeAgents.length} running`);
     if (visibleActors.length > 0) parts.push(`${visibleActors.length} actor${visibleActors.length === 1 ? "" : "s"}`);
-    if (liveShells.length > 0) parts.push(`${liveShells.length} shell${liveShells.length === 1 ? "" : "s"}`);
+    const backgroundWork = liveShells.filter(job => !job.observes);
+    const shellCount = backgroundWork.filter(job => job.tool !== "fabric_exec").length;
+    const workflowCount = backgroundWork.length - shellCount;
+    const observationCount = liveShells.length - backgroundWork.length;
+    if (shellCount) parts.push(`${shellCount} shell${shellCount === 1 ? "" : "s"}`);
+    if (workflowCount) parts.push(`${workflowCount} workflow${workflowCount === 1 ? "" : "s"}`);
+    if (observationCount) parts.push(`${observationCount} observation${observationCount === 1 ? "" : "s"}`);
     const tokens = totalTokens(snapshot, run);
     if (tokens > 0) parts.push(`${formatTokens(tokens)} tok`);
     const cost = totalCost(snapshot, run);
@@ -617,6 +632,22 @@ export class FabricWidget implements Component, Focusable {
       this.#hints(hasRows),
     ));
 
+    const shownObservations = new Set<string>();
+    const pushObservation = (job: FabricShellJobInfo, prefix: string): void => {
+      shownObservations.add(job.id);
+      rows.push({ id: job.id, kind: "shell", name: safeText(job.description ?? job.command), line: lines.length });
+      const active = job.finishedAt === undefined;
+      const status = job.stopping ? "stopping" : active ? "watching" : job.status === "timed_out" ? "expired" : job.status === "killed" ? "stopped" : "ended";
+      const delivery = job.monitor?.delivery === "wake" ? "wake owner" : "UI only";
+      const remaining = active && job.monitor ? ` · expires in ${formatDuration(Math.max(0, job.startedAt + job.monitor.timeoutMs - snapshot.now)) || "0s"}` : "";
+      lines.push(fitLine(this.theme, width,
+        `${prefix}${colorStatus(this.theme, job.stopping ? "stopping" : job.status, circle(job.id === marked))} ${this.theme.fg("muted", job.id.slice(0, 8))} ${this.theme.fg("muted", `${status} · ${delivery}${remaining}`)}`,
+        { text: safeText(job.description ?? `Observe ${job.observes!.kind} ${job.observes!.id.slice(0, 8)}`), gap: " · ", color: "dim" }, [], []));
+    };
+    const pushObservations = (kind: "task" | "participant", id: string): void => {
+      const children = listedShells.filter(job => job.observes?.kind === kind && job.observes.id === id);
+      children.forEach((job, index) => pushObservation(job, index === children.length - 1 ? "  ╰─ " : "  ├─ "));
+    };
     const pushParticipant = (agent: FabricUiAgent, kind: "agent" | "actor", prefix = ""): void => {
       const id = kind === "actor" ? agent.actorId ?? agent.id : agent.id;
       rows.push({
@@ -627,6 +658,7 @@ export class FabricWidget implements Component, Focusable {
         line: lines.length,
       });
       lines.push(agentLine(this.theme, agent, snapshot.now, prefix, id === marked, width));
+      pushObservations("participant", agent.id);
     };
     // Trees with a running root come first, then retained ones; a child always
     // sits under its parent, whatever its own status.
@@ -660,12 +692,15 @@ export class FabricWidget implements Component, Focusable {
         [],
       );
     };
-    for (const job of listedShells) {
+    for (const job of listedShells.filter(job => !job.observes)) {
       const status = job.stopping ? "stopping" : job.status;
       const label = job.monitor && job.finishedAt === undefined && !job.stopping ? `monitor:${job.monitor.delivery}` : status;
       rows.push({ id: job.id, kind: "shell", name: safeText(job.description ?? job.command), line: lines.length });
       lines.push(shellLine(job, job.id.slice(0, 8), label, job.id));
+      pushObservations("task", job.id);
     }
+    // Retain inspectability if a target is no longer in this local view.
+    for (const job of listedShells) if (job.observes && !shownObservations.has(job.id)) pushObservation(job, "");
     return lines;
   }
 

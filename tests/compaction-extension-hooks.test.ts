@@ -2,6 +2,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import piFabric from "../src/index.js";
 import { MISSING_TOOL_RESULT_TEXT } from "../src/compaction/orphan-repair.js";
+import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
+import { CompactController } from "../src/core/compact-controller.js";
+import { FabricState } from "../src/fabric-state.js";
 
 type Handler = (...args: unknown[]) => unknown;
 
@@ -56,6 +59,50 @@ describe("Fabric compaction extension hooks", () => {
       isError: true,
       content: [{ type: "text", text: MISSING_TOOL_RESULT_TEXT }],
     });
+  });
+
+  it.each(["inactive", "native", "managed"])("skips post-abort compaction in the %s host", async (mode) => {
+    const handlers = await loadExtension();
+    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+    config.compaction.thresholds["anthropic/sonnet"] = 0.8;
+    config.compaction.engine = "fabric";
+    vi.spyOn(FabricState.prototype, "config", "get").mockReturnValue(config);
+    vi.spyOn(FabricState.prototype, "initialized", "get").mockReturnValue(mode !== "inactive");
+    if (mode === "managed") vi.spyOn(FabricState.prototype, "managedHostOptions", "get").mockReturnValue({} as never);
+    const compact = new CompactController();
+    compact.request({ reason: "pending before Escape", seed: "do not run after Escape" });
+    vi.spyOn(FabricState.prototype, "compact", "get").mockReturnValue(compact);
+    const publish = vi.spyOn(FabricState.prototype, "publishHostLifecycle").mockResolvedValue();
+    const context = { ...hostContext(), model: { provider: "anthropic", id: "sonnet" },
+      getContextUsage: () => ({ tokens: 90_000, contextWindow: 100_000, percent: 90 }),
+      compact: vi.fn(), ui: { setStatus: vi.fn(), notify: vi.fn() },
+      // Pi has cleared the turn's signal by agent_settled; use the event flag.
+      signal: undefined,
+    };
+    const event = { type: "agent_settled", aborted: true };
+    for (const handler of handlers.get("agent_settled")!) await handler(event, context);
+    expect(context.compact).not.toHaveBeenCalled();
+    if (mode === "native") expect(compact.status().pending).toBeUndefined();
+    if (mode !== "inactive") expect(publish).toHaveBeenCalledWith("pi.agent_settled", event);
+  });
+
+  it("still waits for threshold compaction after a completed run", async () => {
+    const handlers = await loadExtension();
+    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+    config.compaction.thresholds["anthropic/sonnet"] = 0.8;
+    vi.spyOn(FabricState.prototype, "config", "get").mockReturnValue(config);
+    let complete!: () => void;
+    const context = { ...hostContext(), model: { provider: "anthropic", id: "sonnet" },
+      getContextUsage: () => ({ tokens: 90_000, contextWindow: 100_000, percent: 90 }),
+      compact: vi.fn((options: { onComplete: (result: unknown) => void }) => { complete = () => options.onComplete({}); }),
+    };
+    let settled = false;
+    const wait = Promise.all(handlers.get("agent_settled")!.map((handler) => handler({ type: "agent_settled", aborted: false }, context)))
+      .then(() => { settled = true; });
+    expect(context.compact).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+    complete();
+    await wait;
   });
 
   it("warns once per session when another extension owns a compaction", async () => {

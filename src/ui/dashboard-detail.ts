@@ -2,11 +2,11 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import {
   Markdown,
-  truncateToWidth,
   wrapTextWithAnsi,
   type MarkdownTheme,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { FabricActivityCall } from "../activity/types.js";
 import { formatFabricEffectConflict } from "../core/effect-conflict.js";
 import type { CodePreviewSettings } from "./code-preview.js";

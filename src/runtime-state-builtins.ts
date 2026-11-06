@@ -22,6 +22,7 @@ import { powerShellToolDefinitionFactory } from "./providers/pi-bash-cwd.js";
 import type { FabricShellJobStore } from "./core/shell-jobs.js";
 import { SessionsProvider, toolCallShellPreflight } from "./providers/sessions-provider.js";
 import { TasksProvider } from "./providers/tasks-provider.js";
+import type { ObservationSource } from "./core/observation-actions.js";
 import { StateProvider } from "./providers/state-provider.js";
 
 import type { FabricManagedHost } from "./managed-host.js";
@@ -46,7 +47,7 @@ export class RuntimeStateBuiltins {
     cwd: string,
     config: FabricConfig,
     capturedTools: CapturedToolCatalog,
-    shell: { jobs: FabricShellJobStore; getHangMs: () => number },
+    shell: { jobs: FabricShellJobStore; getHangMs: () => number; observations?: ObservationSource },
   ): Promise<void> {
     let mcpProvider: McpProvider | undefined;
     const enforceSchema = config.schema.mode === "enforce";
@@ -80,7 +81,7 @@ export class RuntimeStateBuiltins {
     if (effectiveFullCodeMode && !this.managedHost) {
       await this.install(createProviderComponent({
         provider: "tasks", description: "Session-owned shell tasks and monitors",
-        create: () => new TasksProvider(shell.jobs),
+        create: () => new TasksProvider(shell.jobs, shell.observations),
       }));
       // Interactive children need jev-fabric, which exists only off Windows and outside managed hosts.
       const durable = shell.jobs.durable;
@@ -91,7 +92,7 @@ export class RuntimeStateBuiltins {
           create: () => new SessionsProvider(durable, {
             cwd,
             shellOverride: () => capturedTools.get("bash") !== undefined,
-            preflight: toolCallShellPreflight(() => capturedTools.runner),
+            preflight: toolCallShellPreflight(() => capturedTools.runner, () => capturedTools.runnerUnavailable),
           }),
         }));
       }

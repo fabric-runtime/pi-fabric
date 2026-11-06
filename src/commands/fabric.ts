@@ -162,12 +162,13 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
   });
 
   pi.registerCommand("fabric", {
-    description: "Open Fabric dashboard, chat or tasks, arm prewalk, reload, or manage agents and actors",
+    description: "Open Fabric dashboard, chat or tasks, background a running workflow, arm prewalk, reload, or manage agents and actors",
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       const subcommands = [
         "status",
         "dashboard",
         "tasks",
+        "background",
         "chat",
         "focus",
         "settings",
@@ -301,6 +302,17 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
     },
     // The subcommands load at first use, not while registering the command.
     async handler(argumentsText, context) {
+      const [command, ...args] = argumentsText.trim().split(/\s+/);
+      if (command === "background") {
+        if (args.length) { context.ui.notify("Usage: /fabric background", "warning"); return; }
+        // Extension commands run before queued input. Do not wait for runtime
+        // initialization or load the full command handler to release Main.
+        const count = state.programTasks.detachWaiting();
+        context.ui.notify(count
+          ? `Fabric: ${count === 1 ? "whole workflow moved" : `${count} whole workflows moved`} to the background. Work continues; completion will be reported. /fabric tasks`
+          : "Fabric: no foreground workflow to background", "info");
+        return;
+      }
       const { runFabricCommand } = await import("./fabric-handler.js");
       await runFabricCommand(pi, deps, commandHost, argumentsText, context);
     },

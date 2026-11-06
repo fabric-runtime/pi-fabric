@@ -47,19 +47,29 @@ export const runAbortable = <T>(
 export const settleWithin = async (
   operations: Iterable<PromiseLike<unknown>>,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<boolean> => {
   const pending = [...operations].map((operation) => Promise.resolve(operation));
   if (pending.length === 0) return true;
 
+  // Observe every eventual rejection even if cancellation ends only the wait.
+  const settled = Promise.allSettled(pending).then(() => true);
+  if (signal?.aborted) return false;
   let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     return await Promise.race([
-      Promise.allSettled(pending).then(() => true),
+      settled,
+      ...(signal ? [new Promise<false>((resolve) => {
+        onAbort = () => resolve(false);
+        signal.addEventListener("abort", onAbort, { once: true });
+      })] : []),
       new Promise<false>((resolve) => {
         timer = setTimeout(() => resolve(false), Math.max(0, timeoutMs));
       }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
 };

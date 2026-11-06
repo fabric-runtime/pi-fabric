@@ -4,6 +4,7 @@ import { normalizeFabricConfig } from "../src/config.js";
 import { ActionRegistry } from "../src/core/action-registry.js";
 import { FabricShellJobStore } from "../src/core/shell-jobs.js";
 import { CapturedToolCatalog } from "../src/capture/catalog.js";
+import { AttachedMonitors } from "../src/core/attached-monitors.js";
 import { TasksProvider } from "../src/providers/tasks-provider.js";
 import { RuntimeStateBuiltins } from "../src/runtime-state-builtins.js";
 import { WorkerMemoryProvider } from "../src/memory/worker-provider.js";
@@ -25,8 +26,9 @@ describe("runtime built-in installation policy", () => {
   it("installs tasks over the same session-owned shell store as native tools", async () => {
     const { builtins, manifest } = fixture();
     const jobs = new FabricShellJobStore();
+    const observations = new AttachedMonitors(jobs);
     try {
-      await builtins.tools(process.cwd(), normalizeFabricConfig({ fullCodeMode: true }), new CapturedToolCatalog(), { jobs, getHangMs: () => 0 });
+      await builtins.tools(process.cwd(), normalizeFabricConfig({ fullCodeMode: true }), new CapturedToolCatalog(), { jobs, getHangMs: () => 0, observations: () => observations });
       const entries = (manifest.install.mock.calls as unknown as Array<[FabricProviderComponent]>).map(([component]) => component);
       const component = entries.find(entry => entry.definition.name === "fabric.provider.tasks");
       expect(component).toBeDefined();
@@ -35,7 +37,9 @@ describe("runtime built-in installation policy", () => {
       const provider = provide.mock.calls[0]![0] as TasksProvider;
       expect(provider).toBeInstanceOf(TasksProvider);
       expect(provider.jobs).toBe(jobs);
-    } finally { await jobs.close(); }
+      expect(await provider.describe("observe")).toBeDefined();
+      expect(provider.observations?.()).toBe(observations);
+    } finally { observations.close(); await jobs.close(); }
   });
   it("installs the worker-backed provider for Pi filesystem memory", async () => {
     const { builtins, manifest } = fixture();

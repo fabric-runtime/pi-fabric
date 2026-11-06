@@ -491,6 +491,33 @@ describe("ActionRegistry", () => {
     expect(Date.now() - startedAt).toBeLessThan(500);
   });
 
+  it.each([false, true])("keeps finalizers tracked without blocking cancellation (already aborted: %s)", async (alreadyAborted) => {
+    vi.useFakeTimers();
+    const registry = new ActionRegistry();
+    const controller = new AbortController();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const invocationEnded = vi.fn(() => pending);
+    registry.register({ ...provider(), invocationEnded });
+    try {
+      if (alreadyAborted) controller.abort();
+      const wait = registry.endInvocation("parent", 10_000, controller.signal);
+      if (!alreadyAborted) controller.abort();
+      await wait;
+      expect(invocationEnded).toHaveBeenCalledExactlyOnceWith("parent");
+      expect(registry.providerStatus()[0]?.inFlight).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      release();
+      await pending;
+      await Promise.resolve();
+      expect(registry.providerStatus()[0]?.inFlight).toBe(0);
+    } finally {
+      release();
+      vi.useRealTimers();
+      await registry.close();
+    }
+  });
+
   it("rejects duplicate and malformed provider names", () => {
     const registry = new ActionRegistry();
     registry.register(provider());

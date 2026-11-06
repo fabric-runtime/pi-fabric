@@ -26,6 +26,7 @@ import type {
   ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
+import packageJson from "../package.json" with { type: "json" };
 import { callPreview, FabricDurableJournal, FabricDurableJournalRefusal, FABRIC_DURABLE_JOURNAL_FORMAT, maybeRanReport } from "./durable-journal.js";
 import { renderDeclarations, renderToolSignature, toCodemodeIdentifier, type RenderDeclarationsOptions } from "@earendil-works/pi-codemode/declarations";
 import type { FabricHostCall, FabricKernelRuntime, FabricSandboxOptions, FabricSandboxResult } from "./runtime/kernel.js";
@@ -124,9 +125,9 @@ const INTERRUPTED_CODE = "interrupted";
 /**
  * Names what replays a recorded run: the journal format, this package's version and the guest engine. A resume
  * recorded under another value is refused. tests/durable-extension-replay.test.ts checks it against package.json.
- * Keep this literal host-free for Worker imports; update it alongside package.json on each release.
+ * The manifest is bundled as data, keeping Worker imports host-free and release versions in sync.
  */
-export const FABRIC_DURABLE_ENGINE = `${FABRIC_DURABLE_JOURNAL_FORMAT}/pi-fabric@0.131.2/quickjs-singlefile-0.32`;
+export const FABRIC_DURABLE_ENGINE = `${FABRIC_DURABLE_JOURNAL_FORMAT}/pi-fabric@${packageJson.version}/quickjs-singlefile-0.32`;
 
 /**
  * Refusal raised to the program; its message reaches the program as an Error. A granted provider action may throw

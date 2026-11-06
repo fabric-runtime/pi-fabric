@@ -3,9 +3,9 @@ import {
   Key,
   getKeybindings,
   matchesKey,
-  truncateToWidth,
   type KeyId,
 } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 
 /**
  * Target-scoped conversation queue for the focused conversation view.

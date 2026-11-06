@@ -72,6 +72,7 @@ import {
   mergeFabricApprovalUsage,
 } from "./core/direct-tool-approval.js";
 import { createFabricExecTool } from "./fabric-exec-tool.js";
+import { fabricExecutionGuidelines, fabricOwnedExecutionGuidelines } from "./core/execution-guidelines.js";
 import { FabricState } from "./fabric-state.js";
 import { FABRIC_THINKING_BOUNDS_ENV } from "./thinking.js";
 import { classifyToolResult } from "./repairs/classify.js";
@@ -201,6 +202,15 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     return;
   }
   if (!options.managedHost) registerJevAuth(pi);
+  // Clipboard paths are attachments, not a reason to spend a model turn on read.
+  // Keep filesystem/MIME work off the registration and ordinary-input paths.
+  pi.on("input", async (event, context) => {
+    if (event.source !== "interactive" || !event.text.includes("pi-clipboard-")) return;
+    const { attachPastedImages } = await import("./core/pasted-images.js");
+    const result = await attachPastedImages(event.text, event.images);
+    for (const warning of result.warnings) context.ui.notify(warning, "warning");
+    if (result.changed) return { action: "transform", text: result.text, images: result.images };
+  });
   const codePreviewSettings = defaultCodePreviewSettings();
   const decorateShell: FabricToolShellDecorator = withCodePreviewShell;
   let compatibilityWarningShown = false;
@@ -840,20 +850,24 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   // A compaction owner claim runs its own triggers, so Fabric's threshold
   // and headroom triggers stand down while it is held.
   pi.on("agent_settled", async (event, context) => {
+    // Pi clears ctx.signal before this event: the event flag is authoritative.
+    // Escape must not start compaction (or a compaction seed) on its way to idle.
+    const interrupted = event.aborted || context.signal?.aborted === true;
     if (state.managedHostOptions) {
       // Managed runtimes never construct native prewalk/compact controllers.
       // The Pi-owned mode also leaves automatic compaction scheduling to the host.
-      if (state.config.compaction.engine === "fabric") await compactAtConfiguredThreshold(context, state.config);
+      if (!interrupted && state.config.compaction.engine === "fabric") await compactAtConfiguredThreshold(context, state.config);
       if (state.initialized) await state.publishHostLifecycle("pi.agent_settled", event);
       return;
     }
     if (!state.initialized) {
-      if (!compactionOwner()) await compactAtConfiguredThreshold(context, state.config);
+      if (!interrupted && !compactionOwner()) await compactAtConfiguredThreshold(context, state.config);
       return;
     }
     const sessionId = context.sessionManager.getSessionId();
+    if (interrupted) state.compact.cancel();
     const settledInPlace = await settleInPlacePrewalk(state.prewalk, pi, context, {
-      compactOnReturn: state.config.prewalk.compactOnReturn,
+      compactOnReturn: !interrupted && state.config.prewalk.compactOnReturn,
       compact: state.compact,
     });
     if (!settledInPlace && state.prewalk.settleTask(sessionId)) {
@@ -876,8 +890,8 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     // Pi's compact API is callback-based. Await the controller's Promise here
     // so ExtensionRunner does not finish this handler (and Pi does not publish
     // its public agent_settled event) before compaction settles.
-    await state.compact.maybeCommit(context);
-    if (!compactionOwner()) {
+    if (!interrupted) await state.compact.maybeCommit(context);
+    if (!interrupted && !compactionOwner()) {
       await compactAtConfiguredThreshold(
         context,
         state.config,
@@ -1186,6 +1200,9 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       defaultFabricExecutionGuidance,
       extensionToolRosterGuidance,
       fabricExecutionKernelGuidance,
+      fabricGuidanceDelivery,
+      relocateFabricGuidelines,
+      stripFabricRuleBullets,
       managedHostExecutionGuidance,
       managedHostKernelGuidance,
       fabricSchemaGuidance,
@@ -1201,10 +1218,24 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     // sections on later turns. Fabric adds its own section there unless an
     // earlier handler already forced a whole prompt, which makes Pi ignore
     // sections. Older hosts have no sections and get the appended prompt.
-    const sections = event.systemPromptOptions.forceSystemPrompt === undefined
-      ? event.systemPromptOptions.sections
-      : undefined;
-    const systemPrompt = sections ? "" : restoreSkillsForFullCodePrompt(event.systemPrompt, skills, effectiveFullCodeMode, skillReader);
+    const delivery = fabricGuidanceDelivery(
+      true, event.systemPromptOptions.sections !== undefined,
+      event.systemPromptOptions.forceSystemPrompt !== undefined,
+    );
+    const sections = delivery.section ? event.systemPromptOptions.sections : undefined;
+    // Own these rules in the portable section, not Pi's generated <rules>,
+    // which providers such as claude-bridge intentionally do not forward.
+    // Remove only our exact rules; other extensions' additions stay intact.
+    const ownedExecutionRules = fabricOwnedExecutionGuidelines();
+    const executionRules = relocateFabricGuidelines(
+      event.systemPromptOptions.toolGuidelines,
+      fabricExecutionGuidelines(config.executor.kernel, config.executor.pythonRuntime, Boolean(managedHost)),
+      delivery,
+      ownedExecutionRules,
+    );
+    const systemPrompt = sections ? "" : restoreSkillsForFullCodePrompt(
+      stripFabricRuleBullets(event.systemPrompt, ownedExecutionRules), skills, effectiveFullCodeMode, skillReader,
+    );
     // Pi expands the invoked skill into the user message, but wrappers may
     // delegate by name. Resolve only explicit invocation lines so full code
     // mode preserves Pi's progressive skill loading without exposing read.
@@ -1245,6 +1276,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     const guidance = [
       managedHost ? managedHostKernelGuidance(managedHost) : fabricExecutionKernelGuidance(effectiveFullCodeMode, config.executor.kernel, config.executor.pythonRuntime, config.executor.codemodeProfile),
       resolvedGuidance.slotText,
+      executionRules.text,
       fabricSchemaGuidance(schemaMode),
       overrideGuidance,
       extensionRoster,
@@ -1255,12 +1287,19 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     // persistent message, not appended to the system prompt. Keeping the
     // system prompt byte-identical across turns is what lets provider prefix
     // caches (e.g. DeepSeek) stay warm.
+    const catalog = sections
+      ? restoreSkillsForFullCodePrompt(sections.skills ?? "", skills, effectiveFullCodeMode, skillReader).trim()
+      : undefined;
+    const forced = delivery.append ? { systemPrompt: `${systemPrompt}\n\n${guidance}` } : {};
+    // Commit only after all fallible rendering/resolution has succeeded. Pi
+    // catches hook errors without rolling back in-place option mutations.
     if (sections) {
-      const catalog = restoreSkillsForFullCodePrompt("", skills, effectiveFullCodeMode, skillReader).trim();
       if (catalog) sections.skills = catalog;
       sections.fabric = guidance;
     }
-    const forced = sections ? {} : { systemPrompt: `${systemPrompt}\n\n${guidance}` };
+    if (executionRules.remaining !== undefined && event.systemPromptOptions.toolGuidelines) {
+      event.systemPromptOptions.toolGuidelines.fabric_exec = executionRules.remaining;
+    }
     if (!skillReferenceGuidance) return sections ? undefined : forced;
     return {
       ...forced,

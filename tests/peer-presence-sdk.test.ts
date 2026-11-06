@@ -4,8 +4,8 @@ import path from "node:path";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { describe, expect, it } from "vitest";
-import { PEER_PRESENCE_MESSAGE_TYPE, PeerPresenceNotifier } from "../src/topology/peer-presence.js";
+import { describe, expect, it, vi } from "vitest";
+import { PEER_DEPARTURE_GRACE_MS, PEER_PRESENCE_MESSAGE_TYPE, PeerPresenceNotifier } from "../src/topology/peer-presence.js";
 import type { FabricPeerInfo } from "../src/topology/types.js";
 
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -19,9 +19,11 @@ describe("peer presence with the real Pi SDK", () => {
   it("appends a mid-run notice to the request already owed and keeps every earlier request a prefix", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "fabric-presence-sdk-"));
     let peers: FabricPeerInfo[] = [];
+    let now = 0;
     let notifier: PeerPresenceNotifier | undefined;
     const requests: string[][] = [];
     const errors: unknown[] = [];
+    const notify = vi.fn();
     const settingsManager = SettingsManager.inMemory({
       defaultProjectTrust: "never", compaction: { enabled: false, keepRecentTokens: 1 }, retry: { enabled: false },
     });
@@ -30,7 +32,7 @@ describe("peer presence with the real Pi SDK", () => {
       agentsFilesOverride: () => ({ agentsFiles: [] }),
       extensionFactories: [pi => {
         pi.on("session_start", (_event, ctx) => {
-          notifier = new PeerPresenceNotifier(pi, ctx, { peers: () => peers, enabled: () => true, cwd: "/repo" });
+          notifier = new PeerPresenceNotifier(pi, ctx, { peers: () => peers, enabled: () => true, cwd: "/repo", now: () => now });
         });
         pi.registerTool({
           name: "work", label: "Work", description: "Fixture work", parameters: Type.Object({}),
@@ -69,7 +71,7 @@ describe("peer presence with the real Pi SDK", () => {
       const { session } = await createAgentSession({ cwd, agentDir: cwd, settingsManager, modelRuntime, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd) });
       try {
         // A bound UI context is what makes hasUI true; print mode binds none.
-        await session.bindExtensions({ uiContext: { notify() {} } as never, onError: error => errors.push(error) });
+        await session.bindExtensions({ uiContext: { notify } as never, onError: error => errors.push(error) });
         await session.setModel(modelRuntime.getModel("offline-presence", "fixture")!);
         await session.prompt("Do the work.");
         await session.waitForIdle();
@@ -88,7 +90,34 @@ describe("peer presence with the real Pi SDK", () => {
         // Unchanged peers add nothing, and the earlier notice is replayed byte-for-byte.
         expect(requests[2]!.slice(0, requests[1]!.length)).toEqual(requests[1]);
         expect(requests[2]!.filter(message => message.includes("fabric-peers"))).toHaveLength(1);
-        expect(session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE)).toHaveLength(1);
+        const notices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
+        expect(notices).toHaveLength(1);
+        expect(notices[0]).toMatchObject({ display: false });
+        expect(notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 connected", "info");
+        expect(notify).toHaveBeenCalledTimes(1);
+
+        // The screenshot regression: a departure discovered at the next prompt
+        // must be a toast, never a visible custom-message card or an extra turn.
+        peers = [];
+        await session.prompt("Check presence while the peer lease settles.");
+        await session.waitForIdle();
+        expect(requests).toHaveLength(4);
+        expect(notify).toHaveBeenCalledTimes(1);
+        now += PEER_DEPARTURE_GRACE_MS;
+        await session.prompt("Check presence after the grace window.");
+        await session.waitForIdle();
+        expect(requests).toHaveLength(5);
+        expect(requests[4]!.slice(0, requests[3]!.length)).toEqual(requests[3]);
+        expect(requests[4]!.at(-1)).toContain("No longer present: FAB-2.");
+        const updatedNotices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
+        expect(updatedNotices).toHaveLength(2);
+        expect(updatedNotices.every(message => message.role === "custom" && message.display === false)).toBe(true);
+        expect(notify).toHaveBeenLastCalledWith("Fabric peers: left FAB-2; 0 connected", "info");
+        expect(notify).toHaveBeenCalledTimes(2);
+        await session.prompt("Nothing changed.");
+        await session.waitForIdle();
+        expect(requests).toHaveLength(6);
+        expect(notify).toHaveBeenCalledTimes(2);
         expect(errors).toEqual([]);
       } finally {
         notifier?.close();

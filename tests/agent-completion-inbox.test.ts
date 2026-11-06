@@ -10,7 +10,7 @@ const result = (id: string, extra: Partial<AgentRunResult> = {}): AgentRunResult
   task: "work", runner: "pi", transport: "process", cwd: ".", updatedAt: 2, turns: 1, toolCalls: 0,
   usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, ...extra,
 });
-const harness = () => {
+const harness = (observed?: (id: string) => boolean) => {
   let idle = false;
   let pending = false;
   const handlers = new Map<string, Handler>();
@@ -23,7 +23,7 @@ const harness = () => {
       return () => handlers.delete(name);
     }, sendMessage,
   } as unknown as ExtensionAPI;
-  const inbox = new AgentCompletionInbox(pi, context);
+  const inbox = new AgentCompletionInbox(pi, context, observed);
   inboxes.push(inbox);
   return {
     inbox, context, handlers, sendMessage, notify,
@@ -41,6 +41,17 @@ afterEach(() => {
 });
 
 describe("AgentCompletionInbox", () => {
+  it("leaves completion delivery to an attached wake observer but confirms the original receipt", () => {
+    const h = harness(id => id === "observed");
+    const delivered = vi.fn();
+    h.inbox.enqueue(result("observed"), delivered);
+    h.boundary();
+    expect(delivered).toHaveBeenCalledOnce();
+    expect(h.sendMessage).not.toHaveBeenCalled();
+    h.inbox.enqueue(result("ordinary"));
+    h.boundary();
+    expect(h.sendMessage).toHaveBeenCalledOnce();
+  });
   it("stays inert when ExtensionAPI.on is missing or does not return unsubscribe", () => {
     const context = { hasUI: false, isIdle: () => true, hasPendingMessages: () => false } as unknown as ExtensionContext;
     const missing = new AgentCompletionInbox({ sendMessage: vi.fn() } as unknown as ExtensionAPI, context);

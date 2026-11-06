@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { SessionManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AttachedMonitors } from "../src/core/attached-monitors.js";
+import { FabricShellJobStore } from "../src/core/shell-jobs.js";
+import { TasksProvider } from "../src/providers/tasks-provider.js";
 import { ActorManager } from "../src/actors/manager.js";
 import type { FabricActorInfo, FabricActorRequest } from "../src/actors/types.js";
 import { GlobalActorRegistry } from "../src/actors/global-registry.js";
@@ -229,6 +232,42 @@ const setup = (
     mainDeliveries,
   };
 };
+
+describe("AgentsProvider peer wake controls", () => {
+  it.each(["steer", "followUp"])("exposes and forwards %s triggerTurn explicitly", async action => {
+    const { provider, mainDeliveries } = setup();
+    const descriptor = await provider.describe(action, context);
+    expect((descriptor?.inputSchema as { properties: Record<string, unknown> }).properties.triggerTurn).toMatchObject({ type: "boolean" });
+    for (const triggerTurn of [undefined, false, true]) {
+      await provider.invoke(action, { id: "main", message: "Coordinate", ...(triggerTurn === undefined ? {} : { triggerTurn }) }, context);
+      expect(mainDeliveries.at(-1)?.triggerTurn).toBe(triggerTurn);
+    }
+  });
+});
+
+describe("AgentsProvider observation", () => {
+  it("shares task observation without replacing lifecycle subscriptions or invoking an agent", async () => {
+    const { provider, agents } = setup();
+    const jobs = new FabricShellJobStore();
+    const observations = new AttachedMonitors(jobs, {
+      get: id => id === "local-run" ? { id, generation: "run-1", name: "Worker", status: "running", terminal: false, progress: { turns: 1 } } : undefined,
+      subscribe: () => () => {},
+    });
+    const spawn = vi.spyOn(agents, "spawn");
+    try {
+      expect(await provider.describe("observe", context)).toBeUndefined();
+      provider.observations = () => observations;
+      expect((await provider.list({}, context)).map(d => d.name)).toContain("observe");
+      expect(await provider.describe("subscribe", context)).toBeDefined();
+      const result = await provider.invoke("observe", { id: "local-run", delivery: "ui" }, context) as { task: { id: string; observes: unknown } };
+      expect(result.task.observes).toEqual({ kind: "participant", id: "local-run" });
+      expect(spawn).not.toHaveBeenCalled();
+      await expect(provider.invoke("observe", { id: "local-run", delivery: "ui", match: "secret" }, context)).rejects.toThrow("Invalid agents.observe");
+      expect(await new TasksProvider(jobs).invoke("stop", { id: result.task.id }, context)).toMatchObject({ stopped: true });
+      expect(jobs.get(result.task.id)!.abort.signal.aborted).toBe(true);
+    } finally { observations.close(); await jobs.close(); }
+  });
+});
 
 describe("AgentsProvider runtime ownership lifecycle", () => {
   it("does not close shared runtime services when it is not the owner", async () => {

@@ -138,6 +138,25 @@ describe("MainAgentController", () => {
     });
   });
 
+  it.each(["steer", "followUp"] as const)("keeps peer %s passive by default and honors explicit wake choices", delivery => {
+    const sendMessage = vi.fn();
+    const controller = new MainAgentController({ sendMessage } as unknown as ExtensionAPI, "session:root", true, "/tmp/project");
+    const from = { id: "session:peer", name: "main", kind: "main" as const };
+    for (const triggerTurn of [undefined, false, true]) {
+      controller.deliverAgent({ from, message: "Progress update", delivery, ...(triggerTurn === undefined ? {} : { triggerTurn }) });
+      expect(sendMessage.mock.calls.at(-1)?.[1]).toEqual({ deliverAs: "steer", triggerTurn: triggerTurn ?? false });
+      expect(sendMessage.mock.calls.at(-1)?.[0].details.triggerTurn).toBe(triggerTurn ?? false);
+    }
+    for (const source of [
+      { id: "child", name: "worker", kind: "agent" as const },
+      { id: "actor", name: "reviewer", kind: "actor" as const },
+      { id: "session:root", name: "main", kind: "main" as const },
+    ]) {
+      controller.deliverAgent({ from: source, message: "Action needed", delivery });
+      expect(sendMessage.mock.calls.at(-1)?.[1]).toEqual({ deliverAs: "steer", triggerTurn: true });
+    }
+  });
+
   it("rejects direct delivery from a process that does not own Main", () => {
     const controller = new MainAgentController(
       {

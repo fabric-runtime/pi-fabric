@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FabricState } from "../src/fabric-state.js";
+import { AttachedMonitors } from "../src/core/attached-monitors.js";
 import { FabricShellJobStore, type FabricShellJobInfo } from "../src/core/shell-jobs.js";
 import { ShellTasksView } from "../src/ui/shell-tasks.js";
 import { FabricUiController } from "../src/ui/controller.js";
@@ -28,6 +29,33 @@ const fixture = () => {
 };
 
 describe("background shell UI", () => {
+  it("groups an observation beneath its task and stops watching without stopping work", async () => {
+    const h = fixture();
+    const target = h.jobs.begin("bash", "build", { description: "Remote checks" }); target.spill();
+    const other = h.jobs.begin("bash", "other"); other.spill();
+    const observations = new AttachedMonitors(h.jobs); cleanup.push(() => observations.close());
+    const observer = await observations.start({ target: { kind: "task", id: target.id }, delivery: "ui", events: ["output", "terminal"], timeoutMs: 300000, intervalMs: 1000 });
+    const widget = new FabricWidget(theme, () => ({ ...h.controller.snapshot(), shells: h.jobs.list() }), 8);
+    const lines = widget.render(160);
+    const targetRow = lines.findIndex(line => line.includes(target.id.slice(0, 8)));
+    expect(lines[targetRow + 1]).toContain(`╰─ ○ ${observer.id.slice(0, 8)} watching · UI only`);
+    expect(lines.join("\n")).toContain("2 shells · 1 observation");
+    expect(lines.filter(line => line.includes(observer.id.slice(0, 8)))).toHaveLength(1);
+    for (const width of [1, 12, 40, 80]) expect(widget.render(width).every(line => visibleWidth(line) <= width)).toBe(true);
+    const view = new ShellTasksView({ jobs: h.jobs, theme, done: vi.fn(), rows: () => 40, requestRender: vi.fn(), id: observer.id });
+    cleanup.push(() => view.dispose());
+    const detail = view.render(120).join("\n");
+    expect(detail).toContain("Fabric · observation");
+    expect(detail).toContain("Target: task Remote checks · spilled");
+    expect(detail).toContain("Stopping observation leaves the target running.");
+    expect(detail).toContain("stop watching");
+    view.handleInput("x"); expect(view.render(120).join("\n")).toContain("target continues");
+    view.handleInput("x");
+    expect(h.jobs.get(observer.id)!.abort.signal.aborted).toBe(true);
+    expect(target.abort.signal.aborted).toBe(false);
+    expect(other.abort.signal.aborted).toBe(false);
+  });
+
   it.each<[string, Partial<FabricShellJobInfo>, Parameters<Theme["fg"]>[0], string]>([
     ["running", { status: "running" }, "accent", "○"],
     ["spilled", {}, "accent", "○"],

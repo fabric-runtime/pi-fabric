@@ -15,17 +15,18 @@ const setup = (hasUI = true) => {
 const from = { id: "child-1", name: "Reviewer", kind: "agent" as const };
 
 describe("Main feedback projection", () => {
-  it.each(["agent", "actor", "main"] as const)("hides %s feedback, steers, and preserves full content and audit data", kind => {
+  it.each(["agent", "actor", "main"] as const)("hides %s feedback, preserves its wake policy, and retains full content and audit data", kind => {
     const h = setup();
     const message = "First line\n" + "x".repeat(20_000);
     const data = { payload: "private-data".repeat(2000) };
+    const triggerTurn = kind !== "main";
     const result = h.main.deliverAgent({ from: { ...from, kind }, message, data, delivery: "followUp" });
     expect(h.sendMessage).toHaveBeenCalledOnce();
     expect(h.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
       customType: "pi-fabric-agent-message", display: false,
       content: expect.stringContaining(message),
-      details: { id: result.messageId, from: { ...from, kind }, delivery: "steer", requestedDelivery: "followUp", triggerTurn: true, data },
-    }), { deliverAs: "steer", triggerTurn: true });
+      details: { id: result.messageId, from: { ...from, kind }, delivery: "steer", requestedDelivery: "followUp", triggerTurn, data },
+    }), { deliverAs: "steer", triggerTurn });
     expect(h.sendMessage.mock.calls[0]![0].content).toContain(data.payload);
     expect(h.notify).toHaveBeenCalledOnce();
     const notice = h.notify.mock.calls[0]![0] as string;

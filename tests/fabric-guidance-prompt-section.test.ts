@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CapturedToolCatalog } from "../src/capture/catalog.js";
 import { normalizeFabricConfig } from "../src/config.js";
 import { FabricState } from "../src/fabric-state.js";
+import { fabricExecutionGuidelines } from "../src/core/execution-guidelines.js";
 
 // Pi 1.4 renders the system prompt from named sections and diffs them turn to
 // turn. A handler that returns `systemPrompt` forces one opaque prompt instead:
@@ -19,7 +20,9 @@ const extension = (path: string, handlers: Map<string, Handler[]>) => ({
   tools: new Map(), messageRenderers: new Map(), commands: new Map(), flags: new Map(), shortcuts: new Map(),
 });
 
+let registeredGuidelines: string[] | undefined;
 const loadFabric = async (): Promise<Map<string, Handler[]>> => {
+  registeredGuidelines = undefined;
   vi.spyOn(FabricState.prototype, "bootstrapped", "get").mockReturnValue(true);
   vi.spyOn(FabricState.prototype, "cwd", "get").mockReturnValue(process.cwd());
   vi.spyOn(FabricState.prototype, "config", "get").mockReturnValue(normalizeFabricConfig({}));
@@ -29,7 +32,10 @@ const loadFabric = async (): Promise<Map<string, Handler[]>> => {
     events: { emit: vi.fn(), on: vi.fn(() => () => {}) },
     on: vi.fn((name: string, handler: Handler) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); }),
     getActiveTools: vi.fn(() => ["fabric_exec"]), getAllTools: vi.fn(() => []),
-    registerCommand: vi.fn(), registerMessageRenderer: vi.fn(), registerTool: vi.fn(),
+    registerCommand: vi.fn(), registerMessageRenderer: vi.fn(),
+    registerTool: vi.fn((definition: { name: string; promptGuidelines?: string[] }) => {
+      if (definition.name === "fabric_exec") registeredGuidelines = definition.promptGuidelines;
+    }),
     setActiveTools: vi.fn(), sendMessage: vi.fn(), appendEntry: vi.fn(), getThinkingLevel: vi.fn(() => "off"),
   } as unknown as ExtensionAPI;
   const { default: piFabric } = await import("../src/index.js");
@@ -51,7 +57,8 @@ const startRun = async (extensions: ReturnType<typeof extension>[]) => {
   }]]]));
   const result = await runner.emitBeforeAgentStart(
     { messageType: "user", prompt: "inspect" },
-    { cwd: "/work", selectedTools: ["fabric_exec"], skills: skills as never },
+    { cwd: "/work", selectedTools: ["fabric_exec"], skills: skills as never,
+      toolGuidelines: { fabric_exec: [...fabricExecutionGuidelines(), "Preserve this other extension rule."] } },
   );
   // Render the final prompt the way Pi's later handlers and the session see it.
   await new ExtensionRunner([observer] as never, createExtensionRuntime(), process.cwd(), {} as never, {} as never)
@@ -71,7 +78,16 @@ describe("Fabric guidance as a Pi prompt section", () => {
     const { options, rendered, errors } = await startRun([fabric, later]);
     expect(errors).toEqual([]);
     expect(options.forceSystemPrompt).toBeUndefined();
+    expect(registeredGuidelines).toEqual(fabricExecutionGuidelines());
     expect(options.sections.fabric).toContain("fabric_exec");
+    // A selective provider projects custom sections, not Pi's generated rules.
+    for (const rule of fabricExecutionGuidelines()) {
+      expect(options.sections.fabric).toContain(rule);
+      expect(options.toolGuidelines.fabric_exec).not.toContain(rule);
+      expect(rendered.split(rule).length - 1).toBe(1);
+    }
+    expect(options.toolGuidelines.fabric_exec).toEqual(["Preserve this other extension rule."]);
+    expect(rendered).toContain("Preserve this other extension rule.");
     // Full code mode names Fabric's nested reader in the skill catalog.
     expect(options.sections.skills).toContain("Use `pi.read` inside `fabric_exec`");
     expect(options.sections.skills).toContain("<name>release-risk</name>");
@@ -87,6 +103,38 @@ describe("Fabric guidance as a Pi prompt section", () => {
     expect(second.options.sections).toEqual(first.options.sections);
   });
 
+  it("deduplicates a previously rendered prompt frozen by an earlier extension", async () => {
+    const earlier = extension("earlier", new Map([["before_agent_start", [(event: unknown) => ({
+      systemPrompt: (event as { systemPrompt: string }).systemPrompt,
+    })]]]));
+    const fabric = extension("pi-fabric", await loadFabric());
+    const { rendered, errors } = await startRun([earlier, fabric]);
+    expect(errors).toEqual([]);
+    for (const rule of fabricExecutionGuidelines()) expect(rendered.split(rule).length - 1).toBe(1);
+    expect(rendered).toContain("Preserve this other extension rule.");
+  });
+
+  it("preserves earlier skill-section additions while adapting the catalog", async () => {
+    const earlier = extension("earlier", new Map([["before_agent_start", [(event: unknown) => {
+      (event as { systemPromptOptions: { sections: Record<string, string> } }).systemPromptOptions.sections.skills = "Earlier skill instruction.";
+    }]]]));
+    const fabric = extension("pi-fabric", await loadFabric());
+    const { options, errors } = await startRun([earlier, fabric]);
+    expect(errors).toEqual([]);
+    expect(options.sections.skills).toContain("Earlier skill instruction.");
+    expect(options.sections.skills).toContain("Use `pi.read` inside `fabric_exec`");
+  });
+
+  it("retains the original native rules when model guidance rendering fails", async () => {
+    const fabric = extension("pi-fabric", await loadFabric());
+    const module = await import("../src/components/model-guidance.js");
+    vi.spyOn(module, "resolveFabricModelGuidance").mockImplementationOnce(() => { throw new Error("ambiguous model override"); });
+    const { options, errors } = await startRun([fabric]);
+    expect(errors.join(" ")).toContain("ambiguous model override");
+    expect(options.sections.fabric).toBeUndefined();
+    expect(options.toolGuidelines.fabric_exec).toEqual([...fabricExecutionGuidelines(), "Preserve this other extension rule."]);
+  });
+
   it("appends to a prompt an earlier handler forced, since Pi then ignores sections", async () => {
     const earlier = extension("earlier", new Map([["before_agent_start", [() => ({ systemPrompt: "Forced base prompt." })]]]));
     const fabric = extension("pi-fabric", await loadFabric());
@@ -94,6 +142,9 @@ describe("Fabric guidance as a Pi prompt section", () => {
     expect(errors).toEqual([]);
     expect(options.sections.fabric).toBeUndefined();
     expect(rendered.startsWith("Forced base prompt.")).toBe(true);
+    for (const rule of fabricExecutionGuidelines()) {
+      expect(rendered.split(rule).length - 1).toBe(1);
+    }
     expect(rendered).toContain("fabric_exec");
   });
 });
