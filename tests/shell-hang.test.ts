@@ -135,6 +135,22 @@ describe("pi.bash auto-spill", () => {
     expect(jobs.list().some((job) => job.status === "spilled")).toBe(true);
   });
 
+  it("says an explicit timeout bounds the process, not the wait, when it hands off", async () => {
+    const { result, jobs } = await invokeBash("printf start; sleep 8; printf done", 120, undefined, { timeout: 30 });
+    expect(result.details?.running).toBe(true);
+    const taskId = result.details!.taskId!;
+    expect(result.output).toContain("Its timeout (30s) bounds the process, not this wait");
+    expect(result.output).toContain(`tools.call({ref:"tasks.wait",args:{id:"${taskId}",timeoutMs:300000}})`);
+    jobs.get(taskId)!.abort.abort();
+  });
+
+  it("does not add the timeout note without an explicit timeout", async () => {
+    const { result, jobs } = await invokeBash("printf start; sleep 8; printf done", 120);
+    expect(result.details?.running).toBe(true);
+    expect(result.output).not.toContain("bounds the process");
+    jobs.get(result.details!.taskId!)!.abort.abort();
+  });
+
   it("does not auto-spill when hangMs is 0", async () => {
     const { result } = await invokeBash('printf "done\\n"', 0);
     expect(result.ok).toBe(true);
