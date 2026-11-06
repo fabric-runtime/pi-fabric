@@ -690,7 +690,7 @@ Peer-root `agents.steer` and `agents.followUp` messages are **passive by default
 ```ts
 const activePeers = (await agents.peers()).filter(peer =>
   peer.status === "running" || peer.pendingMessages);
-// Pick the peer whose work actually overlaps yours, rather than broadcasting.
+// Pick a peer whose work overlaps yours; do not broadcast.
 // Explicit wake only for an actionable request:
 await agents.steer({ id: "session:…", message: "Please resolve this blocker.", triggerTurn: true });
 ```
