@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Fabric Council
 
-Use one `fabric_exec` call with bounded role fan-out. Choose three to eight roles that disagree usefully rather than duplicating one another, such as correctness, security, operability, maintainability, and requirements skepticism. Pin a model to a role when you want vendor diversity as well as role diversity.
+Use one `fabric_exec` call with bounded role fan-out. Choose three to eight roles that disagree usefully rather than duplicating one another, such as correctness, security, operability, maintainability, and requirements skepticism. Pin a model to a role when you want vendor diversity as well as role diversity. Use this template only for non-sensitive work: full reports are persisted in project-shared mesh, not private session storage. Do not supply credentials, secrets, or other material that must not be shared with other project sessions; use a plain agent without mesh parking for that work. Report secret locations and remediation, never secret values. This template does not automatically sanitize reports.
 
 ```ts
 type CouncilSeat = { role: string; model?: string; thinking?: FabricThinking };
@@ -74,7 +74,7 @@ const outcomes = await parallel(
     const pin = seat.model ? { model: seat.model } : {};
     try {
       const report = await agent(
-        `Act as the ${seat.role} council member. Independently analyze this task:\n\n${π.task}`,
+        `Act as the ${seat.role} council member. Independently analyze this task. Reports are persisted in project-shared mesh: never reproduce credentials, secret values, or private data; describe locations and remediation instead:\n\n${π.task}`,
         {
           label: seat.role,
           tools: ["read", "grep", "find", "ls"],

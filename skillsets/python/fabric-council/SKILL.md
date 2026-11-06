@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Fabric Council — Python
 
-Use one Python `fabric_exec`. Pass `payloads.task`, a JSON array in `payloads.roles`, and a synthesis model key in `payloads.synthesis`; an empty `payloads.synthesis` keeps the session default. Choose 3–8 distinct non-empty roles with useful disagreements, not redundant reviewers. A role is a string or an object with `role` and optional `model` and `thinking`; a role without `model` runs on the session default. Label the outer `display` and every child.
+Use one Python `fabric_exec`. Pass `payloads.task`, a JSON array in `payloads.roles`, and a synthesis model key in `payloads.synthesis`; an empty `payloads.synthesis` keeps the session default. Choose 3–8 distinct non-empty roles with useful disagreements, not redundant reviewers. A role is a string or an object with `role` and optional `model` and `thinking`; a role without `model` runs on the session default. Label the outer `display` and every child. Use this template only for non-sensitive work: full reports are persisted in project-shared mesh, not private session storage. Do not supply credentials, secrets, or other material that must not be shared with other project sessions; use a plain agent without mesh parking for that work. Report secret locations and remediation, never secret values. This template does not automatically sanitize reports.
 
 ```python
 import asyncio
@@ -84,7 +84,7 @@ async def review(seat):
     if seat.get("thinking"):
         options["thinking"] = seat["thinking"]
     try:
-        report = await ask("Act as the " + seat["role"] + " council member. Independently analyze:\n" + π.task, seat["role"], options)
+        report = await ask("Act as the " + seat["role"] + " council member. Independently analyze. Reports are persisted in project-shared mesh: never reproduce credentials, secret values, or private data; describe locations and remediation instead:\n" + π.task, seat["role"], options)
         outcome.update({"status": "completed", "report": report})
     except Exception as error:
         outcome.update({"status": "failed", "error": str(error)})
