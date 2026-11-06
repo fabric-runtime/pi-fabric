@@ -49,7 +49,9 @@ describe("expensive skill program behavior", () => {
 
   it("keeps successful council roles without returning raw reports after synthesis", async () => {
     const calls: string[] = [];
+    const puts: Array<{ key: string; value: unknown }> = [];
     const result = await runSkill("fabric-council", {
+      mesh: { put: async (args: { key: string; value: unknown }) => { puts.push(args); } },
       π: { task: "decide", roles: JSON.stringify(["correctness", "security", "operations"]) },
       workflow,
       phase,
@@ -72,26 +74,119 @@ describe("expensive skill program behavior", () => {
       { role: "security", status: "failed", error: "provider unavailable" },
     ]);
     expect(calls).toHaveLength(4);
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.value).toEqual([
+      { role: "correctness", report: "correctness report" },
+      { role: "operations", report: "operations report" },
+    ]);
+    expect(result.reports).toBe(puts[0]!.key);
   });
 
-  it("returns compact council reports only when synthesis fails", async () => {
+  it.each(["parked", "unavailable", "collisions"])("preserves long council reports when synthesis fails and storage is %s", async (storage) => {
+    const reports = ["a", "b", "c"].map((role) => ({ role, report: `${role}:` + "x".repeat(1600) + `:${role}-tail` }));
+    const puts: Array<{ key: string; value: unknown; ifVersion: number }> = [];
+    const events: string[] = [];
+    const storageError = storage === "collisions" ? "Mesh compare-and-swap failed: expected version 0" : "mesh unavailable";
+    const result = await runSkill("fabric-council", {
+      π: { task: "decide", roles: '["a","b","c"]', synthesis: "" }, workflow, phase, parallel,
+      mesh: { put: async (args: { key: string; value: unknown; ifVersion: number }) => {
+        events.push("put");
+        puts.push(args);
+        if (storage !== "parked") throw new Error(storageError);
+      } },
+      agent: async (prompt: string, options: { label: string }) => {
+        if (options.label === "council synthesis") {
+          events.push("synthesis");
+          for (const report of reports) expect(prompt).toContain(report.report);
+          throw new Error("budget exhausted");
+        }
+        return reports.find((report) => report.role === options.label)!.report;
+      },
+    });
+    expect(puts).toHaveLength(storage === "collisions" ? 4 : 1);
+    expect(new Set(puts.map((put) => put.key)).size).toBe(puts.length);
+    for (const put of puts) expect(put).toMatchObject({ ifVersion: 0, value: reports });
+    expect(events.at(-1)).toBe("synthesis");
+    expect(result).toMatchObject({ status: "partial", coverage: { requested: 3, completed: 3 }, result: null, synthesisError: "budget exhausted" });
+    expect(result.reports).toEqual(storage === "parked" ? puts[0]!.key : { error: storageError });
+    expect(result.fallback).toEqual(reports.map(({ role, report }) => ({ role, status: "completed", report: storage === "parked" ? report.slice(0, 1200) : report })));
+  });
+
+  it.each([0, 1])("parks only completed reports and skips synthesis with %s survivors", async (survivors) => {
+    const calls: string[] = [];
+    const puts: Array<{ key: string; value: unknown; ifVersion: number }> = [];
+    const report = "full survivor " + "x".repeat(1800);
+    const result = await runSkill("fabric-council", {
+      π: { task: "decide", roles: '["a","b","c"]', synthesis: "" }, workflow, phase, parallel,
+      mesh: { put: async (args: { key: string; value: unknown; ifVersion: number }) => { puts.push(args); } },
+      agent: async (_prompt: string, options: { label: string }) => {
+        calls.push(options.label);
+        if (survivors && options.label === "a") return report;
+        throw new Error("role unavailable");
+      },
+    });
+    expect(calls).toEqual(["a", "b", "c"]);
+    expect(result).toMatchObject({ status: survivors ? "partial" : "failed", coverage: { requested: 3, completed: survivors }, result: survivors ? report : null });
+    expect(result.failures).toHaveLength(3 - survivors);
+    expect(result).not.toHaveProperty("fallback");
+    expect(puts).toHaveLength(survivors);
+    if (survivors) {
+      expect(puts[0]).toMatchObject({ ifVersion: 0, value: [{ role: "a", report }] });
+      expect(result.reports).toBe(puts[0]!.key);
+      expect(result.synthesisSkipped).toBeTruthy();
+    } else expect(result).not.toHaveProperty("reports");
+  });
+
+  it("parks council reports create-only and moves to the next key on collision", async () => {
+    const puts: Array<{ key: string; ifVersion?: number }> = [];
+    let clockCalls = 0;
+    const result = await runSkill("fabric-council", {
+      Date: class { toISOString() { return `2026-07-01T12:00:0${clockCalls++}.000Z`; } },
+      π: { task: "decide", roles: JSON.stringify(["a", "b", "c"]) },
+      workflow,
+      phase,
+      parallel,
+      agent: async (_prompt: string, options: { label: string }) =>
+        options.label === "council synthesis" ? "decision" : `${options.label} report`,
+      mesh: {
+        put: async (args: { key: string; ifVersion?: number }) => {
+          puts.push({ key: args.key, ...(args.ifVersion === undefined ? {} : { ifVersion: args.ifVersion }) });
+          if (puts.length === 1) {
+            throw new Error(`Mesh compare-and-swap failed for ${args.key}: expected version 0, found 498938`);
+          }
+          return { key: args.key, version: 2 };
+        },
+      },
+    });
+    expect(puts).toHaveLength(2);
+    expect(puts.every((put) => put.ifVersion === 0)).toBe(true);
+    expect(puts.map((put) => put.key)).toEqual([
+      "council/2026-07-01-12-00-00/reports",
+      "council/2026-07-01-12-00-00-2/reports",
+    ]);
+    expect(result.reports).toBe(puts[1]!.key);
+    expect(result.status).toBe("success");
+  });
+
+  it("surfaces a real mesh failure without retry spin and still synthesizes", async () => {
+    const puts: unknown[] = [];
     const result = await runSkill("fabric-council", {
       π: { task: "decide", roles: JSON.stringify(["a", "b", "c"]) },
       workflow,
       phase,
       parallel,
-      agent: async (_prompt: string, options: { label: string }) => {
-        if (options.label === "council synthesis") throw new Error("judge failed");
-        return `${options.label} report`;
+      agent: async (_prompt: string, options: { label: string }) =>
+        options.label === "council synthesis" ? "decision" : `${options.label} report`,
+      mesh: {
+        put: async () => {
+          puts.push(null);
+          throw new Error("mesh unavailable");
+        },
       },
     });
-
-    expect(result).toMatchObject({ status: "partial", result: null, synthesisError: "judge failed" });
-    expect(result.fallback).toEqual([
-      { role: "a", status: "completed", report: "a report" },
-      { role: "b", status: "completed", report: "b report" },
-      { role: "c", status: "completed", report: "c report" },
-    ]);
+    expect(puts).toHaveLength(1);
+    expect(result.reports).toEqual({ error: "mesh unavailable" });
+    expect(result.status).toBe("success");
   });
 
   it("keeps RLM coverage compact and uses recursion only for oversized partitions", async () => {

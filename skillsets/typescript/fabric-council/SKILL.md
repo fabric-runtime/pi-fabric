@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Fabric Council
 
-Use one `fabric_exec` call with bounded role fan-out. Choose three to eight roles that disagree usefully rather than duplicating one another, such as correctness, security, operability, maintainability, and requirements skepticism. Pin a model to a role when you want vendor diversity as well as role diversity.
+Use one `fabric_exec` call with bounded role fan-out. Choose three to eight roles that disagree usefully rather than duplicating one another, such as correctness, security, operability, maintainability, and requirements skepticism. Pin a model to a role when you want vendor diversity as well as role diversity. Use this template only for non-sensitive work: full reports are persisted in project-shared mesh, not private session storage. Do not supply credentials, secrets, or other material that must not be shared with other project sessions; use a plain agent without mesh parking for that work. Report secret locations and remediation, never secret values. This template does not automatically sanitize reports.
 
 ```ts
 type CouncilSeat = { role: string; model?: string; thinking?: FabricThinking };
@@ -74,7 +74,7 @@ const outcomes = await parallel(
     const pin = seat.model ? { model: seat.model } : {};
     try {
       const report = await agent(
-        `Act as the ${seat.role} council member. Independently analyze this task:\n\n${π.task}`,
+        `Act as the ${seat.role} council member. Independently analyze this task. Reports are persisted in project-shared mesh: never reproduce credentials, secret values, or private data; describe locations and remediation instead:\n\n${π.task}`,
         {
           label: seat.role,
           tools: ["read", "grep", "find", "ls"],
@@ -111,6 +111,32 @@ const pins = {
 if (completed.length === 0) {
   return { status: "failed", coverage, ...pins, failures, result: null };
 }
+// Park completed reports in mesh before synthesis: an audit trail that survives this
+// program, and full-text recovery when synthesis fails or a budget runs out.
+// ifVersion: 0 makes each put create-only, so a same-second council moves to the
+// next key suffix instead of overwriting an earlier run's reports.
+const parked = completed.map((outcome) => ({
+  role: outcome.role,
+  ...(outcome.model ? { model: outcome.model } : {}),
+  report: outcome.report,
+}));
+let reports: string | { error: string } | null = null;
+let parkError = "";
+const reportsBase = `council/${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
+for (let attempt = 0; attempt < 4 && reports === null; attempt++) {
+  const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
+  const reportsKey = `${reportsBase}${suffix}/reports`;
+  try {
+    await mesh.put({ key: reportsKey, value: parked, ifVersion: 0 });
+    reports = reportsKey;
+  } catch (error) {
+    parkError = error instanceof Error ? error.message : String(error);
+    // Only a same-timestamp collision retries with the next suffix; any other
+    // storage failure surfaces immediately as the { error } object.
+    if (!parkError.includes("compare-and-swap")) break;
+  }
+}
+if (reports === null) reports = { error: parkError };
 if (completed.length === 1) {
   return {
     status: "partial",
@@ -118,6 +144,7 @@ if (completed.length === 1) {
     ...pins,
     failures,
     result: completed[0].report,
+    reports,
     synthesisSkipped: "Only one role completed; another agent would add no diversity.",
   };
 }
@@ -137,6 +164,7 @@ try {
     ...pins,
     failures,
     result,
+    reports,
   };
 } catch (error) {
   return {
@@ -146,13 +174,18 @@ try {
     failures,
     result: null,
     synthesisError: error instanceof Error ? error.message : String(error),
-    fallback: completed,
+    reports,
+    fallback: completed.map((outcome) => ({
+      role: outcome.role,
+      status: "completed",
+      report: typeof reports === "string" ? outcome.report.slice(0, 1200) : outcome.report,
+    })),
   };
 }
 ```
 
-Pass the task as `strings.task`, the JSON role array as `strings.roles`, and the synthesis model key as `strings.synthesis`; an empty `strings.synthesis` keeps the session default. A role is a string or `{ "role": "security", "model": "provider/id", "thinking": "high" }`, and a role without `model` runs on the session default. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the skill refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Every result lists `seats`, each with its role, pinned model and thinking, and status, plus `synthesisModel` when one was pinned. These are the models the skill requested; keeping a run on its pinned model is the host's job. Successful synthesis returns only the compact decision, coverage, seats, and failures. Raw completed reports return only when synthesis fails; one surviving role returns directly without spending another agent call.
+Pass the task as `strings.task`, the JSON role array as `strings.roles`, and the synthesis model key as `strings.synthesis`; an empty `strings.synthesis` keeps the session default. A role is a string or `{ "role": "security", "model": "provider/id", "thinking": "high" }`, and a role without `model` runs on the session default. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the skill refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Every result lists `seats`, each with its role, pinned model and thinking, and status, plus `synthesisModel` when one was pinned. These are the models the skill requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed). Whenever at least one seat completes, the full role reports are parked to mesh under a create-only `council/<timestamp>/reports` key — a same-second collision parks under the next suffix rather than overwriting — and every outcome carries it as `reports`: check `typeof reports === "string"` first, because a failed `mesh.put` yields an `{ error }` object instead of a key — never pass that to `mesh.get` or `mesh.delete`, and the synthesis-failure fallback then carries the full untruncated reports. Otherwise `mesh.get` the key for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed. On synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. One surviving role returns directly without spending another agent call.
 
-Concurrent calls can overshoot an observational `tokenBudget` because usage settles afterward. Reserve at least `seats.length + 1` top-level agent calls when synthesis may run, and use a finite role set rather than relying on token accounting as a hard concurrent ceiling.
+Concurrent calls can overshoot an observational `tokenBudget` because usage settles afterward. Reserve at least `seats.length + 1` top-level agent calls when synthesis may run, and use a finite role set rather than relying on token accounting as a hard concurrent ceiling. A budget-exhausted synthesis loses nothing: the parked reports are complete, so re-run only the synthesis step.
 
 Status is `success`, `partial`, or `failed`. A partial result is usable evidence with named gaps and must not trigger an automatic whole-council rerun. If a missing perspective matters, retry that role with one plain agent using the original task and role; do not invoke a new council or rerun successful roles. Do not use a council for a lookup or a decision with no meaningful competing considerations.

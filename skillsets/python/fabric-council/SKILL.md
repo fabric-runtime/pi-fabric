@@ -6,20 +6,21 @@ disable-model-invocation: true
 
 # Fabric Council — Python
 
-Use one Python `fabric_exec`. Pass `payloads.task`, a JSON array in `payloads.roles`, and a synthesis model key in `payloads.synthesis`; an empty `payloads.synthesis` keeps the session default. Choose 3–8 distinct non-empty roles with useful disagreements, not redundant reviewers. A role is a string or an object with `role` and optional `model` and `thinking`; a role without `model` runs on the session default. Label the outer `display` and every child.
+Use one Python `fabric_exec`. Pass `payloads.task`, a JSON array in `payloads.roles`, and a synthesis model key in `payloads.synthesis`; an empty `payloads.synthesis` keeps the session default. Choose 3–8 distinct non-empty roles with useful disagreements, not redundant reviewers. A role is a string or an object with `role` and optional `model` and `thinking`; a role without `model` runs on the session default. Label the outer `display` and every child. Use this template only for non-sensitive work: full reports are persisted in project-shared mesh, not private session storage. Do not supply credentials, secrets, or other material that must not be shared with other project sessions; use a plain agent without mesh parking for that work. Report secret locations and remediation, never secret values. This template does not automatically sanitize reports.
 
 ```python
 import asyncio
 import json
 
-async def ask(task, name, options=None):
+async def ask(task, name, options=None, include_id=False):
     request = {"task": task, "name": name, "tools": ["read", "grep", "find", "ls"]}
     if options:
         request.update(options)
     result = await agents.run(request)
     if result["status"] != "completed":
         raise RuntimeError(result.get("error") or result["status"])
-    return result["value"] if result.get("value") is not None else result["text"]
+    report = result["value"] if result.get("value") is not None else result["text"]
+    return {"report": report, "runId": result["id"]} if include_id else report
 
 def text(value):
     return value.strip() if isinstance(value, str) else ""
@@ -83,8 +84,8 @@ async def review(seat):
     if seat.get("thinking"):
         options["thinking"] = seat["thinking"]
     try:
-        report = await ask("Act as the " + seat["role"] + " council member. Independently analyze:\n" + π.task, seat["role"], options)
-        outcome.update({"status": "completed", "report": report})
+        report = await ask("Act as the " + seat["role"] + " council member. Independently analyze. Reports are persisted in project-shared mesh: never reproduce credentials, secret values, or private data; describe locations and remediation instead:\n" + π.task, seat["role"], options, include_id=True)
+        outcome.update({"status": "completed", **report})
     except Exception as error:
         outcome.update({"status": "failed", "error": str(error)})
     return outcome
@@ -99,13 +100,39 @@ if synthesis_model:
     summary["synthesisModel"] = synthesis_model
 if not completed:
     return dict(summary, status="failed", failures=failures, result=None)
+# Park completed reports in mesh before synthesis: an audit trail that survives this
+# program, and full-text recovery when synthesis fails or a budget runs out.
+# Use a host-assigned completed agent run ID: Monty has no native clock.
+# ifVersion=0 keeps retries create-only instead of overwriting prior reports.
+_parked = [
+    {"role": item.get("role"), **({"model": item["model"]} if item.get("model") else {}), "report": item["report"]}
+    for item in completed
+]
+reports = None
+_park_error = None
+_reports_base = "council/" + completed[0]["runId"]
+for _attempt in range(4):
+    _suffix = "" if _attempt == 0 else "-" + str(_attempt + 1)
+    reports_key = _reports_base + _suffix + "/reports"
+    try:
+        await mesh.put(key=reports_key, value=_parked, ifVersion=0)
+        reports = reports_key
+        break
+    except Exception as error:
+        _park_error = error
+        # Only a key collision retries with the next suffix; any other
+        # storage failure surfaces immediately as the {"error": ...} object.
+        if "compare-and-swap" not in str(error):
+            break
+if reports is None:
+    reports = {"error": str(_park_error)}
 if len(completed) == 1:
-    return dict(summary, status="partial", failures=failures, result=completed[0]["report"], synthesisSkipped="Only one role completed; another agent adds no diversity.")
+    return dict(summary, status="partial", failures=failures, result=completed[0]["report"], reports=reports, synthesisSkipped="Only one role completed; another agent adds no diversity.")
 try:
     result = await ask("Synthesize only the completed reports into one decision. Reject unsupported claims, preserve material disagreements, and attribute concerns to roles. Never infer views of failed roles.\nTask:\n" + π.task + "\nReports:\n" + json.dumps(completed), "council synthesis", {"model": synthesis_model} if synthesis_model else None)
-    return dict(summary, status="partial" if failures else "success", failures=failures, result=result)
+    return dict(summary, status="partial" if failures else "success", failures=failures, result=result, reports=reports)
 except Exception as error:
-    return dict(summary, status="partial", failures=failures, result=None, synthesisError=str(error), fallback=completed)
+    return dict(summary, status="partial", failures=failures, result=None, synthesisError=str(error), reports=reports, fallback=[{"role": item.get("role"), "status": "completed", "report": item["report"] if isinstance(reports, dict) else item["report"][:1200]} for item in completed])
 ```
 
-Reserve at least the role count plus one agent call. Concurrency remains host-limited; usage settles afterward, not as a hard token reservation. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the program refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Every result lists `seats` with each role's pinned model, thinking, and status, plus `synthesisModel` when one was pinned. These are the models the program requested; keeping a run on its pinned model is the host's job. Successful synthesis returns only the compact decision, coverage, seats, and failures; raw reports return only on synthesis failure. A partial result is useful evidence with named gaps, not permission for an automatic whole-council rerun. Retry only the failed role or synthesis when needed. Do not use a council for a lookup.
+Reserve at least the role count plus one agent call. Concurrency remains host-limited; usage settles afterward, not as a hard token reservation. Model keys must match a Pi registry key from `tools.models()` exactly, ignoring case; the program refuses a `models.aliases` name or a partial id, and checks every key before any agent runs. Whenever at least one seat completes, full role reports are parked to mesh under a create-only `council/<run-id>/reports` key (using the first completed agent's host-assigned run ID, with no native clock requirement) carried by every outcome as `reports` — a key collision parks under the next suffix (`-2`, `-3`, …) rather than overwriting: `mesh.get` it for audit or to retry a budget-starved synthesis with one plain agent, and `mesh.delete` it when no longer needed; on synthesis failure the fallback result carries report heads plus that mesh key, not the full texts; the synthesis prompt still embeds every completed report, so synthesis input grows with total report size. When mesh storage itself fails, `reports` is an `{"error": ...}` object instead of a key — never pass it to `mesh.get` or `mesh.delete` — and the synthesis-failure fallback then carries the full untruncated reports. A single completed role returns its full report directly as `result` without a synthesis call. Every result lists `seats` with each role's pinned model, thinking, and status, plus `synthesisModel` when one was pinned. These are the models the program requested; keeping a run on its pinned model is the host's job. Successful synthesis returns the compact decision, coverage, seats, failures, and `reports` (the mesh key, or the storage error object when parking failed); raw reports return on synthesis failure or when one role completes and synthesis is skipped. A partial result is useful evidence with named gaps, not permission for an automatic whole-council rerun. Retry only the failed role or synthesis when needed. Do not use a council for a lookup.
