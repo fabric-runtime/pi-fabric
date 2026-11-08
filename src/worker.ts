@@ -1086,6 +1086,12 @@ const main = async (): Promise<void> => {
     compactControl.observe(event);
     if (modelControl.observe(event)) return;
     taskPrompt.observe(event);
+    if (event.type === "message_start" && !terminalStatus) {
+      const message = event.message;
+      if (typeof message === "object" && message !== null && (message as Record<string, unknown>).role === "assistant") {
+        recoveryWatchdog.responseStarted();
+      }
+    }
     if (event.type === "message_start" || event.type === "message_update") {
       const message = event.message;
       if (typeof message === "object" && message !== null && !Array.isArray(message)) {
@@ -1100,6 +1106,7 @@ const main = async (): Promise<void> => {
     if (event.type === "agent_start") {
       emitLifecycle("pi.agent_start");
       retryPending = false;
+      if (!terminalStatus) recoveryWatchdog.turnStarted();
       // Starting a retry is not proof of recovery: preserve the error and timer
       // until the model actually produces output.
       return;
@@ -1107,6 +1114,10 @@ const main = async (): Promise<void> => {
     if (event.type === "auto_retry_start" && !terminalStatus) {
       retryPending = true;
       recoveryWatchdog.arm(terminalError ?? stringField(event.errorMessage) ?? "Pi retry stalled");
+      recoveryWatchdog.retryAnnounced(
+        typeof event.attempt === "number" ? event.attempt : undefined,
+        typeof event.maxAttempts === "number" ? event.maxAttempts : undefined,
+      );
       return;
     }
     if (event.type === "auto_retry_end" && !terminalStatus) {

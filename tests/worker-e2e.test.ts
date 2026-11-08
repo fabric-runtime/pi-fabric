@@ -237,6 +237,9 @@ describe.skipIf(!hasWorker)("AgentManager real worker e2e", () => {
       expect(result.status).toBe("failed");
       expect(result.error).toContain("Error: Terminated");
       expect(result.error).toContain("no recovery progress for 60000ms");
+      expect(result.error).toContain(behavior === "retry-hang"
+        ? "the retry turn never started"
+        : "Recovery: Pi announced no retry.");
       const events = fs.readFileSync(result.logFile!, "utf8").trim().split("\n").map((line) => JSON.parse(line));
       const pid = events.find((event) => event.type === "fake_child_pid").pid;
       expect(() => process.kill(pid, 0)).toThrow();
