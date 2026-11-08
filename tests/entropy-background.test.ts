@@ -259,6 +259,7 @@ describe("entropy background scheduler", () => {
     await shutdown;
     expect(compile).toHaveBeenCalledTimes(2);
     expect(update).toHaveBeenCalledTimes(2);
+    expect(getSessionFile).toHaveBeenCalledTimes(2);
     stale = true;
     const reads = getSessionFile.mock.calls.length;
     await vi.advanceTimersByTimeAsync(60_000);
