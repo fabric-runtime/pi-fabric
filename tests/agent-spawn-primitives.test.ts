@@ -473,7 +473,7 @@ describe("agent manager spawning primitives", () => {
     const { manager } = createManager(repository, {}, custom ? { worktree: { root: ".worktrees", branch: "issue/{name}-{id}" } } : {});
     const result = await manager.run({ task: "EDIT files", name: "edit", transport: "process", worktree: true });
     if (custom) {
-      expect(result.worktree).toBe(path.join(repository, ".worktrees", result.id));
+      expect(fs.realpathSync.native(result.worktree!)).toBe(fs.realpathSync.native(path.join(repository, ".worktrees", result.id)));
       expect(result.branch).toBe(`issue/edit-${result.id}`);
     }
     expect(result.worktreeResult).toEqual({

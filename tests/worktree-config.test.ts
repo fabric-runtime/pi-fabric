@@ -38,7 +38,8 @@ describe("configured worktrees", () => {
     const root = repository();
     const manager = new WorktreeManager();
     const lease = await manager.create(id, root, "Review This!");
-    expect(lease.path).toBe(path.join(root, ".pi", "fabric", "worktrees", id));
+    // Git expands Windows short-path aliases; compare canonical directories.
+    expect(fs.realpathSync.native(lease.path)).toBe(fs.realpathSync.native(path.join(root, ".pi", "fabric", "worktrees", id)));
     expect(lease.branch).toBe(`pi-fabric/review-this-${id.slice(0, 8)}`);
     await manager.cleanup(id, true);
   });
@@ -60,7 +61,7 @@ describe("configured worktrees", () => {
     fs.writeFileSync(path.join(sibling, "marker"), "do not copy\n");
     const manager = new WorktreeManager();
     const lease = await manager.create(id, root, "Fix A Thing!", false, options);
-    expect(lease.path).toBe(path.join(root, ".worktrees", id));
+    expect(fs.realpathSync.native(lease.path)).toBe(fs.realpathSync.native(path.join(root, ".worktrees", id)));
     expect(lease.branch).toBe(`issue/fix-a-thing-${id}-${id.slice(0, 8)}`);
     expect(fs.existsSync(path.join(lease.path, ".worktrees"))).toBe(false);
     expect(git(root, "status", "--porcelain")).toBe("");
