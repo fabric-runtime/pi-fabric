@@ -69,7 +69,7 @@ Every raised deadline is capped by `executor.maxTimeoutMs` (default `900000`, i.
 }
 ```
 
-`executor.shellHangMs` (default `120000` / 2 minutes, max `600000` / 10 minutes, `0` disables) is a nested-shell wait budget, not a program deadline. When a `pi.bash` / `pi.powershell` await exceeds it, Fabric **settles the await successfully** (`ok: true`) with a still-running notice, pid, and live output path while the process keeps writing that file. `background: true` (alias `run_in_background`) detaches immediately with the same envelope. Inspect with `pi.read(logPath)` and stop by running `kill <pid>` through `pi.bash`. Do not poll. An explicit shell `timeout` remains a hard cap. **ctrl+b twice** spills early (tmux-safe); **ctrl+k** kills the waiting command. Session shutdown aborts leftover processes, except `durable: true` tasks, which detach to their jev-fabric store. Captured shell overrides normally keep their own execution semantics; an extension can opt into [Fabric-owned bash execution with middleware](shell-middleware.md) to preserve its environment/output filters while gaining the same background handling.
+`executor.shellHangMs` (default `120000` / 2 minutes, max `600000` / 10 minutes, `0` disables) is a nested-shell wait budget, not a program deadline. When a `pi.bash` / `pi.powershell` await exceeds it, Fabric **settles the await successfully** (`ok: true`) with a still-running notice, pid, and live output path while the process keeps writing that file. `background: true` (alias `run_in_background`) detaches immediately with the same envelope. Inspect with `pi.read(logPath)` and stop by running `kill <pid>` through `pi.bash`. Do not poll. An explicit shell `timeout` remains a hard cap on the process; it does not extend the wait. To keep waiting after a hand-off, call `tasks.wait` with the returned task id (up to 300000 ms per call) until it reports a terminal status. Give the enclosing `fabric_exec` a `timeoutMs` long enough for the wait, or shorten each observation timeout; `tasks.wait` does not extend the program deadline. **ctrl+b twice** spills early (tmux-safe); **ctrl+k** kills the waiting command. Session shutdown aborts leftover processes, except `durable: true` tasks, which detach to their jev-fabric store. Captured shell overrides normally keep their own execution semantics; an extension can opt into [Fabric-owned bash execution with middleware](shell-middleware.md) to preserve its environment/output filters while gaining the same background handling.
 
 `executor.jevFabric` configures the optional jev-fabric backend for [durable tasks](background-tasks.md#durable-tasks-through-jev-fabric) and [interactive sessions](shell-composition.md). `binary` (default `""`, also `"auto"`) picks your compatible install outside the workspace, then the bundled package; an explicit executable name or trusted absolute path (no shell arguments) is used or the call fails, never falling back. See [which jev-fabric](shell-composition.md#which-jev-fabric). `home` empty uses `JEV_FABRIC_HOME`, else `<cwd>/.jev-fabric-native`: the store other harnesses in the same project share by default. `timeoutMs` (default one hour, up to 24 hours) is a durable job's lifetime when the call gives no explicit `timeout`. Nothing runs or loads until the first `durable: true` call.
 
@@ -457,6 +457,28 @@ return result.text;
 The result keeps `content`, exposes text content as `text`, and carries `details`, `structuredContent` when supplied, `isError`, `terminate`, and source provenance. On Pi 1.0, callable captures use native `ctx.executeTool()` with nested IDs, validation, middleware, and usage accounting. Shells and tools with `prepareArguments()` retain Fabric's adapted execution boundary to preserve scoped cwd, nonzero-exit settlement before redaction, and exactly-once preparation. Both paths use the owning extension's tool context and apply `tool_call`, `tool_result`, and `tool_execution_*` handlers. Tools withdrawn with native `exposure: "hidden"` are not captured.
 
 In full code mode and Schema enforce mode, `fabric_exec` is the only model-declared tool unless a [foreground policy](#foreground-tools) names others in full code mode. Pi 1.0 native `prepareLoadout` and per-request transcript projection hide all other declarations without removing tools from the native callable set. This includes native `codemode`, `tool_search`, MCP tools, and late registrations; `setActiveTools()` cannot open a second model-facing path. Inside Fabric, `pi.read`, `pi.bash`, and other built-ins still route through captured overrides when present. `extensions.read` exposes the override's native result shape. Native MCP tools are also callable by their captured names, for example `extensions.mcp__server__tool(...)`.
+
+### Diagnosing missing tool hooks
+
+If nested `pi.bash`, `pi.write`, `pi.edit`, or interactive shell sessions report
+that extension tool hooks have not initialized, start Pi with
+`PI_FABRIC_DEBUG_TOOL_CAPTURE=1`. Fabric writes bounded `[pi-fabric tool-capture]`
+records to stderr: the number of capture hubs installed, whether a compiled
+host/mapped SDK loader was detected, and whether each observed tool-registry
+refresh contained this Fabric instance's anchor. Logging stops after 32 records
+per capture controller. Tool arguments, commands, paths, and results are not logged.
+
+An installed hub with no matching refresh can mean that a different SDK copy was
+patched, not that startup merely needs more time. Include these records and your
+Pi/Fabric versions when reporting it. This flag enables diagnostics only; it does
+not bypass other extensions' hooks or permit unhooked mutating calls.
+
+To run the managed-install integration probe against a release binary as well as
+the Node CLIs, set `PI_FABRIC_TEST_PI_BINARY` to its absolute executable path and
+run `bunx vitest run tests/managed-install-host-sdk.test.ts` after `bun run build`.
+The probe uses an offline model and checks nested writes, edits, bash, captured
+extension tools, and blocking `tool_call` hooks without a physical host SDK beside
+Fabric.
 
 ### Foreground tools
 

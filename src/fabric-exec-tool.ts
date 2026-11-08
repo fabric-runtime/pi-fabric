@@ -249,7 +249,7 @@ export const createFabricExecTool = (
         description: "Run this entire program in the background and return its task handle immediately. Use for long workflows, including waits for required shell or agent results: keep dependent awaits inside this program. Main can do independent work or yield for the completion event instead of opening another foreground wait. Backgrounding is not task completion; do not restart the work or claim success while results are pending.",
       })),
       timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Hard whole-script deadline in milliseconds; cannot be extended or paused, capped by executor.maxTimeoutMs." })),
-      maxOutputTokens: Type.Optional(Type.Integer({ minimum: 1, description: "Per-call output token budget (estimated at four characters per token), capped by executor.maxOutputChars." })),
+      maxOutputTokens: Type.Optional(Type.Integer({ minimum: 1, description: "Optional per-call output token budget (estimated at four characters per token), capped by executor.maxOutputChars. Omit for full contracts to use the host ceiling; larger results still need projection or paging." })),
       max_output_tokens: Type.Optional(Type.Integer({ minimum: 1, description: "Alias of maxOutputTokens." })),
       display: Type.Optional(
         Type.Union([

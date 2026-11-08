@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
-const OPT_INS = new Set(["PI_FABRIC_JEV_LIVE", "PI_FABRIC_JEV_LOCALTERM", "PI_FABRIC_JEV_FABRIC_BIN"]);
+const OPT_INS = new Set(["PI_FABRIC_JEV_LIVE", "PI_FABRIC_JEV_LOCALTERM", "PI_FABRIC_JEV_FABRIC_BIN", "PI_FABRIC_TEST_PI_BINARY"]);
 
 describe("test environment isolation", () => {
   it("gives test workers no Fabric variables from the shell that started the suite", () => {
@@ -28,6 +28,7 @@ describe("test environment isolation", () => {
         PI_FABRIC_JEV_LIVE: "1",
         PI_FABRIC_JEV_LOCALTERM: "1",
         PI_FABRIC_JEV_FABRIC_BIN: "/opt/jev-fabric",
+        PI_FABRIC_TEST_PI_BINARY: "/opt/pi",
         PI_FABRICATED: "unrelated",
       },
     });
@@ -36,7 +37,7 @@ describe("test environment isolation", () => {
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({
       removed: ["PI_FABRIC_DEPTH", "PI_FABRIC_FULL_CODE_MODE", "PI_FABRIC_KERNEL", "PI_FABRIC_PARENT_RUN"],
-      left: ["PI_FABRICATED", "PI_FABRIC_JEV_FABRIC_BIN", "PI_FABRIC_JEV_LIVE", "PI_FABRIC_JEV_LOCALTERM"],
+      left: ["PI_FABRICATED", "PI_FABRIC_JEV_FABRIC_BIN", "PI_FABRIC_JEV_LIVE", "PI_FABRIC_JEV_LOCALTERM", "PI_FABRIC_TEST_PI_BINARY"],
       path: true,
     });
   });

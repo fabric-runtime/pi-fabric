@@ -26,10 +26,13 @@ const deferred = <T>() => {
   return { promise, resolve, reject };
 };
 type PendingCall = { name: string; answer(): void; fail(): void };
-const fixture = (configure: (config: FabricConfig) => void, provider = "extensions") => {
+const fixture = (configure: (config: FabricConfig) => void, provider = "extensions", providerWait = false) => {
   const registry = new ActionRegistry();
   registries.push(registry);
   const aborted: string[] = [];
+  const waitCapabilities: boolean[] = [];
+  const waitProperties: boolean[] = [];
+  const waitValues: unknown[] = [];
   const calls: Array<ReturnType<typeof deferred<PendingCall>>> = [];
   const slot = (index: number) => calls[index] ??= deferred<PendingCall>();
   let invoked = 0;
@@ -46,6 +49,9 @@ const fixture = (configure: (config: FabricConfig) => void, provider = "extensio
     async list() { return ["ask", "slow", "wait"].map(name => ({ ...descriptor, name })); },
     async describe(name) { return ["ask", "slow", "wait"].includes(name) ? { ...descriptor, name } : undefined; },
     async invoke(name, _args, context) {
+      waitProperties.push(Object.hasOwn(context, "humanWait"));
+      waitValues.push(context.humanWait);
+      waitCapabilities.push(typeof context.humanWait === "function");
       const response = deferred<unknown>();
       const abort = () => { aborted.push(name); response.reject(new Error("aborted")); };
       context.signal?.addEventListener("abort", abort, { once: true });
@@ -55,7 +61,11 @@ const fixture = (configure: (config: FabricConfig) => void, provider = "extensio
         answer: () => response.resolve({ answer: name }),
         fail: () => response.reject(new Error("question failed")),
       });
-      try { return await response.promise; }
+      try {
+        return await (providerWait && name === "ask" && context.humanWait
+          ? context.humanWait(() => response.promise)
+          : response.promise);
+      }
       finally { context.signal?.removeEventListener("abort", abort); }
     },
   });
@@ -66,14 +76,15 @@ const fixture = (configure: (config: FabricConfig) => void, provider = "extensio
   const service = new FabricExecutionService(registry, config);
   const controller = new AbortController();
   controllers.push(controller);
-  const run = (code: string) => service.execute({
+  const run = (code: string, hardTimeoutMs?: number) => service.execute({
     code, signal: controller.signal, parentToolCallId: "human-wait",
+    ...(hardTimeoutMs === undefined ? {} : { hardTimeoutMs }),
     context: { cwd: process.cwd(), hasUI: false, sessionManager: {
       getSessionId: () => "human-wait-test", getSessionFile: () => undefined,
     } } as unknown as ExtensionContext,
     onPartial() {},
   });
-  return { run, aborted, controller, nextCall: () => slot(observed++).promise };
+  return { run, aborted, controller, waitCapabilities, waitProperties, waitValues, nextCall: () => slot(observed++).promise };
 };
 
 describe("HumanWaitDeadlinePause", () => {
@@ -202,6 +213,82 @@ describe.each(runtimes)("%s human-wait deadline pause", (runtime) => {
     const code = python
       ? 'return await asyncio.gather(tools.call(ref="extensions.ask", args={}), tools.call(ref="extensions.ask", args={}))'
       : 'return await Promise.all([extensions.ask({}), extensions.ask({})]);';
+    const pending = run(code);
+    const first = await nextCall();
+    const second = await nextCall();
+    first.answer();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(aborted).toEqual([]);
+    second.answer();
+    expect(await pending).toMatchObject({ success: true, value: [{ answer: "ask" }, { answer: "ask" }] });
+  });
+});
+
+describe.each(runtimes)("%s provider-owned human wait", (runtime) => {
+  const python = runtime === "monty" || runtime === "cpython";
+  const runTest = it.skipIf(python && !availablePythonBackends[runtime]);
+  const configure = (config: FabricConfig): void => {
+    config.executor = { ...normalizeFabricConfig({ executor: {
+      ...(python ? { kernel: "python", pythonRuntime: runtime } : { runtime }),
+      memoryLimitBytes: 256 * 1024 * 1024,
+    } }).executor, timeoutMs: 1000, humanWaitRefs: [] };
+  };
+  const call = (name: string) => python
+    ? `await tools.call(ref="demo.${name}", args={})`
+    : `await tools.call({ref:"demo.${name}",args:{}})`;
+
+  runTest("exposes a native pause for an unlisted provider action", async () => {
+    const { run, nextCall, aborted, waitCapabilities, waitProperties } = fixture(configure, "demo", true);
+    const pending = run(`return ${call("ask")}`);
+    const question = await nextCall();
+    expect(waitCapabilities).toEqual([true]);
+    expect(waitProperties).toEqual([true]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(aborted).toEqual([]);
+    question.answer();
+    expect(await pending).toMatchObject({ success: true, value: { answer: "ask" } });
+  });
+
+  runTest.each(["answer", "fail"] as const)("resumes before subsequent work after %s", async (settle) => {
+    const { run, nextCall } = fixture(configure, "demo", true);
+    const code = python
+      ? `try:\n    ${call("ask")}\nexcept Exception:\n    pass\nreturn ${call("slow")}`
+      : `try { ${call("ask")}; } catch {} return ${call("slow")};`;
+    const pending = run(code);
+    const question = await nextCall();
+    await vi.advanceTimersByTimeAsync(60_000);
+    question[settle]();
+    expect((await nextCall()).name).toBe("slow");
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining("timed out") });
+  });
+
+  runTest("keeps an explicit undefined callback under a hard deadline", async () => {
+    const { run, nextCall, waitCapabilities, waitProperties, waitValues, aborted } = fixture(configure, "demo", true);
+    const pending = run(`return ${call("ask")}`, 1000);
+    await nextCall();
+    expect(waitCapabilities).toEqual([false]);
+    expect(waitProperties).toEqual([true]);
+    expect(waitValues).toEqual([undefined]);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining("timed out") });
+    expect(aborted).toContain("ask");
+  });
+
+  runTest("cancels inside a provider-owned wait", async () => {
+    const { run, nextCall, controller, aborted } = fixture(configure, "demo", true);
+    const pending = run(`return ${call("ask")}`);
+    await nextCall();
+    controller.abort(new Error("user cancelled"));
+    expect(await pending).toMatchObject({ success: false });
+    expect(aborted).toContain("ask");
+  });
+
+  runTest("keeps overlapping provider waits paused until both settle", async () => {
+    const { run, nextCall, aborted } = fixture(configure, "demo", true);
+    const code = python
+      ? 'return await asyncio.gather(tools.call(ref="demo.ask", args={}), tools.call(ref="demo.ask", args={}))'
+      : 'return await Promise.all([tools.call({ref:"demo.ask",args:{}}), tools.call({ref:"demo.ask",args:{}})]);';
     const pending = run(code);
     const first = await nextCall();
     const second = await nextCall();

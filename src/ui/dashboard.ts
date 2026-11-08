@@ -5,9 +5,9 @@ import {
   getKeybindings,
   Key,
   matchesKey,
-  truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { FabricActivityRun } from "../activity/types.js";
 import type { FabricAgentMessageDelivery } from "../main-agent.js";
 import type {

@@ -23,6 +23,10 @@ const configuredCompactionThreshold = (
 const runThresholdCompact = (
   context: ExtensionContext,
 ): Promise<boolean> => new Promise<boolean>((resolve) => {
+  if (context.signal?.aborted) {
+    resolve(false);
+    return;
+  }
   context.compact({
     onComplete: () => resolve(true),
     onError: (error) => {
@@ -74,6 +78,7 @@ export const compactAtConfiguredThreshold = async (
   config: FabricConfig,
   onTrigger?: (trigger: AutoCompactionTrigger, committed: boolean) => void,
 ): Promise<boolean> => {
+  if (context.signal?.aborted) return false;
   const trigger = autoCompactionTrigger(context, config);
   if (trigger === undefined) return false;
   const committed = await runThresholdCompact(context);

@@ -58,6 +58,27 @@ describe("portable Fabric execution guidelines", () => {
     expect(fabricExecutionGuidelines("python", "monty")).toEqual(original);
   });
 
+  it("keeps schema and persistence guidance concise across coding kernels", () => {
+    for (const kernel of ["typescript", "python"] as const) {
+      const text = fabricExecutionGuidelines(kernel).join("\n");
+      expect(text).toContain("Inspect findings before choosing dependent reads or edits.");
+      expect(text).toContain("Background long-running work when independent tasks can proceed; collect its result before completion.");
+      expect(text).toContain("Form a falsifiable hypothesis covering the reported failure and affected paths.");
+      expect(text).toContain("Let contrary evidence invalidate the plan.");
+      expect(text).toContain("Verify postconditions before declaring success.");
+      expect(text).not.toContain("smallest complete fix");
+      expect(text).not.toContain("A build alone is not completion");
+      expect(text).not.toContain("schema.hypothesize");
+      expect(text).toContain("Be ambitious and persistent");
+      expect(text).toContain("Treat new requests as additive, not replacements");
+      expect(text).toContain("unless explicitly reprioritized");
+      expect(text.length).toBeLessThan(1700);
+    }
+    const managed = fabricExecutionGuidelines("typescript", "monty", true).join("\n");
+    expect(managed).toContain("Treat new requests as additive, not replacements");
+    expect(managed).toContain("Verify postconditions before declaring success.");
+  });
+
   it("keeps language and sandbox instructions faithful to the selected kernel", () => {
     expect(fabricExecutionGuidelines("typescript").join("\n")).toContain("Promise.all");
     const monty = fabricExecutionGuidelines("python", "monty").join("\n");

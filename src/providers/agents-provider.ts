@@ -1152,6 +1152,7 @@ export class AgentsProvider implements FabricProvider {
           args.data,
           "steer",
           context,
+          typeof args.triggerTurn === "boolean" ? { triggerTurn: args.triggerTurn } : {},
         );
       case "followUp":
         return this.routeMessage(
@@ -1160,6 +1161,7 @@ export class AgentsProvider implements FabricProvider {
           args.data,
           "followUp",
           context,
+          typeof args.triggerTurn === "boolean" ? { triggerTurn: args.triggerTurn } : {},
         );
       case "setSteeringMode":
         return this.manager.setSteeringMode(String(args.id), this.#steeringMode(args.mode));

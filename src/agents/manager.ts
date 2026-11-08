@@ -1252,7 +1252,17 @@ export class AgentManager {
       const componentGuidance = recursive
         ? undefined
         : this.#resolveParticipantGuidance?.({ ...(model ? { model } : {}), runner })?.trim();
-      const systemPrompt = [request.systemPrompt?.trim(), request.childSkills?.preload, componentGuidance]
+      // The lineage root is stable across sibling runs. Keep per-run ids and
+      // task text out of the system prompt so the shared role prefix stays warm.
+      const mainGuidance = this.#mainAgentId
+        ? [
+            `Your owning Main peer (lineage root): ${this.#mainAgentId}.`,
+            capabilities.recursiveFabric && extensions && (recursive || inheritedFullCodeMode || requiresFabricKernel)
+              ? 'Use agents.self() for your participant identity and agents.main() for your owning Main. To report back, use agents.steer({ id: "main", message: "..." }) or agents.followUp({ id: "main", message: "..." }) in fabric_exec. The alias "main" always targets your lineage root, not another peer\'s Main. Use an exact discovered participant id to message another peer or worker; ownerHostId is a routing address, not a participant id.'
+              : "Report results in your response; the host delivers them to your coordinator. This launch does not provide direct Fabric coordination tools.",
+          ].join("\n")
+        : undefined;
+      const systemPrompt = [request.systemPrompt?.trim(), request.childSkills?.preload, componentGuidance, mainGuidance]
         .filter((section): section is string => Boolean(section))
         .join("\n\n") || undefined;
       const sessionExportDir = resolveSessionExportDir(this.config);

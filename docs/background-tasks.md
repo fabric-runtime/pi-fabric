@@ -2,7 +2,8 @@
 
 Fabric-managed `pi.bash` and `pi.powershell` commands have session-owned job IDs.
 `background: true`, the shell hang threshold, or Ctrl+B twice detaches a command;
-an explicit shell `timeout` remains a hard cap. A foreground shell shows the
+an explicit shell `timeout` remains a hard cap on the process, not on the wait.
+After a hand-off, `tasks.wait` keeps waiting for the result. A foreground shell shows the
 shortcut while it waits, including while output streams; the first keypress prompts
 for confirmation.
 Completed jobs have terminal states

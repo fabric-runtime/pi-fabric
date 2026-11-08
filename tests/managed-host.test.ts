@@ -87,6 +87,48 @@ describe("explicit managed host", () => {
       vi.unstubAllEnvs();
     }
   });
+  it("owns independent output ceilings and freezes the host snapshot", () => {
+    const executor = { maxOutputChars: 262_144, maxNestedResultChars: 123_456 };
+    const host = new FabricManagedHost({ providers: [], executor });
+    executor.maxOutputChars = 1;
+    expect(host.config().executor).toMatchObject({ maxCpuSliceMs: 1000, maxOutputChars: 262_144, maxNestedResultChars: 123_456 });
+    const mutated = host.config();
+    mutated.executor.maxOutputChars = 2;
+    mutated.executor.maxNestedResultChars = 3;
+    expect(host.config().executor).toMatchObject({ maxOutputChars: 262_144, maxNestedResultChars: 123_456 });
+    expect(Object.isFrozen(host.options.executor)).toBe(true);
+    // JavaScript callers can pass undefined despite exactOptionalPropertyTypes.
+    const defaults = new FabricManagedHost({ providers: [], executor: { maxOutputChars: undefined } as never });
+    expect(defaults.config().executor.maxOutputChars).toBe(DEFAULT_FABRIC_CONFIG.executor.maxOutputChars);
+    expect(defaults.config().executor.maxNestedResultChars).toBe(DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars);
+    const finalOnly = new FabricManagedHost({ providers: [], executor: { maxOutputChars: 262_144 } });
+    expect(finalOnly.config().executor).toMatchObject({ maxOutputChars: 262_144, maxNestedResultChars: DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars });
+    const nestedOnly = new FabricManagedHost({ providers: [], executor: { maxNestedResultChars: 123_456 } });
+    expect(nestedOnly.config().executor).toMatchObject({ maxOutputChars: DEFAULT_FABRIC_CONFIG.executor.maxOutputChars, maxNestedResultChars: 123_456 });
+  });
+  it("normalizes nullable host ceilings independently to their numeric defaults", () => {
+    const defaults = new FabricManagedHost({ providers: [], executor: { maxOutputChars: null, maxNestedResultChars: null } });
+    expect(defaults.config().executor).toMatchObject({
+      maxOutputChars: DEFAULT_FABRIC_CONFIG.executor.maxOutputChars,
+      maxNestedResultChars: DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars,
+    });
+    expect(defaults.options.executor).toMatchObject({
+      maxOutputChars: DEFAULT_FABRIC_CONFIG.executor.maxOutputChars,
+      maxNestedResultChars: DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars,
+    });
+    const finalDefault = new FabricManagedHost({ providers: [], executor: { maxOutputChars: null, maxNestedResultChars: 123_456 } });
+    expect(finalDefault.config().executor).toMatchObject({ maxOutputChars: DEFAULT_FABRIC_CONFIG.executor.maxOutputChars, maxNestedResultChars: 123_456 });
+    const nestedDefault = new FabricManagedHost({ providers: [], executor: { maxOutputChars: 262_144, maxNestedResultChars: null } });
+    expect(nestedDefault.config().executor).toMatchObject({ maxOutputChars: 262_144, maxNestedResultChars: DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars });
+  });
+  it("rejects malformed host output limits rather than accepting ambient or fallback values", () => {
+    for (const key of ["maxOutputChars", "maxNestedResultChars"] as const) {
+      for (const value of ["100", false, 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(() => new FabricManagedHost({ providers: [], executor: { [key]: value } as never }))
+          .toThrow(`managedHost.executor.${key} must be a positive safe integer`);
+      }
+    }
+  });
   it("fixes the execution policy independently of ambient configuration", () => {
     const host = new FabricManagedHost({providers: []});
     const config = host.config();

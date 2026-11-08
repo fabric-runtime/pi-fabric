@@ -1234,6 +1234,11 @@ export type FabricMessageSender =
     };
 
 export interface FabricInvocationContext {
+  /** Host-only native deadline pause. Wrap only an authenticated human decision,
+   * never tool dispatch or guest work. During fabric_exec the property is present,
+   * with undefined under a hard deadline or without native pause support.
+   * The provider must honor signal; this callback does not grant authorization. */
+  humanWait?: (<T>(wait: () => Promise<T>) => Promise<T>) | undefined;
   /** Host-selected result projection; never an action argument or an authority grant. */
   nativeToolResult?: boolean;
   cwd: string;

@@ -260,6 +260,19 @@ const normalizeResult = (
 type PiToolResult = AgentToolResult<unknown>;
 
 /**
+ * Why a nested mutating call is refused while no ExtensionRunner can run the
+ * other extensions' `tool_call` hooks. `unavailable` means capture found no
+ * runner class in this host, so no refresh will ever supply one: a retry
+ * cannot succeed, and the message says so instead.
+ */
+export function missingToolHooksMessage(subject: string, unavailable: boolean): string {
+  return unavailable
+    ? `${subject} is unavailable: Pi Fabric could not find this Pi host's ExtensionRunner, so other extensions' tool hooks cannot run for nested calls and retrying will not help. ` +
+      "Read-only tools still work. Run Pi from its npm package or a release binary, or point PI_PACKAGE_DIR at the Pi package the host runs, then restart Pi."
+    : `${subject} is unavailable until extension tool hooks initialize; retry once tools are ready`;
+}
+
+/**
  * Emit a `tool_call` event for a nested call and throw when a hook blocks it.
  * Hooks may mutate `input` in place. Shared by pi.* tools and by interactive
  * sessions, so a command guard sees both through one code path.
@@ -644,8 +657,14 @@ export class PiToolsProvider implements FabricProvider {
       ...(pid !== undefined ? { pid } : {}),
       ...exited,
     });
+    // An auto hand-off ends only this wait. Say that the caller's timeout still
+    // bounds the process, and name the call that keeps waiting for it.
+    const timeoutSeconds = Number(executeArgs.timeout);
+    const waitNotice = !background && !exited && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+      ? ` Its timeout (${timeoutSeconds}s) bounds the process, not this wait; to wait for the result, call tasks.wait with {"id":"${job.id}","timeoutMs":300000} until it reports a terminal status. Set the enclosing fabric_exec timeoutMs long enough for the wait, or use a shorter observation timeout.`
+      : "";
     const durableNotice = job.durable ? ` Durable: owned by the jev-fabric store at ${job.durable.home}; it keeps running if Pi exits and reattaches to this session on resume. Stop it explicitly with tasks.stop when no longer needed.` : "";
-    const output = appendShellHangNotice(job.snapshotText(), `${notice}\n[Task ${job.id}; /fabric tasks or tools.call({ref:"tasks.get",args:{id:"${job.id}"}}). ${monitor?.delivery === "ui" ? "UI-only monitor: will not wake the agent." : "Completion will notify this session; do not poll."}${durableNotice}]`);
+    const output = appendShellHangNotice(job.snapshotText(), `${notice}\n[Task ${job.id}; /fabric tasks or tools.call({ref:"tasks.get",args:{id:"${job.id}"}}). ${monitor?.delivery === "ui" ? "UI-only monitor: will not wake the agent." : "Completion will notify this session; do not poll."}${waitNotice}${durableNotice}]`);
     context.update(exited
       ? `${name}: ${exited.exitCode === null ? "ended" : `exited with code ${exited.exitCode}`} in the background`
       : `${name}: still running after ${Math.max(1, Math.round(elapsedMs / 1000))}s`);
@@ -684,14 +703,12 @@ export class PiToolsProvider implements FabricProvider {
     // preflight extensions rely on — is not yet available. This is the
     // transient window before the first tool refresh populates the runner.
     // Running a mutating tool here would silently skip that preflight, so fail
-    // closed for non-read tools and let the model retry once hooks are live.
+    // closed for non-read tools; the error says whether a retry can succeed.
     // The no-catalog path (tests, embeds) has no extension system to guard and
     // keeps the direct-execute fallback below unchanged, unless a host policy
     // relies on those hooks: then a non-read tool never runs without them.
     if ((this.#catalog || this.#requireToolHooks?.()) && !runner && !this.#requireCapturedOverrides && riskForTool(name) !== "read") {
-      throw new Error(
-        `Pi tool ${name} is unavailable until extension tool hooks initialize; retry once tools are ready`,
-      );
+      throw new Error(missingToolHooksMessage(`Pi tool ${name}`, this.#catalog?.runnerUnavailable === true));
     }
     let preflightEmitted = false;
     if (

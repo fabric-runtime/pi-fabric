@@ -92,7 +92,7 @@ export class RuntimeStateBuiltins {
           create: () => new SessionsProvider(durable, {
             cwd,
             shellOverride: () => capturedTools.get("bash") !== undefined,
-            preflight: toolCallShellPreflight(() => capturedTools.runner),
+            preflight: toolCallShellPreflight(() => capturedTools.runner, () => capturedTools.runnerUnavailable),
           }),
         }));
       }

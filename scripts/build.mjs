@@ -78,6 +78,8 @@ const lazyEntryPoints = [
   "src/topology/peer-settle.ts",
   // System prompt builders; loaded at the first agent start.
   "src/core/prompt-guidance.ts",
+  // Clipboard bytes enter the initial user message, on first pasted input only.
+  "src/core/pasted-images.ts",
   "src/decisions/command.ts",
   "src/decisions/events.ts",
   "src/programs/host.ts",

@@ -136,10 +136,10 @@ describe("formatPeerPresenceNotice", () => {
     expect(formatPeerPresenceNotice(second, "/repo")).toBe(text);
     expect(text).toBe([
       "<fabric-peers>",
-      "Other Pi sessions are working in this project and share its files with you:",
+      "Other Pi sessions are connected to this project and share its files with you:",
       "- FAB-2 (id session:FAB-2)",
       "- FAB-3 (id session:FAB-3)",
-      "File or git changes you did not make may be theirs: do not revert or overwrite them. Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and `agents.steer` to message one by id.",
+      "File or git changes you did not make may be theirs: do not revert or overwrite them. Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and `agents.steer` to message one by id. Coordinate only with relevant peers that are running or have pending messages, not every connected session. Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.",
       "</fabric-peers>",
     ].join("\n"));
     expect(text).not.toMatch(/\bidle\b|a\/b|\d{5}/);
@@ -160,7 +160,7 @@ describe("formatPeerPresenceNotice", () => {
     const text = formatPeerPresenceNotice({ joined: [], left: [record("FAB-2")], present: [] }, "/repo");
     expect(text).toBe([
       "<fabric-peers>",
-      "No other Pi session is working in this project any more.",
+      "No other Pi session is connected to this project any more.",
       "No longer present: FAB-2.",
       "</fabric-peers>",
     ].join("\n"));
@@ -235,7 +235,7 @@ describe("PeerPresenceNotifier", () => {
       details: { version: 1, present: [{ id: "session:FAB-2", label: "FAB-2", cwd: "/repo" }] },
     });
     expect(result?.message.content).toContain("- FAB-2 (id session:FAB-2)");
-    expect(h.notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 active", "info");
+    expect(h.notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 connected", "info");
     expect(h.start()).toBeUndefined();
     expect(h.boundary()).toBeUndefined();
     expect(h.notify).toHaveBeenCalledTimes(1);
@@ -255,7 +255,7 @@ describe("PeerPresenceNotifier", () => {
       display: false,
     });
     expect(result).not.toHaveProperty("continue");
-    expect(h.notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 active", "info");
+    expect(h.notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 connected", "info");
     expect(h.boundary()).toBeUndefined();
   });
 
@@ -276,10 +276,10 @@ describe("PeerPresenceNotifier", () => {
     expect(h.boundary()).toBeUndefined();
     h.advance(PEER_DEPARTURE_GRACE_MS);
     const content = h.boundary()?.entries[0].content as string;
-    expect(content).toContain("No other Pi session is working in this project any more.");
+    expect(content).toContain("No other Pi session is connected to this project any more.");
     expect(content).toContain("No longer present: FAB-2.");
     expect(content).not.toContain("agents.steer");
-    expect(h.notify).toHaveBeenLastCalledWith("Fabric peers: left FAB-2; 0 active", "info");
+    expect(h.notify).toHaveBeenLastCalledWith("Fabric peers: left FAB-2; 0 connected", "info");
   });
 
   it("is restored from the branch, re-announces after compaction, and follows branch navigation", () => {

@@ -167,6 +167,34 @@ describe("registered extension tool capture", () => {
     expect(catalog.get("fabric_exec")).toBeUndefined();
   });
 
+  it("traces missing and matching anchors without arguments, with bounded opt-in logging", async () => {
+    const previous = process.env.PI_FABRIC_DEBUG_TOOL_CAPTURE;
+    process.env.PI_FABRIC_DEBUG_TOOL_CAPTURE = "1";
+    const output = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const anchor = tool("fabric_exec");
+      const catalog = new CapturedToolCatalog();
+      const controller = await installRegisteredToolCapture({ anchorDefinition: anchor, catalog });
+      controllers.push(controller);
+      runnerWith(registered(tool("unrelated"), "/private/path")).getAllRegisteredTools();
+      const runner = runnerWith(registered(anchor, "/private/fabric"));
+      runner.getAllRegisteredTools();
+      expect(output.mock.calls[0]?.[0]).toContain('"event":"install"');
+      expect(output.mock.calls[1]?.[0]).toContain('"anchor":false');
+      expect(output.mock.calls[2]?.[0]).toContain('"anchor":true');
+      for (let i = 0; i < 40; i++) runner.getAllRegisteredTools();
+      expect(output).toHaveBeenCalledTimes(33);
+      expect(output.mock.calls.at(-1)?.[0]).toContain("diagnostic limit reached");
+      expect(JSON.stringify(output.mock.calls)).not.toContain("/private/");
+      expect(catalog.runner).toBe(runner);
+      controller.dispose();
+    } finally {
+      output.mockRestore();
+      if (previous === undefined) delete process.env.PI_FABRIC_DEBUG_TOOL_CAPTURE;
+      else process.env.PI_FABRIC_DEBUG_TOOL_CAPTURE = previous;
+    }
+  });
+
   it("classifies Fovea's graph-navigation tools as read-only", () => {
     const definitions = [
       "fovea_sketch",
@@ -457,6 +485,85 @@ describe("registered extension tool capture", () => {
       expect(catalog.runner).toBe(runner);
     } finally {
       holder[key] = saved;
+    }
+  });
+
+  it.each(["/$bunfs/root/pi", "B:/~BUN/root/pi.exe", "file:///B:/%7EBUN/root/pi.exe"])("patches the mapped SDK instead of PI_PACKAGE_DIR for compiled entry %s", async (entry) => {
+    // A release binary runs its embedded SDK from Bun's virtual file system and
+    // maps that SDK for the extensions it loads. A Pi package on disk is a dead
+    // class there, even when PI_PACKAGE_DIR names it.
+    const packageRoot = await mkdtemp(path.join(tmpdir(), "fabric-binary-pkg-"));
+    const savedArgv1 = process.argv[1]!;
+    const savedRoot = process.env.PI_PACKAGE_DIR;
+    try {
+      await mkdir(path.join(packageRoot, "dist"), { recursive: true });
+      await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", type: "module" }));
+      await writeFile(path.join(packageRoot, "dist", "index.js"), "export class ExtensionRunner { getAllRegisteredTools() { return []; } }\n");
+      const DiskRunner = ((await import(pathToFileURL(path.join(packageRoot, "dist", "index.js")).href)) as { ExtensionRunner: typeof ExtensionRunner }).ExtensionRunner;
+      const diskOriginal = DiskRunner.prototype.getAllRegisteredTools;
+      process.env.PI_PACKAGE_DIR = packageRoot;
+      process.argv[1] = entry;
+      const anchor = tool("fabric_exec");
+      const catalog = new CapturedToolCatalog();
+      controllers.push(await installRegisteredToolCapture({ anchorDefinition: anchor, catalog }));
+      expect(DiskRunner.prototype.getAllRegisteredTools).toBe(diskOriginal);
+      const runner = runnerWith(registered(anchor, "/fabric/compiled.js"), registered(tool("binary_tool"), "/fixture.js"));
+      runner.getAllRegisteredTools();
+      expect(catalog.runner).toBe(runner);
+      expect(catalog.runnerUnavailable).toBe(false);
+    } finally {
+      process.argv[1] = savedArgv1;
+      if (savedRoot === undefined) delete process.env.PI_PACKAGE_DIR;
+      else process.env.PI_PACKAGE_DIR = savedRoot;
+      await rm(packageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["/$bunfs/root/pi", "B:/~BUN/root/pi.exe", "file:///B:/%7EBUN/root/pi.exe"])("uses the entry-mapped host SDK instead of a native peer for %s (#342)", async (entry) => {
+    // The bootstrap is loaded by Pi's virtual-module realm. Capture can live
+    // in a natively imported chunk, where a bare SDK import succeeds but
+    // resolves a different (unused) class. Finding that class is not capture.
+    class MappedRunner {
+      extensions: Array<{ tools: Map<string, RegisteredTool> }> = [];
+      getAllRegisteredTools(): RegisteredTool[] {
+        return this.extensions.flatMap(extension => [...extension.tools.values()]);
+      }
+    }
+    const key = Symbol.for("pi-fabric.hostSdkLoader");
+    const registry = globalThis as Record<symbol, unknown>;
+    const savedLoader = registry[key];
+    const savedArgv1 = process.argv[1];
+    const savedRoot = process.env.PI_PACKAGE_DIR;
+    const nativeOriginal = ExtensionRunner.prototype.getAllRegisteredTools;
+    const mappedOriginal = MappedRunner.prototype.getAllRegisteredTools;
+    const loader = vi.fn(async () => ({ ExtensionRunner: MappedRunner }));
+    registry[key] = loader;
+    process.argv[1] = entry;
+    delete process.env.PI_PACKAGE_DIR;
+    try {
+      const anchor = tool("fabric_exec");
+      const catalog = new CapturedToolCatalog();
+      const controller = await installRegisteredToolCapture({ anchorDefinition: anchor, catalog });
+      controllers.push(controller);
+      const runner = new MappedRunner();
+      runner.extensions = [{ tools: new Map([
+        ["fabric_exec", registered(anchor, "/fabric/compiled.js")],
+        ["mapped_tool", registered(tool("mapped_tool"), "/fixture.js")],
+      ]) }];
+      runner.getAllRegisteredTools();
+      expect(catalog.runner).toBe(runner);
+      expect(catalog.require("mapped_tool").runner).toBe(runner);
+      expect(catalog.runnerUnavailable).toBe(false);
+      expect(loader).toHaveBeenCalledTimes(1);
+      expect(ExtensionRunner.prototype.getAllRegisteredTools).toBe(nativeOriginal);
+      controller.dispose();
+      expect(MappedRunner.prototype.getAllRegisteredTools).toBe(mappedOriginal);
+    } finally {
+      if (savedLoader === undefined) delete registry[key];
+      else registry[key] = savedLoader;
+      process.argv[1] = savedArgv1!;
+      if (savedRoot === undefined) delete process.env.PI_PACKAGE_DIR;
+      else process.env.PI_PACKAGE_DIR = savedRoot;
     }
   });
 

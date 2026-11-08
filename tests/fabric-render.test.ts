@@ -87,6 +87,18 @@ describe("TUI width bounds (#84)", () => {
 });
 
 describe("fabric nested rendering", () => {
+  it.each(["steer", "followUp"])("shows peer labels and meaningful session ID fallbacks for %s", tool => {
+    const audit = { ref: `agents.${tool}`, args: { id: "session:abcdef12-3456-7890", message: "Please coordinate" }, success: true };
+    expect(nestedCallTitle(audit, plainTheme)).toBe(`${tool} session:abcdef12`);
+    const labelled = { ...audit, preview: { kind: "fabric-agent-target", id: audit.args.id, name: "FAB-4" } };
+    expect(nestedCallTitle(labelled, plainTheme)).toBe(`${tool} FAB-4`);
+    const headlines = captureFabricCallHeadlinePreviews([labelled]);
+    const [restored] = restoreFabricCallHeadlinePreviews([audit], headlines);
+    expect(nestedCallTitle(restored!, plainTheme)).toBe(`${tool} FAB-4`);
+    expect(nestedCallTitle({ ...audit, preview: { kind: "fabric-agent-target", id: "other", name: "Wrong peer" } }, plainTheme)).toBe(`${tool} session:abcdef12`);
+  });
+
+
   it("filters internal successes before multicall counts without shifting preview attachment", () => {
     const audits = [
       { ref: "native.load", success: true },

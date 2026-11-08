@@ -263,6 +263,12 @@ const extensionRunnerConstructors = async (): Promise<ExtensionRunnerConstructor
   // them evaluated the peer package's unbundled SDK and every chunk of its
   // bundle in each durable worker.
   if (constructors.size > 0) return [...constructors];
+  // A compiled Pi binary runs every session on its embedded SDK, which Pi maps
+  // for the modules it loads, including this one: the import below. A Pi
+  // package found on disk (PI_PACKAGE_DIR pointing at an npm install) is a dead
+  // class there, and patching it would skip that import and leave nested
+  // mutating pi.* calls failing closed for good.
+  if (isCompiledPiBinary()) return inRealmExtensionRunner();
   const packageRoots = new Set(
     [process.env.PI_PACKAGE_DIR, hostPackageRoot(), entryRealmPackageRoot()]
       .filter((root): root is string => typeof root === "string" && Boolean(root))
@@ -274,23 +280,54 @@ const extensionRunnerConstructors = async (): Promise<ExtensionRunnerConstructor
       constructors.add(Runner);
     }
   }
-  if (constructors.size === 0) {
-    // The host does not advertise its package directory (tests, embeds,
-    // future layouts): fall back to resolving it in this module realm.
-    try {
-      const hostModule = (await import("@earendil-works/pi-coding-agent")) as {
-        ExtensionRunner?: ExtensionRunnerConstructor;
-      };
-      if (hostModule.ExtensionRunner) constructors.add(hostModule.ExtensionRunner);
-    } catch { /* host unavailable in this realm; tool capture stays inert */ }
+  // The host does not advertise its package directory (tests, embeds,
+  // future layouts): fall back to resolving it in this module realm.
+  return constructors.size > 0 ? [...constructors] : inRealmExtensionRunner();
+};
+
+// The markers of Pi's own test (config.ts isBunBinary): Bun runs a compiled
+// binary from a virtual file system, /$bunfs/root/pi on POSIX and
+// B:/~BUN/root/pi on Windows, and argv[1] names that virtual entry.
+const isCompiledPiBinary = (cli: string | undefined = process.argv[1]): boolean =>
+  typeof cli === "string" && /\$bunfs|~BUN|%7EBUN/.test(cli);
+
+const inRealmExtensionRunner = async (): Promise<ExtensionRunnerConstructor[]> => {
+  try {
+    // This module can be a native chunk even when the entry was loaded by
+    // Pi's virtual-module loader. A bare import here can find an unused disk
+    // peer (or fail entirely); use the entry's mapped loader for the live SDK.
+    const { loadHostSdk } = await import("../core/host-sdk.js");
+    const hostModule = await loadHostSdk();
+    return isExtensionRunnerConstructor(hostModule.ExtensionRunner) ? [hostModule.ExtensionRunner] : [];
+  } catch {
+    return []; // Host unavailable in this realm; tool capture stays inert.
   }
-  return [...constructors];
 };
 
 export const installRegisteredToolCapture = async (
   options: RegisteredToolCaptureOptions,
 ): Promise<RegisteredToolCaptureController> => {
+  // Opt-in, bounded diagnostics contain counts/booleans only: never tool
+  // arguments, source paths, commands, or captured output. They must not
+  // change capture or prevent hook initialization if stderr is unavailable.
+  const debug = process.env.PI_FABRIC_DEBUG_TOOL_CAPTURE === "1";
+  let traces = 0;
+  const trace = (event: string, fields: Record<string, number | boolean>): void => {
+    if (!debug || traces >= 32) return;
+    traces++;
+    try {
+      console.error(`[pi-fabric tool-capture] ${JSON.stringify({ event, ...fields })}`);
+      if (traces === 32) console.error("[pi-fabric tool-capture] diagnostic limit reached");
+    } catch { /* Diagnostics must not interrupt capture. */ }
+  };
   const hubs = (await extensionRunnerConstructors()).map(captureHub);
+  trace("install", {
+    hubs: hubs.length,
+    compiled: isCompiledPiBinary(),
+    mappedLoader: typeof (globalThis as Record<symbol, unknown>)[Symbol.for("pi-fabric.hostSdkLoader")] === "function",
+  });
+  // No class to observe means no refresh will ever supply the runner.
+  if (hubs.length === 0) options.catalog.markRunnerUnavailable();
   const anchorToken = {};
   Object.defineProperty(options.anchorDefinition, ANCHOR_SYMBOL, {
     value: anchorToken,
@@ -308,6 +345,7 @@ export const installRegisteredToolCapture = async (
         (tool.definition as unknown as Record<PropertyKey, unknown>)[ANCHOR_SYMBOL] ===
           anchorToken || definitionDelegatesTo(tool.definition, options.anchorDefinition),
     );
+    trace("refresh", { tools: tools.length, anchor: Boolean(anchor) });
     if (!anchor) return tools;
 
     options.catalog.replace(tools, runner, policy, anchor.sourceInfo.path);
@@ -324,6 +362,7 @@ export const installRegisteredToolCapture = async (
     dispose() {
       if (disposed) return;
       disposed = true;
+      trace("dispose", { captured: options.catalog.size });
       for (const hub of hubs) {
         hub.listeners.delete(listener);
         hub.restore?.();

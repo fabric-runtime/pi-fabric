@@ -1,4 +1,5 @@
-import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 
 interface MeasuredPartialResult {
   component: Component;

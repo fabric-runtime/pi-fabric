@@ -7,10 +7,10 @@ import {
   Key,
   Text,
   matchesKey,
-  truncateToWidth,
   visibleWidth,
   type EditorTheme,
 } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import { BorderStatusEditor, BorderWorkingIndicator } from "./border-status-editor.js";
 import { FabricConversationTranscriptRenderer, type FabricConversationTranscriptRendererOptions } from "./conversation-render.js";
 import { conversationFooter, type FabricConversationAppearance } from "./conversation-chrome.js";
@@ -261,6 +261,7 @@ export class FabricConversationView implements Component, Focusable {
   private readonly list: FabricWidget | undefined;
   private listFocused = false;
   private listTop = 0;
+  private rawMousePress: { x: number; y: number; button: TuiMouseEvent["button"] } | undefined;
   private currentId: string | undefined;
   private feedback: Feedback | undefined;
   private commandNotification: { component: Text; epoch: number; pendingResult?: Text } | undefined;
@@ -463,13 +464,27 @@ export class FabricConversationView implements Component, Focusable {
       const button = Number(mouse[1]);
       const wheel = (button & 64) !== 0;
       const release = mouse[4] === "m" || (!wheel && (button & 3) === 3 && !(button & 32));
-      this.handleMouse({ type: wheel ? "wheel" : release ? "release" : (button & 32) ? "drag" : "press",
+      const event: TuiMouseEvent = {
+        type: wheel ? "wheel" : release ? "release" : (button & 32) ? (button & 3) === 3 ? "move" : "drag" : "press",
         button: wheel ? "none" : (button & 3) === 0 ? "left" : (button & 3) === 1 ? "middle" : (button & 3) === 2 ? "right" : "none",
         ...(wheel ? { wheelDelta: (button & 1) === 0 ? -3 : 3 } : {}),
         x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1, screenX: Number(mouse[2]) - 1, screenY: Number(mouse[3]) - 1,
-        width: this.tui.terminal.columns, height: this.terminalRows(), shift: !!(button & 4), alt: !!(button & 8), ctrl: !!(button & 16) });
+        width: this.tui.terminal.columns, height: this.terminalRows(), shift: !!(button & 4), alt: !!(button & 8), ctrl: !!(button & 16),
+      };
+      // Regular Pi forwards raw SGR input, unlike fullscreen's normalized
+      // pointer dispatch. Synthesize its click only after an unmoved release;
+      // the list deliberately does not activate on a press or text drag.
+      const pressed = this.rawMousePress;
+      if (event.type === "press") this.rawMousePress = { x: event.x, y: event.y, button: event.button };
+      else if (event.type !== "move") this.rawMousePress = undefined;
+      this.handleMouse(event);
+      if (event.type === "release" && pressed?.button === "left" &&
+        (event.button === "left" || event.button === "none") && pressed.x === event.x && pressed.y === event.y) {
+        this.handleMouse({ ...event, type: "click", button: "left" });
+      }
       return;
     }
+    this.rawMousePress = undefined;
     if (this.listFocused && this.list) {
       this.list.handleInput(data);
       this.tui.requestRender();
@@ -609,6 +624,11 @@ export class FabricConversationView implements Component, Focusable {
       head.push(feedback);
       remaining--;
     }
+    // Match Pi's fixed above-editor spacer: it stays below the scrolling
+    // viewport (and any queued messages), including while reading old history.
+    // On tiny screens, keep one transcript row instead of reserving the gap.
+    const editorGap = editorShowsTopBorder && remaining > 1 ? [""] : [];
+    remaining -= editorGap.length;
     const queueBudget = Math.max(0, remaining - 1);
     if (queueLines.length > queueBudget) {
       const cursor = queueLines.findIndex((line) => line.includes(CURSOR_MARKER));
@@ -653,7 +673,7 @@ export class FabricConversationView implements Component, Focusable {
       this.latest.paint(body, width, head.length, !imageRows?.has(body.length - 1) && !!entry && latestRow > 0,
         this.scrollbar.visible, this.theme);
     } else this.scrollbar.reset();
-    return [...head, ...body.slice(0, remaining), ...queueLines, ...editorLines, ...footer, ...list]
+    return [...head, ...body.slice(0, remaining), ...queueLines, ...editorGap, ...editorLines, ...footer, ...list]
       .slice(0, rows)
       .map((line) => isKittyImageLine(line) || visibleWidth(line) <= width ? line : truncateToWidth(line, width, ""));
   }
@@ -664,6 +684,17 @@ export class FabricConversationView implements Component, Focusable {
     if (this.disposed) return false;
     this.updateTargets();
     const changed = this.observe();
+    // Byte-bounded tail pages can contain only a hidden message or a collapsed
+    // tool, leaving older visible history offscreen until the first scroll.
+    // Fill at most one page per existing refresh tick, outside render(), and
+    // never move a user's pinned history window or fetch newer records.
+    if (this.currentId && this.state.view(this.currentId).following &&
+      this.observedTranscript?.hasMore && !this.observedTranscript.hasNewer &&
+      this.lastBody.length > 0 && this.lastBody.length < this.lastBodyBudget &&
+      this.options.loadOlder(this.currentId)) {
+      this.observe();
+      return true;
+    }
     return changed || this.selectedTargetIsWorking();
   }
 
@@ -1355,7 +1386,10 @@ export class FabricConversationView implements Component, Focusable {
       while (tail.length < reserved) tail.push("");
     }
     if (!editorVisible && !this.observedTranscript?.hasNewer) tail.push(...this.working?.render(width) ?? []);
-    if (budget > 1) tail.push("");
+    // The mounted editor owns its fixed separator. Keep a history row only for
+    // the fallback or the latest overlay, so it cannot cover a command result
+    // on an older page and the live bottom does not get two gaps.
+    if (budget > 1 && (!editorVisible || this.observedTranscript?.hasNewer)) tail.push("");
     return tail;
   }
 

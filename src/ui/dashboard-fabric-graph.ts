@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { FabricActivityRun } from "../activity/types.js";
 import type { Entity, StatusFilter } from "./dashboard-model.js";
 import { colorStatus, entityTail, statusGlyph } from "./dashboard-presentation.js";

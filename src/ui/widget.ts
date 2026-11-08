@@ -1,5 +1,6 @@
 import type { Component, Focusable, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateStyledText as truncateToWidth } from "./truncate.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { FabricUiWidgetMode } from "../config.js";
 import { isRoutineInternalCall } from "../core/call-presentation.js";
@@ -259,6 +260,11 @@ export const widgetViewport = (contentRows: number, budget: number, offset: numb
   return { windowRows, hasCue, maxOffset, offset: clampedOffset };
 };
 
+/** Shared by the native footer and participant windows so opening one never resets the list. */
+export interface FabricWidgetViewportState {
+  offset: number;
+}
+
 /** Pointer-only Main row id; distinct from no hover in the render-cache key. */
 const HEADER_ROW = "\0main";
 
@@ -272,6 +278,7 @@ export class FabricWidget implements Component, Focusable {
     readonly terminalRows?: () => number | undefined,
     readonly retention = new FabricWidgetRetention(),
     readonly interaction?: FabricWidgetInteraction,
+    readonly viewport: FabricWidgetViewportState = { offset: 0 },
   ) {}
 
   /** Set by the TUI when the widget gains or loses keyboard focus. */
@@ -284,7 +291,8 @@ export class FabricWidget implements Component, Focusable {
   /** Rows above the header in the last render: the spacer, or none on a one-row budget. */
   #spacerRows = 1;
   #renderedInteraction: string | undefined;
-  #scrollOffset = 0;
+  get #scrollOffset(): number { return this.viewport.offset; }
+  set #scrollOffset(offset: number) { this.viewport.offset = offset; }
   #maxScrollOffset = 0;
   #followSelection = false;
 

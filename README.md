@@ -146,6 +146,14 @@ Pi loads advanced patterns after direct user invocation. Run `/skill:fabric-guid
 
 Execution references stay progressive: the model loads the selected kernel's skill after argument-shape errors or when exact advanced contracts are needed. Kernel changes reload Pi so execution and the selected physical skill tree switch together; see [kernel-specific skills](docs/kernels.md#kernel-specific-skills-and-guidance).
 
+## Pasted images
+
+Clipboard screenshots are attached when you submit the prompt. The model can inspect them on its first response without a separate `read` turn. Fabric recognizes Pi-generated `pi-clipboard-<uuid>` image files directly in the OS temporary directory and keeps `[Attached image: <path>]` as provenance. Existing image attachments are preserved and duplicate bytes are attached only once.
+
+Native vision models receive the image directly. With [pi-vision-handoff](https://github.com/monotykamary/pi-vision-handoff), text-only models receive its description before their first request. Install the companion extension and configure a describer for that route; Fabric does not make its own vision-model calls.
+
+This runs only for interactive input, including queued steering/follow-up prompts, not RPC or extension-injected text. Ordinary image paths, inline/fenced code, and arbitrary temporary files still require an explicit read. Missing, unsupported, oversized, or symlinked clipboard files stay as paths with a warning. Automatic attachments are limited to 8 images, 20 MiB per file and 32 MiB of raw image bytes per message; Pi applies its own normalization and model limits afterwards. Image handling loads only at first use, not at startup.
+
 ## Agent conversations
 
 Press **↓** in an empty editor and **Enter** on an agent in the list at the bottom of the screen, or run **`/fabric chat <agent-id-or-name>`**, to open a live, full-screen child conversation with a multiline editor. Send steering or follow-ups directly, switch between nested agents, and return to Main without stopping its work. Drafts and scroll positions stay with each conversation. Completed one-shot agents are read-only; persistent actors accept further messages. Drag to select transcript text, use `/copy` or `/copy selection`, and type `/help` for the small set of preview-local commands with slash completion. See [focused conversations](docs/interface.md#focused-conversations) for controls and current limitations.

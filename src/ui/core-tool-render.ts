@@ -172,6 +172,11 @@ const nativeTruncated = (audit: FabricRenderAudit): boolean => {
   return truncation?.truncated === true || audit.resultTruncated === true;
 };
 
+// Pi returns this instead of file content when one source line exceeds its
+// byte limit. It is metadata, not JSON/code from the requested file.
+const READ_OVERSIZED_LINE_NOTICE =
+  /^\[Line \d+ is [^\r\n]+, exceeds [^\r\n]+ limit\. Use bash: [^\r\n]+\]$/;
+
 const READ_CONTINUATION_NOTICE =
   /^\[(?:Showing lines \d+-\d+ of \d+(?: \([^)]+\))?|\d+ more lines in file)\. Use offset=\d+ to continue\.\]$/;
 
@@ -972,6 +977,9 @@ const renderRead = (
     return { lines: [theme.fg("dim", escapeControlChars(output))], hidden: 0 };
   }
   const truncated = nativeTruncated(audit);
+  if (truncated && READ_OVERSIZED_LINE_NOTICE.test(output)) {
+    return { lines: [arcItem(theme, escapeControlChars(output.slice(1, -1)))], hidden: 0 };
+  }
   const { content, notice } =
     truncated || typeof audit.args?.limit === "number"
       ? splitReadContinuationNotice(output)

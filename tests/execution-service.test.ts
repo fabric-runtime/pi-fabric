@@ -405,6 +405,27 @@ return "complete outer result";
     expect(activity.get("aborted-run")?.status).toBe("cancelled");
   });
 
+  it("passes the cancelled program signal to provider finalization", async () => {
+    const registry = new ActionRegistry();
+    const controller = new AbortController();
+    const descriptor = { name: "cancel", description: "Cancel the foreground run",
+      inputSchema: { type: "object", properties: {} }, risk: "read" as const };
+    registry.register({ name: "demo", description: "Cancellation fixture",
+      async list() { return [descriptor]; }, async describe() { return descriptor; },
+      async invoke() { controller.abort(); return null; },
+    });
+    const end = vi.spyOn(registry, "endInvocation");
+    const result = await new FabricExecutionService(registry, structuredClone(DEFAULT_FABRIC_CONFIG)).execute({
+      code: 'return await tools.call({ ref: "demo.cancel", args: {} });',
+      signal: controller.signal, parentToolCallId: "cancel-finalization",
+      context: { cwd: process.cwd(), hasUI: false } as ExtensionContext, onPartial() {},
+    });
+    expect(controller.signal.aborted).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("cancelled");
+    expect(end).toHaveBeenCalledExactlyOnceWith("cancel-finalization", undefined, controller.signal);
+  });
+
   it("throttles continuous nested progress without starving intermediate snapshots", async () => {
     const registry = new ActionRegistry();
     const descriptor = {

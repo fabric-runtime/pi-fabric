@@ -13,7 +13,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getConversationHost } from "./conversation-host.js";
 import type { MarkdownTheme, TUI } from "@earendil-works/pi-tui";
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Text, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { conversationFeedback } from "./conversation-feedback.js";
 import type { CodePreviewSettings } from "./code-preview.js";
 import { highlightCode } from "./highlight.js";
 import { terminalSafe } from "./transcript-sanitization.js";
@@ -402,7 +403,12 @@ export class FabricConversationTranscriptRenderer {
         this.renderBashExecution(message, width, options, lines);
         return;
       case "custom":
-        if (!message.display) return;
+        if (!message.display) {
+          if (message.customType !== "pi-fabric-agent-message" && message.customType !== "pi-fabric-actor") return;
+          const feedback = conversationFeedback({ ...message, content: customText(message) });
+          if (feedback !== undefined) lines.push(...new Text(this.theme.fg("dim", feedback), 1, 0).render(width));
+          return;
+        }
         this.pushSpacer(lines);
         this.renderCustomMessage(message, width, options, lines);
         return;

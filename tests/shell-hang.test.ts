@@ -91,7 +91,7 @@ describe("pi.bash auto-spill", () => {
       };
       return job;
     });
-    const { result, jobs } = await invokeBash("printf start; exit 7", 0, undefined, { background: true, description: "Quick failure" });
+    const { result, jobs } = await invokeBash("printf start; exit 7", 0, undefined, { background: true, description: "Quick failure", timeout: 30 });
     expect(result.ok).toBe(true);
     expect(result.details).toMatchObject({ taskId: expect.any(String), running: false });
     const job = jobs.get(result.details!.taskId!)!;
@@ -99,6 +99,7 @@ describe("pi.bash auto-spill", () => {
     expect(await job.outputText()).toContain("start");
     expect(result.output).toContain("Exited with code 7");
     expect(result.output).not.toContain("Still running");
+    expect(result.output).not.toContain("bounds the process");
   });
 
   it("starts an opt-in monitor on the protected shell path and stops it at its deadline", async () => {
@@ -135,6 +136,24 @@ describe("pi.bash auto-spill", () => {
     expect(jobs.list().some((job) => job.status === "spilled")).toBe(true);
   });
 
+  it("says an explicit timeout bounds the process, not the wait, when it hands off", async () => {
+    const { result, jobs } = await invokeBash("printf start; sleep 8; printf done", 120, undefined, { timeout: 30 });
+    expect(result.details?.running).toBe(true);
+    const taskId = result.details!.taskId!;
+    expect(result.output).toContain("Its timeout (30s) bounds the process, not this wait");
+    expect(result.output).toContain(`call tasks.wait with {"id":"${taskId}","timeoutMs":300000} until it reports a terminal status`);
+    expect(result.output).not.toContain("call tools.call");
+    expect(result.output).toContain("Set the enclosing fabric_exec timeoutMs long enough for the wait");
+    jobs.get(taskId)!.abort.abort();
+  });
+
+  it("does not add the timeout note without an explicit timeout", async () => {
+    const { result, jobs } = await invokeBash("printf start; sleep 8; printf done", 120);
+    expect(result.details?.running).toBe(true);
+    expect(result.output).not.toContain("bounds the process");
+    jobs.get(result.details!.taskId!)!.abort.abort();
+  });
+
   it("does not auto-spill when hangMs is 0", async () => {
     const { result } = await invokeBash('printf "done\\n"', 0);
     expect(result.ok).toBe(true);
@@ -152,7 +171,8 @@ describe("pi.bash auto-spill", () => {
   });
 
   it("spills immediately when background:true", async () => {
-    const { result, jobs } = await invokeBash("printf start; sleep 8; printf done", 120_000, undefined, { background: true });
+    const { result, jobs } = await invokeBash("printf start; sleep 8; printf done", 120_000, undefined, { background: true, timeout: 30 });
+    expect(result.output).not.toContain("bounds the process");
     expect(result.ok).toBe(true);
     expect(result.details?.running).toBe(true);
     expect(result.details?.logPath).toBeTruthy();

@@ -6,7 +6,7 @@ import { AGENTS_ACTION_DESCRIPTORS } from "../src/providers/agents-actions.js";
 import { validateCatalogArgs } from "../src/core/action-arguments.js";
 import { availablePythonBackends } from "./fixtures/python-backends.js";
 
-const completed = (value: unknown = "finding") => ({ status: "completed", text: typeof value === "string" ? value : "", value });
+const completed = (value: unknown = "finding") => ({ id: "test-run-id", status: "completed", text: typeof value === "string" ? value : "", value });
 const failed = { status: "failed", text: "", error: "worker unavailable" };
 const model = (id: string) => ({ provider: "test", id, name: id, key: `test/${id}` });
 const models = [model("one"), model("two"), model("three")];
@@ -59,9 +59,66 @@ describe.skipIf(!availablePythonBackends.monty)("Python-native skill behavior in
     }
   });
 
+  it.each(["parked", "unavailable", "collisions"])("council preserves long reports with %s storage before failed synthesis", async (storage) => {
+    const reports = ["a", "b", "c"].map((role) => ({ role, report: `${role}:` + "x".repeat(1600) + `:${role}-tail` }));
+    const puts: Array<Record<string, unknown>> = [];
+    const events: string[] = [];
+    const storageError = storage === "collisions" ? "Mesh compare-and-swap failed: expected version 0" : "mesh unavailable";
+    const result = await skill("fabric-council", { task: "decide", roles: '["a","b","c"]', synthesis: "" }, async (ref, args) => {
+      if (ref === "mesh.put") {
+        puts.push(args);
+        events.push("put");
+        if (storage !== "parked") throw new Error(storageError);
+        return { key: args.key, version: 1 };
+      }
+      expect(ref).toBe("agents.run");
+      if (args.name === "council synthesis") {
+        events.push("synthesis");
+        for (const report of reports) expect(args.task).toContain(report.report);
+        return failed;
+      }
+      return completed(reports.find((report) => report.role === args.name)!.report);
+    });
+    expect(puts).toHaveLength(storage === "collisions" ? 4 : 1);
+    expect(new Set(puts.map((put) => put.key)).size).toBe(puts.length);
+    for (const put of puts) expect(put).toMatchObject({ ifVersion: 0, value: reports });
+    expect(events.at(-1)).toBe("synthesis");
+    expect(result).toMatchObject({ status: "partial", coverage: { requested: 3, completed: 3 }, result: null, synthesisError: "worker unavailable" });
+    if (storage === "parked") expect(result.reports).toBe(puts[0]!.key);
+    else expect(result.reports.error).toContain(storageError);
+    expect(result.fallback).toEqual(reports.map(({ role, report }) => ({ role, status: "completed", report: storage === "parked" ? report.slice(0, 1200) : report })));
+  });
+
+  it.each([false, true])("council still synthesizes after a storage failure (collision=%s)", async (collision) => {
+    const puts: Array<Record<string, unknown>> = [];
+    let synthesisCalls = 0;
+    const result = await skill("fabric-council", { task: "decide", roles: '["a","b","c"]', synthesis: "" }, async (ref, args) => {
+      if (ref === "mesh.put") {
+        puts.push(args);
+        if (!collision) throw new Error("mesh unavailable");
+        if (puts.length === 1) throw new Error("Mesh compare-and-swap failed: expected version 0, found 1");
+        return { key: args.key, version: 1 };
+      }
+      expect(ref).toBe("agents.run");
+      if (args.name === "council synthesis") { synthesisCalls++; return completed("decision"); }
+      return completed(String(args.name) + " report");
+    });
+    expect(puts).toHaveLength(collision ? 2 : 1);
+    expect(puts.every((put) => put.ifVersion === 0)).toBe(true);
+    expect(synthesisCalls).toBe(1);
+    expect(result).toMatchObject({ status: "success", result: "decision" });
+    expect(result).not.toHaveProperty("fallback");
+    if (collision) {
+      expect(puts[1]!.key).toBe(String(puts[0]!.key).replace("/reports", "-2/reports"));
+      expect(result.reports).toBe(puts[1]!.key);
+    } else expect(result.reports.error).toContain("mesh unavailable");
+  });
+
   it.each([false, true])("council preserves failed roles and synthesis fallback=%s", async (synthesisFails) => {
     let calls = 0;
-    const result = await skill("fabric-council", { task: "decide", roles: JSON.stringify(["correctness", "security", "operations"]), synthesis: "" }, async (_ref, args) => {
+    const result = await skill("fabric-council", { task: "decide", roles: JSON.stringify(["correctness", "security", "operations"]), synthesis: "" }, async (ref, args) => {
+      if (ref === "mesh.put") return { key: args.key, version: 1 };
+      expect(ref).toBe("agents.run");
       calls++;
       if (args.name === "security" || (args.name === "council synthesis" && synthesisFails)) return failed;
       return completed(args.name === "council synthesis" ? "decision" : "report");
@@ -74,9 +131,26 @@ describe.skipIf(!availablePythonBackends.monty)("Python-native skill behavior in
 
   it.each([0, 1])("council skips synthesis with %s surviving roles", async (survivors) => {
     let calls = 0;
-    const result = await skill("fabric-council", { task: "decide", roles: '["a","b","c"]', synthesis: "" }, async () => calls++ < survivors ? completed() : failed);
+    const puts: Array<Record<string, unknown>> = [];
+    const report = "full survivor " + "x".repeat(1800);
+    const result = await skill("fabric-council", { task: "decide", roles: '["a","b","c"]', synthesis: "" }, async (ref, args) => {
+      if (ref === "mesh.put") {
+        puts.push(args);
+        return { key: args.key, version: 1 };
+      }
+      expect(ref).toBe("agents.run");
+      return calls++ < survivors ? completed(report) : failed;
+    });
     expect(calls).toBe(3);
-    expect(result.status).toBe(survivors ? "partial" : "failed");
+    expect(result).toMatchObject({ status: survivors ? "partial" : "failed", coverage: { requested: 3, completed: survivors }, result: survivors ? report : null });
+    expect(result.failures).toHaveLength(3 - survivors);
+    expect(result).not.toHaveProperty("fallback");
+    expect(puts).toHaveLength(survivors);
+    if (survivors) {
+      expect(puts[0]).toMatchObject({ ifVersion: 0, value: [{ role: "a", report }] });
+      expect(result.reports).toBe(puts[0]!.key);
+      expect(result.synthesisSkipped).toBeTruthy();
+    } else expect(result).not.toHaveProperty("reports");
   });
 
   it("council pins seat and synthesis models to exact registry keys", async () => {
@@ -87,6 +161,8 @@ describe.skipIf(!availablePythonBackends.monty)("Python-native skill behavior in
       synthesis: "test/three",
     }, async (ref, args) => {
       if (ref === "fabric.$models") return models;
+      if (ref === "mesh.put") return { key: args.key, version: 1 };
+      expect(ref).toBe("agents.run");
       runs.push({ name: args.name, model: args.model, thinking: args.thinking });
       return completed(args.name === "council synthesis" ? "decision" : "report");
     });
@@ -136,7 +212,12 @@ describe.skipIf(!availablePythonBackends.monty)("Python-native skill behavior in
 
   it("council runs six seats", async () => {
     let calls = 0;
-    const result = await skill("fabric-council", { task: "decide", roles: '["a","b","c","d","e","f"]', synthesis: "" }, async () => { calls++; return completed(); });
+    const result = await skill("fabric-council", { task: "decide", roles: '["a","b","c","d","e","f"]', synthesis: "" }, async (ref, args) => {
+      if (ref === "mesh.put") return { key: args.key, version: 1 };
+      expect(ref).toBe("agents.run");
+      calls++;
+      return completed();
+    });
     expect(calls).toBe(7);
     expect(result).toMatchObject({ status: "success", coverage: { requested: 6, completed: 6 } });
   });
