@@ -33,6 +33,9 @@ describe("PiRecoveryWatchdog", () => {
     for (let i = 0; i < 5; i++) {
       vi.advanceTimersByTime(10_000);
       watchdog.arm("Error: Terminated");
+      watchdog.retryAnnounced(i + 1, 5);
+      watchdog.turnStarted();
+      watchdog.responseStarted();
     }
     vi.advanceTimersByTime(10_000);
     expect(fail).toHaveBeenCalledTimes(1);
@@ -72,6 +75,23 @@ describe("PiRecoveryWatchdog", () => {
     expect(fail).toHaveBeenCalledExactlyOnceWith(
       "anthropic/claude-sonnet-5-5: terminated; Pi made no recovery progress for 60000ms; terminating child. " +
       "Recovery: Pi announced retry 1 of 3 2s after the error; the retry turn never started.",
+    );
+  });
+
+  it("says a retry turn started but no assistant response arrived without extending the deadline", () => {
+    const { fail, watchdog } = setup();
+    watchdog.arm("Error: Terminated");
+    vi.advanceTimersByTime(2_000);
+    watchdog.retryAnnounced(1, 3);
+    vi.advanceTimersByTime(2_000);
+    watchdog.turnStarted();
+    vi.advanceTimersByTime(55_999);
+    expect(fail).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fail).toHaveBeenCalledExactlyOnceWith(
+      "Error: Terminated; Pi made no recovery progress for 60000ms; terminating child. " +
+      "Recovery: Pi announced retry 1 of 3 2s after the error; the retry turn started 4s after the error; " +
+      "no assistant response started.",
     );
   });
 
@@ -159,6 +179,9 @@ describe("PiRecoveryWatchdog", () => {
     watchdog.dispose();
     watchdog.progress();
     watchdog.arm("late event");
+    watchdog.retryAnnounced(1, 3);
+    watchdog.turnStarted();
+    watchdog.responseStarted();
     vi.advanceTimersByTime(120_000);
     expect(fail).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
