@@ -74,7 +74,10 @@ stop normal-form compilation; a busy artifact store does not prevent activation
 of freshly proved plans. One coalesced background retry uses exponential backoff
 with jitter (capped at 30 seconds), re-reading current evidence on each attempt.
 Retry timers do not keep Pi alive and are canceled on session start/shutdown;
-turn hooks never wait for them. Old locks from dead owners, incomplete writes,
+turn hooks never wait for them. Shutdown drains already queued compilation before
+Pi invalidates the old extension context; no retry survives reload, new/resumed
+sessions, or forks. Session-start epochs also discard late results from an older
+session. Old locks from dead owners, incomplete writes,
 or malformed metadata recover automatically after the 30-second grace period.
 Live owners (including permission-denied process probes) are never evicted just
 because a lock is old. Damaged pool/artifact data is still preserved and reported,

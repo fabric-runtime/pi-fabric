@@ -129,7 +129,7 @@ const retryHarness = async (hasUI = false) => {
       await emit(harness.handlers, "tool_execution_end", { toolName: "fabric_exec", isError: false }, context);
       await emit(harness.handlers, "turn_end", {}, context);
     },
-    shutdown: () => emit(harness.handlers, "session_shutdown", {}, context),
+    shutdown: (reason = "quit") => emit(harness.handlers, "session_shutdown", { reason }, context),
     restart: () => emit(harness.handlers, "session_start", {}, context),
   };
 };
@@ -235,6 +235,36 @@ describe("entropy background scheduler", () => {
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(update).toHaveBeenCalledTimes(8);
+  });
+
+  it.each(["reload", "new", "resume", "fork"])("settles queued entropy work before %s makes the captured context stale", async (reason) => {
+    const harness = await retryHarness();
+    const { compile, update } = mockRetryIO();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sessionFile = harness.context.sessionManager.getSessionFile();
+    const getSessionFile = vi.spyOn(harness.context.sessionManager, "getSessionFile");
+    let stale = false;
+    getSessionFile.mockImplementation(() => {
+      if (stale) throw new Error("This extension ctx is stale after session replacement or reload");
+      return sessionFile;
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await harness.trigger();
+    await harness.trigger();
+    let stopped = false;
+    const shutdown = harness.shutdown(reason).then(() => { stopped = true; });
+    expect(stopped).toBe(false);
+    // Pi invalidates the old context only after all shutdown handlers settle.
+    await vi.advanceTimersByTimeAsync(500);
+    await shutdown;
+    expect(compile).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenCalledTimes(2);
+    stale = true;
+    const reads = getSessionFile.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getSessionFile).toHaveBeenCalledTimes(reads);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("cancels old-session retries on session start", async () => {
