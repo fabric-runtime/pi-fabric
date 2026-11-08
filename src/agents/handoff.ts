@@ -112,10 +112,23 @@ const activeFabricTurn = (
   outerToolCallId: string,
 ): NativeAssistantEntry => {
   const leafId = source.getLeafId();
-  const entry = leafId ? source.getEntry(leafId) : undefined;
+  let entry = leafId ? source.getEntry(leafId) : undefined;
+  // UI titles and other session metadata may be appended while the tool runs.
+  // They do not close the active assistant turn. Never cross context-producing
+  // entries (including custom messages, compactions, and context edits).
+  const visited = new Set<string>();
+  while (entry && (entry.type === "custom" || entry.type === "label" ||
+    entry.type === "session_info" || entry.type === "model_change" ||
+    entry.type === "thinking_level_change" || entry.type === "usage")) {
+    if (visited.has(entry.id)) {
+      throw new Error("Trajectory handoff encountered cyclic session metadata");
+    }
+    visited.add(entry.id);
+    entry = entry.parentId ? source.getEntry(entry.parentId) : undefined;
+  }
   if (entry?.type !== "message" || entry.message.role !== "assistant") {
     throw new Error(
-      "Trajectory handoff requires the active fabric_exec assistant turn to be the session leaf",
+      "Trajectory handoff requires the active fabric_exec assistant turn to be the latest session message",
     );
   }
   const content = Array.isArray(entry.message.content) ? entry.message.content : [];
@@ -165,7 +178,8 @@ export const snapshotHandoffSession = (
   return {
     sourceSessionId: source.getSessionId(),
     ...(sourceSessionFile ? { sourceSessionFile } : {}),
-    sourceBranchLeafId: active.id,
+    // Preserve trailing metadata in persisted forks just as in-memory seeds do.
+    sourceBranchLeafId: source.getLeafId() ?? active.id,
     ...(!sourceSessionFile ? { sourceBranch: structuredClone(branch) } : {}),
     ...(model ? { sourceModel: model } : {}),
     ...(thinkingLevel ? { sourceThinkingLevel: thinkingLevel } : {}),

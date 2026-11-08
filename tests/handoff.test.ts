@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { FabricTerminalTitle, TERMINAL_TITLE_ENTRY_TYPE } from "../src/ui/terminal-title.js";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   checkedHandoffCompaction,
@@ -178,6 +179,75 @@ describe("trajectory handoff sessions", () => {
         boundary: "fabric_exec_end",
       },
     });
+  });
+
+  it.each(["persisted", "in-memory"])("keeps terminal-title metadata across a %s trajectory handoff (#384)", (kind) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-title-handoff-"));
+    roots.push(root);
+    const source = kind === "persisted"
+      ? SessionManager.create(root, path.join(root, "source"))
+      : SessionManager.inMemory(root);
+    source.appendMessage({ role: "user", content: "Implement the guard", timestamp: 1 });
+    const activeId = source.appendMessage(assistant([
+      { type: "toolCall", id: "outer-title", name: "fabric_exec", arguments: { display: { name: "Implement guard" } } },
+    ]));
+    // The real title path runs at execute() entry, before trajectory snapshotting.
+    const title = new FabricTerminalTitle({
+      appendEntry: (type, data) => { source.appendCustomEntry(type, data); },
+    }, () => true);
+    title.show({ mode: "tui", hasUI: true, ui: { setTitle: () => {} } } as unknown as ExtensionContext, "Implement guard");
+    const leafId = source.getLeafId();
+    expect(leafId).not.toBe(activeId);
+    const result = outerResult("outer-title");
+    const seed = snapshotHandoffSession(source, undefined, result, "outer-title");
+    expect(seed.sourceBranchLeafId).toBe(leafId);
+    const child = SessionManager.open(writeHandoffSession(seed, root, path.join(root, "child")));
+    expect(child.buildSessionContext().messages.map(message => message.role)).toEqual(["user", "assistant", "toolResult"]);
+    expect(child.buildSessionContext().messages.at(-1)).toEqual(result);
+    expect(child.getEntries()).toContainEqual(expect.objectContaining({
+      type: "custom", customType: TERMINAL_TITLE_ENTRY_TYPE, data: { version: 1, title: "Implement guard" },
+    }));
+    expect(source.getLeafId()).toBe(leafId);
+  });
+
+  it.each(["user", "toolResult", "assistant", "custom_message", "compaction", "context_edit"])(
+    "does not cross a later %s entry hidden behind title metadata", (kind) => {
+      const source = SessionManager.inMemory();
+      const activeId = source.appendMessage(assistant([
+        { type: "toolCall", id: "outer", name: "fabric_exec", arguments: {} },
+      ]));
+      if (kind === "user") source.appendMessage({ role: "user", content: "Another task", timestamp: 2 });
+      else if (kind === "toolResult") source.appendMessage(outerResult("outer"));
+      else if (kind === "assistant") source.appendMessage(assistant([
+        { type: "toolCall", id: "different-turn", name: "fabric_exec", arguments: {} },
+      ]));
+      else if (kind === "custom_message") source.appendCustomMessageEntry("other", "Another task", false);
+      else if (kind === "compaction") source.appendCompaction("summary", activeId, 100);
+      else source.appendContextEdit(activeId, null);
+      source.appendCustomEntry(TERMINAL_TITLE_ENTRY_TYPE, { version: 1, title: "Another title" });
+      expect(() => snapshotHandoffSession(source, undefined, outerResult("outer"), "outer"))
+        .toThrow(/active fabric_exec assistant turn/);
+    },
+  );
+
+  it.each([true, false])("rejects cyclic metadata without hanging (self-cycle: %s)", (selfCycle) => {
+    const metadata = (id: string, parentId: string) => ({
+      type: "custom" as const, id, parentId, timestamp: new Date(0).toISOString(),
+      customType: TERMINAL_TITLE_ENTRY_TYPE, data: { title: "Corrupt title" },
+    });
+    const entries = new Map([
+      ["first", metadata("first", selfCycle ? "first" : "second")],
+      ["second", metadata("second", "first")],
+    ]);
+    const source = {
+      getLeafId: () => "first",
+      getEntry: (id: string) => entries.get(id),
+      getBranch: () => { throw new Error("Must reject before collecting the branch"); },
+      getSessionFile: () => undefined,
+      getSessionId: () => "corrupt-session",
+    };
+    expect(() => snapshotHandoffSession(source, undefined, outerResult("outer"), "outer"))
+      .toThrow("Trajectory handoff encountered cyclic session metadata");
   });
 
   it("fails rather than forking an incomplete parallel top-level tool batch", () => {
