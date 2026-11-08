@@ -71,17 +71,21 @@ const isolatedEnv = (root: string, extra: Record<string, string> = {}): NodeJS.P
 
 describe("Pi managed install without a physical host SDK", () => {
   // The published bin, and the unbundled CLI that older launchers still use.
-  it.each(["dist/bundle/cli.js", "dist/cli.js"])("runs nested Pi tools through fabric_exec under %s", async (cli) => {
+  it.each([
+    "dist/bundle/cli.js", "dist/cli.js",
+    ...(process.env.PI_FABRIC_TEST_PI_BINARY ? [process.env.PI_FABRIC_TEST_PI_BINARY] : []),
+  ])("runs nested Pi tools through fabric_exec under %s", async (cli) => {
     const { root, fabric } = managedInstall();
     const file = path.join(root, "workspace", "fabric.txt");
-    const { stdout, stderr } = await run(process.execPath, [
-      path.join(fs.realpathSync(path.resolve("node_modules", HOST)), cli),
+    const binary = path.isAbsolute(cli);
+    const { stdout, stderr } = await run(binary ? cli : process.execPath, [
+      ...(!binary ? [path.join(fs.realpathSync(path.resolve("node_modules", HOST)), cli)] : []),
       "--offline", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
       "--no-context-files", "--no-approve", "--mode", "json", "--print",
       "--extension", path.resolve("tests/fixtures/managed-install-provider.ts"),
       "--extension", path.join(fabric, "dist", "extension-bootstrap.js"),
       "--model", "managed-install/probe", "Run the probe",
-    ], { cwd: path.join(root, "workspace"), env: isolatedEnv(root, { FABRIC_PROBE_FILE: file }) });
+    ], { cwd: path.join(root, "workspace"), env: isolatedEnv(root, { FABRIC_PROBE_FILE: file, PI_FABRIC_DEBUG_TOOL_CAPTURE: "1" }) });
     const result = stdout.split("\n").filter(Boolean).map(line => JSON.parse(line) as Record<string, any>)
       .find(event => event.type === "tool_execution_end" && event.toolCallId === "probe-call");
     expect(result, stderr || stdout.slice(-2000)).toBeDefined();

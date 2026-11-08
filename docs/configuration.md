@@ -458,6 +458,28 @@ The result keeps `content`, exposes text content as `text`, and carries `details
 
 In full code mode and Schema enforce mode, `fabric_exec` is the only model-declared tool unless a [foreground policy](#foreground-tools) names others in full code mode. Pi 1.0 native `prepareLoadout` and per-request transcript projection hide all other declarations without removing tools from the native callable set. This includes native `codemode`, `tool_search`, MCP tools, and late registrations; `setActiveTools()` cannot open a second model-facing path. Inside Fabric, `pi.read`, `pi.bash`, and other built-ins still route through captured overrides when present. `extensions.read` exposes the override's native result shape. Native MCP tools are also callable by their captured names, for example `extensions.mcp__server__tool(...)`.
 
+### Diagnosing missing tool hooks
+
+If nested `pi.bash`, `pi.write`, `pi.edit`, or interactive shell sessions report
+that extension tool hooks have not initialized, start Pi with
+`PI_FABRIC_DEBUG_TOOL_CAPTURE=1`. Fabric writes bounded `[pi-fabric tool-capture]`
+records to stderr: the number of capture hubs installed, whether a compiled
+host/mapped SDK loader was detected, and whether each observed tool-registry
+refresh contained this Fabric instance's anchor. Logging stops after 32 records
+per capture controller. Tool arguments, commands, paths, and results are not logged.
+
+An installed hub with no matching refresh can mean that a different SDK copy was
+patched, not that startup merely needs more time. Include these records and your
+Pi/Fabric versions when reporting it. This flag enables diagnostics only; it does
+not bypass other extensions' hooks or permit unhooked mutating calls.
+
+To run the managed-install integration probe against a release binary as well as
+the Node CLIs, set `PI_FABRIC_TEST_PI_BINARY` to its absolute executable path and
+run `bunx vitest run tests/managed-install-host-sdk.test.ts` after `bun run build`.
+The probe uses an offline model and checks nested writes, edits, bash, captured
+extension tools, and blocking `tool_call` hooks without a physical host SDK beside
+Fabric.
+
 ### Foreground tools
 
 Some extension tools only work as a direct model turn: a question to the human, a turn-steering control, a context or skill loader. `foreground` keeps a short list of them declared beside `fabric_exec` in full code mode:

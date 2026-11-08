@@ -293,7 +293,11 @@ const isCompiledPiBinary = (cli: string | undefined = process.argv[1]): boolean 
 
 const inRealmExtensionRunner = async (): Promise<ExtensionRunnerConstructor[]> => {
   try {
-    const hostModule = (await import("@earendil-works/pi-coding-agent")) as { ExtensionRunner?: unknown };
+    // This module can be a native chunk even when the entry was loaded by
+    // Pi's virtual-module loader. A bare import here can find an unused disk
+    // peer (or fail entirely); use the entry's mapped loader for the live SDK.
+    const { loadHostSdk } = await import("../core/host-sdk.js");
+    const hostModule = await loadHostSdk();
     return isExtensionRunnerConstructor(hostModule.ExtensionRunner) ? [hostModule.ExtensionRunner] : [];
   } catch {
     return []; // Host unavailable in this realm; tool capture stays inert.
@@ -303,7 +307,25 @@ const inRealmExtensionRunner = async (): Promise<ExtensionRunnerConstructor[]> =
 export const installRegisteredToolCapture = async (
   options: RegisteredToolCaptureOptions,
 ): Promise<RegisteredToolCaptureController> => {
+  // Opt-in, bounded diagnostics contain counts/booleans only: never tool
+  // arguments, source paths, commands, or captured output. They must not
+  // change capture or prevent hook initialization if stderr is unavailable.
+  const debug = process.env.PI_FABRIC_DEBUG_TOOL_CAPTURE === "1";
+  let traces = 0;
+  const trace = (event: string, fields: Record<string, number | boolean>): void => {
+    if (!debug || traces >= 32) return;
+    traces++;
+    try {
+      console.error(`[pi-fabric tool-capture] ${JSON.stringify({ event, ...fields })}`);
+      if (traces === 32) console.error("[pi-fabric tool-capture] diagnostic limit reached");
+    } catch { /* Diagnostics must not interrupt capture. */ }
+  };
   const hubs = (await extensionRunnerConstructors()).map(captureHub);
+  trace("install", {
+    hubs: hubs.length,
+    compiled: isCompiledPiBinary(),
+    mappedLoader: typeof (globalThis as Record<symbol, unknown>)[Symbol.for("pi-fabric.hostSdkLoader")] === "function",
+  });
   // No class to observe means no refresh will ever supply the runner.
   if (hubs.length === 0) options.catalog.markRunnerUnavailable();
   const anchorToken = {};
@@ -323,6 +345,7 @@ export const installRegisteredToolCapture = async (
         (tool.definition as unknown as Record<PropertyKey, unknown>)[ANCHOR_SYMBOL] ===
           anchorToken || definitionDelegatesTo(tool.definition, options.anchorDefinition),
     );
+    trace("refresh", { tools: tools.length, anchor: Boolean(anchor) });
     if (!anchor) return tools;
 
     options.catalog.replace(tools, runner, policy, anchor.sourceInfo.path);
@@ -339,6 +362,7 @@ export const installRegisteredToolCapture = async (
     dispose() {
       if (disposed) return;
       disposed = true;
+      trace("dispose", { captured: options.catalog.size });
       for (const hub of hubs) {
         hub.listeners.delete(listener);
         hub.restore?.();
