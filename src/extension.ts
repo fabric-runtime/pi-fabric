@@ -1317,9 +1317,9 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   // spending hint budget, echoing tokens, or burning ash.
   pi.on("before_agent_start", (event) => {
     if (!pi.getActiveTools().includes("fabric_exec")) return;
-    // A run that a custom message starts has no prompt; remind on a user run.
-    const prompt = userPromptText(event);
-    if (prompt === undefined) return;
+    // Custom turns have no user prompt, but their system skill catalog still
+    // needs proxy hints. Never interpret the custom message as user intent.
+    const prompt = userPromptText(event) ?? "";
     const captureSnapshot = state.cwd ? capturePolicy() : undefined;
     if (
       !captureSnapshot?.enabled ||

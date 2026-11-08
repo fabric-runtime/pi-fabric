@@ -15,8 +15,8 @@ const BASE_SYSTEM_PROMPT = "You are a coding agent.\nCurrent working directory: 
 
 const skills = [
   { name: "grill-me", description: "Interview wrapper.", filePath: "/skills/grill-me/SKILL.md", baseDir: "/skills/grill-me", disableModelInvocation: false },
-  // The catalog itself names a hidden captured tool, so the system prompt alone
-  // would yield a proxy contract if a custom run were scanned with an empty prompt.
+  // The catalog itself names a hidden captured tool, so system-prompt proxy
+  // guidance is needed even when a custom run has no user prompt.
   { name: "grilling", description: "Grill a plan; survey code with fovea_focus.", filePath: "/skills/grilling/SKILL.md", baseDir: "/skills/grilling", disableModelInvocation: false },
 ];
 
@@ -35,7 +35,7 @@ const customTrigger = {
   message: { role: "custom", customType: "pi-callbacks", content: "Background job finished.", display: true, details: {}, timestamp: 1 },
 };
 
-const register = async () => {
+const register = async (catalog = skills) => {
   vi.spyOn(FabricState.prototype, "bootstrapped", "get").mockReturnValue(true);
   vi.spyOn(FabricState.prototype, "cwd", "get").mockReturnValue(process.cwd());
   // Defaults: full code mode, capture enabled and hidden from the model.
@@ -62,7 +62,7 @@ const register = async () => {
     for (const handler of handlers.get("before_agent_start") ?? []) {
       try {
         const result = await handler(
-          { ...trigger, type: "before_agent_start", systemPrompt, systemPromptOptions: { skills } },
+          { ...trigger, type: "before_agent_start", systemPrompt, systemPromptOptions: { skills: catalog } },
           { cwd: process.cwd(), hasUI: false },
         ) as RunResult;
         if (result?.message) messages.push(result.message);
@@ -76,23 +76,33 @@ const register = async () => {
 };
 
 describe("before_agent_start runs started by a custom message", () => {
-  it("adds no prompt-derived message, keeps Fabric's system prompt and leaves the next user run intact", async () => {
+  it("preserves system-prompt proxy hints on custom turns without adding skill references", async () => {
     const startRun = await register();
 
     const custom = await startRun(customTrigger);
     expect(custom.errors).toEqual([]);
-    expect(custom.messages.map((message) => message.customType)).toEqual([]);
+    expect(custom.messages.map((message) => message.customType)).toEqual([PROXY_CONTRACT_CUSTOM_TYPE]);
+    expect(custom.messages[0]?.content).toContain("fovea_focus → extensions.fovea_focus");
 
-    // The proxy-contract ledger was not spent by the custom run.
+    // The catalog hint is deduplicated, but user skill references still work.
     const user = await startRun({ messageType: "user", prompt: expandedSkillPrompt });
     expect(user.errors).toEqual([]);
-    expect(user.messages.map((message) => message.customType)).toEqual([
-      SKILL_REFERENCE_CUSTOM_TYPE,
-      PROXY_CONTRACT_CUSTOM_TYPE,
-    ]);
+    expect(user.messages.map((message) => message.customType)).toEqual([SKILL_REFERENCE_CUSTOM_TYPE]);
     // The turn-stable system prompt is the same for both kinds of run.
     expect(user.systemPrompt).not.toBe(BASE_SYSTEM_PROMPT);
     expect(custom.systemPrompt).toBe(user.systemPrompt);
+  });
+
+  it("does not interpret custom content or a stray custom prompt as skill instructions", async () => {
+    const startRun = await register([]);
+    const run = await startRun({
+      ...customTrigger,
+      prompt: expandedSkillPrompt,
+      message: { ...customTrigger.message, content: expandedSkillPrompt },
+    });
+    expect(run.errors).toEqual([]);
+    expect(run.messages).toEqual([]);
+    expect(run.systemPrompt).not.toBe(BASE_SYSTEM_PROMPT);
   });
 
   it.each([
