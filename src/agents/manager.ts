@@ -1179,7 +1179,7 @@ export class AgentManager {
     let worktree: string | undefined;
     if (request.worktree) {
       try {
-        const lease = await this.#worktrees.create(id, selectedCwd, name, request.cwd !== undefined);
+        const lease = await this.#worktrees.create(id, selectedCwd, name, request.cwd !== undefined, this.config.worktree);
         agentCwd = lease.cwd;
         branch = lease.branch;
         worktree = lease.path;

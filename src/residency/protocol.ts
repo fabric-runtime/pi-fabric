@@ -185,6 +185,8 @@ export interface ResidentAgentMetadata {
   runDirectory: string;
   handle: AgentHandleInfo;
   worktreeGitRoot?: string;
+  /** Creation-time relative root; absent in legacy metadata. */
+  worktreeRoot?: string;
   /** Imported again by a restarted host before it re-attaches hosted runs. */
   runnerModule?: string;
   /** The scope the durable child launched with (forwarded by the requesting session). */

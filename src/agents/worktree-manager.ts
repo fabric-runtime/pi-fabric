@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { addCloneFirstWorktree, removeWorktree, worktreeRollbackError } from "./clone-first-worktree.js";
 import { executeFile } from "./transports/process-utils.js";
-import { fabricWorktreePath } from "./worktree-paths.js";
+import { assertWorktreePathSafe, fabricWorktreePath } from "./worktree-paths.js";
 
 export interface WorktreeLease {
   gitRoot: string;
@@ -72,6 +72,7 @@ export class WorktreeManager {
     cwd: string,
     name: string,
     preserveSourceSubdirectory = false,
+    options: { root?: string; branch?: string } = {},
   ): Promise<WorktreeLease> {
     let gitRoot: string;
     let sourcePrefix = "";
@@ -91,11 +92,19 @@ export class WorktreeManager {
       const detail = (failure.stderr?.trim() || failure.message || String(error)).split("\n", 1)[0]!.slice(0, 500);
       throw new Error(`Worktree isolation requires a Git repository: ${detail}`, { cause: error });
     }
-    const branch = `pi-fabric/${safeLabel(name)}-${id.slice(0, 8)}`;
-    const worktreePath = fabricWorktreePath(gitRoot, id);
+    const template = options.branch ?? "pi-fabric/{name}-{id8}";
+    const values: Record<string, string> = { name: safeLabel(name), id, id8: id.slice(0, 8) };
+    const branch = template.replace(/\{([^{}]+)\}/g, (token, key: string) => Object.hasOwn(values, key) ? values[key]! : token);
+    if (/[{}]/.test(branch) || !branch || branch.startsWith("-")) {
+      throw new Error("Invalid agents.worktree.branch template (use {name}, {id}, {id8})");
+    }
+    await executeFile("git", ["check-ref-format", "--branch", branch], { cwd: gitRoot });
+    const worktreePath = fabricWorktreePath(gitRoot, id, options.root);
+    assertWorktreePathSafe(gitRoot, worktreePath);
     await addCloneFirstWorktree({
       gitRoot,
       dest: worktreePath,
+      ...(options.root !== undefined ? { worktreeRoot: options.root } : {}),
       branch: { flag: "-b", name: branch },
       startPoint: "HEAD",
     });
@@ -196,6 +205,11 @@ export class WorktreeManager {
   async cleanup(id: string, deleteBranch = false): Promise<boolean> {
     const lease = this.#leases.get(id);
     if (!lease) return false;
+    assertWorktreePathSafe(lease.gitRoot, lease.path);
+    if (deleteBranch && fs.existsSync(path.join(lease.path, ".git"))) {
+      const actualBranch = (await executeFile("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: lease.path, timeoutMs: GIT_SUMMARY_TIMEOUT_MS })).stdout.trim();
+      if (actualBranch !== lease.branch) throw new Error("Refusing cleanup: worktree branch ownership changed");
+    }
     await removeWorktree(lease.gitRoot, lease.path, deleteBranch ? lease.branch : undefined);
     if (this.#leases.get(id) === lease) this.#leases.delete(id);
     return true;

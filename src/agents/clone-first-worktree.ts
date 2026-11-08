@@ -2,11 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { cloneTree, CowUnavailableError, CLONE_SKIP_PREFIXES } from "./cow-clone.js";
 import { executeFile } from "./transports/process-utils.js";
-import { ensureWorktreeExclude, isFabricWorktreePath } from "./worktree-paths.js";
+import { assertWorktreePathSafe, ensureWorktreeExclude, isFabricWorktreePath } from "./worktree-paths.js";
 
 export interface CloneFirstWorktreeAdd {
   gitRoot: string;
   dest: string;
+  /** Managed root relative to gitRoot; also excluded from the clone. */
+  worktreeRoot?: string;
   branch?: { flag: "-b" | "-B"; name: string };
   detach?: boolean;
   quiet?: boolean;
@@ -27,8 +29,10 @@ export const addCloneFirstWorktree = async (
   options: CloneFirstWorktreeAdd,
 ): Promise<CloneFirstWorktreeResult> => {
   const dest = options.dest;
-  if (isFabricWorktreePath(dest, path.basename(dest))) {
-    await ensureWorktreeExclude(options.gitRoot);
+  const managed = isFabricWorktreePath(dest, path.basename(dest), options.gitRoot, options.worktreeRoot);
+  if (managed) {
+    assertWorktreePathSafe(options.gitRoot, dest);
+    await ensureWorktreeExclude(options.gitRoot, options.worktreeRoot);
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const args = ["worktree", "add", "--no-checkout"];
@@ -41,7 +45,9 @@ export const addCloneFirstWorktree = async (
   try {
     let cloned = false;
     try {
-      await cloneTree(options.gitRoot, dest, CLONE_SKIP_PREFIXES);
+      await cloneTree(options.gitRoot, dest, managed
+        ? [...CLONE_SKIP_PREFIXES, path.relative(options.gitRoot, path.dirname(dest)).split(path.sep).join("/")]
+        : CLONE_SKIP_PREFIXES);
       cloned = true;
     } catch (error) {
       // Only a filesystem without copy-on-write falls back to a plain checkout.

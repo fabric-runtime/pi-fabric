@@ -758,7 +758,10 @@ class ResidentHost {
           id: handle.id,
           runDirectory,
           handle: { ...handle, residency: "durable" },
-          ...(worktreeGitRoot ? { worktreeGitRoot } : {}),
+          ...(worktreeGitRoot ? {
+            worktreeGitRoot,
+            ...(handle.worktree ? { worktreeRoot: path.relative(worktreeGitRoot, path.dirname(handle.worktree)).split(path.sep).join("/") } : {}),
+          } : {}),
           ...(command.runnerModule ? { runnerModule: command.runnerModule } : {}),
           ...(scope ? { scope } : {}),
           createdAt: Date.now(),

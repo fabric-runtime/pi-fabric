@@ -11,7 +11,7 @@ import type { FabricAgentLog, AgentHandleInfo, AgentRunRecord, AgentRunRequest, 
 import { constrainChildToolSelection, readChildToolAllowlist } from "../core/child-tool-allowlist.js";
 import { resolveAgentCwd } from "../agents/manager.js";
 import { BUILT_IN_RUNNER_IDS, requireAgentRunner } from "../agents/runner-registry.js";
-import { isFabricWorktreePath } from "../agents/worktree-paths.js";
+import { assertWorktreePathSafe, isFabricWorktreePath } from "../agents/worktree-paths.js";
 import { hasWorkerRecovery } from "../agents/worker-recovery.js";
 import { executeFile, processIsAlive, spawnDetached } from "../agents/transports/process-utils.js";
 import { readJsonlPage } from "../log-tail.js";
@@ -531,6 +531,11 @@ export class ResidencyClient {
     if (metadata.handle.worktree) {
       const gitRoot = metadata.worktreeGitRoot ?? this.options.config.projectRoot;
       const worktree = await registeredWorktree(gitRoot, metadata.handle.worktree);
+      assertWorktreePathSafe(gitRoot, worktree);
+      if (deleteBranch && metadata.handle.branch) {
+        const actualBranch = (await executeFile("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: worktree, timeoutMs: 30_000 })).stdout.trim();
+        if (actualBranch !== metadata.handle.branch) throw new Error("Refusing cleanup: worktree branch ownership changed");
+      }
       await executeFile(
         "git",
         ["worktree", "remove", "--force", worktree],
@@ -672,18 +677,24 @@ export class ResidencyClient {
       metadata.handle?.id !== id ||
       typeof metadata.runDirectory !== "string" ||
       (metadata.worktreeGitRoot !== undefined && typeof metadata.worktreeGitRoot !== "string") ||
+      (metadata.worktreeRoot !== undefined && typeof metadata.worktreeRoot !== "string") ||
       path.resolve(metadata.runDirectory) !==
         path.resolve(residencyRoot, "runs", id)
     ) {
       return undefined;
     }
-    if (metadata.handle.worktree && !isFabricWorktreePath(metadata.handle.worktree, id)) {
+    if (metadata.handle.worktree && !isFabricWorktreePath(
+      metadata.handle.worktree, id,
+      metadata.worktreeRoot === undefined ? undefined : metadata.worktreeGitRoot ?? this.options.config.projectRoot,
+      metadata.worktreeRoot,
+    )) {
       return undefined;
     }
     if (
       metadata.handle.branch &&
-      (!metadata.handle.branch.startsWith("pi-fabric/") ||
-        !metadata.handle.branch.endsWith(`-${id.slice(0, 8)}`))
+      (metadata.worktreeRoot === undefined
+        ? (!metadata.handle.branch.startsWith("pi-fabric/") || !metadata.handle.branch.endsWith(`-${id.slice(0, 8)}`))
+        : (!metadata.handle.worktree || metadata.handle.branch.startsWith("-") || /[\x00-\x20]/.test(metadata.handle.branch)))
     ) {
       return undefined;
     }

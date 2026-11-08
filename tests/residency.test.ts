@@ -955,15 +955,16 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
     await reconnect.close();
   });
 
-  it("rejects tampered durable worktree metadata before destructive cleanup", { timeout: 45_000 }, async () => {
+  it.each([false, true])("rejects tampered durable worktree metadata before destructive cleanup (custom root: %s)", { timeout: 45_000 }, async (custom) => {
     const state = await rootHarness("resident-worktree-tamper");
     const source = path.join(state.root, "source");
     const unrelated = path.join(state.root, "unrelated");
     initRepository(source);
     initRepository(unrelated);
     const id = randomId().padEnd(32, "0").slice(0, 32);
-    const branch = `pi-fabric/tampered-${id.slice(0, 8)}`;
-    const worktree = path.join(source, ".pi", "fabric", "worktrees", id);
+    const branch = custom ? `issue/tampered-${id}` : `pi-fabric/tampered-${id.slice(0, 8)}`;
+    const worktreeRoot = custom ? ".worktrees" : ".pi/fabric/worktrees";
+    const worktree = path.join(source, worktreeRoot, id);
     fs.mkdirSync(path.dirname(worktree), { recursive: true });
     git(source, "worktree", "add", "-q", "-b", branch, worktree, "HEAD");
     const runDirectory = path.join(state.config.residencyRoot, "runs", id);
@@ -1002,6 +1003,7 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
         worktree,
       },
       worktreeGitRoot: unrelated,
+      ...(custom ? { worktreeRoot } : {}),
       createdAt: 1,
       updatedAt: 1,
     };
@@ -1016,7 +1018,7 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
     });
 
     try {
-      await expect(client.cleanupAgent(id, true)).rejects.toThrow(/not registered/);
+      await expect(client.cleanupAgent(id, true)).rejects.toThrow(custom ? /Unknown/ : /not registered/);
       expect(worktreeBranches(source)).toContain(branch);
       expect(git(source, "branch", "--list", branch)).toContain(branch);
       expect(fs.existsSync(runDirectory)).toBe(true);

@@ -240,8 +240,8 @@ export interface FabricAgentConfig {
   sessionExportDir: string;
   /** Admission policy for the model a child process actually reports. */
   modelAdmission: FabricModelAdmission;
-  /** Shell command run in each new agent worktree before the child starts. */
-  worktree?: { setup?: string };
+  /** Managed worktree directory, branch template, and optional setup command. */
+  worktree?: { root?: string; branch?: string; setup?: string };
   /** Child UI dialogs: "cancel" (absent) or "route" to the parent UI or a decision. */
   childQuestions?: "cancel" | "route";
   /** Routed child question deadline; absent means 10 minutes. */
@@ -1327,9 +1327,11 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
         agents.modelAdmission,
         DEFAULT_FABRIC_CONFIG.agents.modelAdmission,
       ),
-      ...(stringValue(objectValue(agents.worktree).setup)
-        ? { worktree: { setup: String(objectValue(agents.worktree).setup).trim() } }
-        : {}),
+      ...(Object.keys(objectValue(agents.worktree)).length ? { worktree: {
+        ...(typeof objectValue(agents.worktree).root === "string" ? { root: String(objectValue(agents.worktree).root) } : {}),
+        ...(typeof objectValue(agents.worktree).branch === "string" ? { branch: String(objectValue(agents.worktree).branch) } : {}),
+        ...(stringValue(objectValue(agents.worktree).setup) ? { setup: String(objectValue(agents.worktree).setup).trim() } : {}),
+      } } : {}),
       ...(agents.childQuestions === "route" ? { childQuestions: "route" as const } : {}),
       ...(agents.childQuestionTimeoutMs === undefined ? {} : {
         childQuestionTimeoutMs: boundedInteger(agents.childQuestionTimeoutMs, 600_000, 1_000, 86_400_000),

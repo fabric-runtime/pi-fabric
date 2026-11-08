@@ -467,11 +467,15 @@ describe("agent manager spawning primitives", () => {
     })).rejects.toThrow(/requires the Pi runner/);
   });
 
-  it("reports worktree diffs, base ref, and kept state at settlement", async () => {
+  it.each([false, true])("reports worktree diffs, base ref, and kept state at settlement (custom: %s)", async (custom) => {
     const repository = initRepository();
     const base = git(repository, "rev-parse", "HEAD").trim();
-    const { manager } = createManager(repository);
-    const result = await manager.run({ task: "EDIT files", transport: "process", worktree: true });
+    const { manager } = createManager(repository, {}, custom ? { worktree: { root: ".worktrees", branch: "issue/{name}-{id}" } } : {});
+    const result = await manager.run({ task: "EDIT files", name: "edit", transport: "process", worktree: true });
+    if (custom) {
+      expect(result.worktree).toBe(path.join(repository, ".worktrees", result.id));
+      expect(result.branch).toBe(`issue/edit-${result.id}`);
+    }
     expect(result.worktreeResult).toEqual({
       path: result.worktree,
       branch: result.branch,
