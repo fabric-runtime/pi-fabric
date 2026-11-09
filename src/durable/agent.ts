@@ -34,7 +34,9 @@ const Ledger = defineDoc<{
 
 type RunInput = { request: string };
 type Checkpoint =
-  | { phase: "prepare"; next?: Omit<AgentTurnContext, "context">; pending?: AgentMessage[]; skipSteering?: boolean }
+  // `next` omits newMessages: the run's messages are rebuilt from committed events (open() restores
+  // `emitted`), so a checkpoint never re-saves every earlier message and image on each turn.
+  | { phase: "prepare"; next?: Omit<AgentTurnContext, "context" | "newMessages">; pending?: AgentMessage[]; skipSteering?: boolean }
   | { phase: "model"; messages: Message[]; model: AgentState["model"]; thinking: AgentState["thinkingLevel"] }
   | { phase: "tools"; message: AssistantMessage; children: TaskId<ToolResultMessage>[] }
   | { phase: "boundary"; message: AssistantMessage; results: ToolResultMessage[]; terminate?: boolean }
@@ -210,7 +212,8 @@ export class DurableAgent extends Agent {
           let model = (saved?.config?.model as unknown as AgentState["model"] | undefined) ?? this.state.model;
           let thinking = saved?.config?.thinking ?? this.state.thinkingLevel;
           if (task.state.checkpoint.next) {
-            const turn = { ...task.state.checkpoint.next, context };
+            // A checkpoint written before newMessages left it may still carry them; the committed run wins.
+            const turn = { ...task.state.checkpoint.next, newMessages: this.emitted.slice(), context };
             const update = this.prepareNextTurnWithContext
               ? await this.prepareNextTurnWithContext(turn, runtime.signal)
               : await this.prepareNextTurn?.(runtime.signal);
@@ -353,7 +356,7 @@ export class DurableAgent extends Agent {
               if (!queued.length && (!cp.results.length || cp.terminate) && cp.action !== "continue") queued = ledger.followup.splice(0, this.followUpMode === "all" ? ledger.followup.length : 1);
             }
             if (!hardEnd && (queued.length || (cp.results.length && !cp.terminate) || cp.action === "continue")) {
-              const next = copy({ message: cp.message, toolResults: cp.results, newMessages: this.emitted.slice() });
+              const next = copy({ message: cp.message, toolResults: cp.results });
               return { status: "running", checkpoint: { phase: "prepare", next, ...(queued.length ? { pending: copy(queued) as unknown as AgentMessage[] } : {}), skipSteering: queued.length > 0 } };
             }
             ledger.active = 0;
