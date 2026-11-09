@@ -246,7 +246,7 @@ const renameAtomicAsync = async (
   }
 };
 
-const writeFileAtomicAsync = async (
+export const writeFileAtomicAsync = async (
   filePath: string,
   contents: string,
   options?: AtomicWriteOptions,

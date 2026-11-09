@@ -5,6 +5,8 @@ export * from "./meter.js";
 export * from "./passes.js";
 export * from "./pool.js";
 export * from "./pool-store.js";
+export * from "./pool-writer.js";
+export * from "./pool-worker.js";
 export * from "./compiled-store.js";
 export * from "./compiled-surface.js";
 export * from "./compiler.js";

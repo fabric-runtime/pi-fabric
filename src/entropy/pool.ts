@@ -88,7 +88,7 @@ const parseIdentity = (identity: string): { ref: string; key: string; valueKey: 
   };
 };
 
-interface ObservationSummary {
+export interface ObservationSummary {
   digest: string;
   counts: Record<string, number>;
 }
@@ -287,12 +287,12 @@ const serializePool = (
   baked,
 });
 
-interface SummarizedObservationWindow {
+export interface SummarizedObservationWindow {
   file: string;
   summary: ObservationSummary;
 }
 
-const mergeObservationSummaries = (
+export const mergeObservationSummaries = (
   pool: EntropyObservationPoolFile | undefined,
   windows: readonly SummarizedObservationWindow[],
 ): MergedObservationPool => {
@@ -382,6 +382,11 @@ export class SessionObservationCache {
     pool: EntropyObservationPoolFile | undefined,
     windows: readonly EntropyObservationWindow[],
   ): Promise<MergedObservationPool> {
+    return mergeObservationSummaries(pool, await this.summarize(windows));
+  }
+
+  /** Per-window summaries, reusing unchanged and appended windows by identity. */
+  async summarize(windows: readonly EntropyObservationWindow[]): Promise<SummarizedObservationWindow[]> {
     const summarized: SummarizedObservationWindow[] = [];
     for (const window of windows) {
       let cached = this.#windows.get(window.file);
@@ -409,7 +414,7 @@ export class SessionObservationCache {
       summarized.push({ file: window.file, summary: cached!.summary });
       await yieldToLoop();
     }
-    return mergeObservationSummaries(pool, summarized);
+    return summarized;
   }
 }
 

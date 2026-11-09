@@ -91,6 +91,34 @@ export interface FabricOmittedCalls {
 const serializedBytes = (value: unknown): number =>
   Buffer.byteLength(JSON.stringify(value), "utf8");
 
+/**
+ * Pops `items` from the end until `details` serializes within the cap, with
+ * the same result as measuring after every pop, but without re-serializing
+ * the whole record per pop: that was quadratic in a large run's results and
+ * blocked the event loop at the end of every big fabric_exec. Removing the
+ * last of m array members shrinks the JSON by its own bytes plus, when m > 1,
+ * one comma. `drop` only grows counters, so the running estimate never
+ * exceeds the true size; one real measurement then confirms each stop.
+ */
+const dropUntilFits = <T>(
+  details: object,
+  items: T[],
+  drop: (item: T) => void,
+  measured: number,
+): number => {
+  let bytes = measured;
+  while (bytes > FABRIC_EXECUTION_DETAILS_MAX_BYTES && items.length > 0) {
+    let estimate = bytes;
+    while (estimate > FABRIC_EXECUTION_DETAILS_MAX_BYTES && items.length > 0) {
+      const item = items.pop()!;
+      estimate -= serializedBytes(item) + (items.length > 0 ? 1 : 0);
+      drop(item);
+    }
+    bytes = serializedBytes(details);
+  }
+  return bytes;
+};
+
 const cloneTrace = (trace: FabricExecutionTraceV1): FabricExecutionTraceV1 =>
   structuredClone(trace);
 
@@ -150,11 +178,8 @@ export const createFabricPersistedExecutionDetails = (input: {
       ? { outputFormatLines: Math.max(0, Math.floor(input.outputFormatLines)) }
       : {}),
   };
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.audits.length > 0
-  ) {
-    const dropped = details.audits.pop()!;
+  // Each bound pops from the end, in this order, until the record fits.
+  let bytes = dropUntilFits(details, details.audits, (dropped) => {
     const omitted = details.omittedCalls ?? { count: 0, done: 0 };
     details.omittedCalls = {
       count: omitted.count + 1,
@@ -164,38 +189,23 @@ export const createFabricPersistedExecutionDetails = (input: {
       ...((omitted.failed ?? 0) + (dropped.success === false ? 1 : 0) > 0
         ? { failed: (omitted.failed ?? 0) + (dropped.success === false ? 1 : 0) } : {}),
     };
-  }
+  }, serializedBytes(details));
   // Assessment rows are optional observability: they yield before the trace,
   // and their totals survive.
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.assessment &&
-    details.assessment.operations.length > 0
-  ) {
-    details.assessment.operations.pop();
-    details.assessment.counts.droppedOperations++;
+  const assessment = details.assessment;
+  if (assessment) {
+    bytes = dropUntilFits(details, assessment.operations, () => {
+      assessment.counts.droppedOperations++;
+    }, bytes);
   }
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.trace.operations.length > 0
-  ) {
-    details.trace.operations.pop();
+  bytes = dropUntilFits(details, details.trace.operations, () => {
     details.trace.counts.droppedOperations++;
-  }
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.phases.length > 0
-  ) {
-    details.phases.pop();
-  }
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.trace.phases.length > 0
-  ) {
-    details.trace.phases.pop();
+  }, bytes);
+  bytes = dropUntilFits(details, details.phases, () => undefined, bytes);
+  bytes = dropUntilFits(details, details.trace.phases, () => {
     details.trace.counts.droppedValues++;
-  }
-  if (serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES) {
+  }, bytes);
+  if (bytes > FABRIC_EXECUTION_DETAILS_MAX_BYTES) {
     delete details.trace.error;
     details.trace.counts.droppedValues++;
   }

@@ -648,6 +648,8 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   const createEntropyCaches = (entropy: typeof import("./entropy/index.js")) => ({
     compiler: new entropy.BackgroundEntropyCompiler(),
     observations: new entropy.SessionObservationCache(),
+    // Parses and rewrites the machine-wide pool off the interactive thread.
+    pool: new entropy.ObservationPoolWriter(),
     sessions: new entropy.BackgroundSessionSelector(entropy.machineSessionFilesAsync),
   });
   let entropyCaches: ReturnType<typeof createEntropyCaches> | undefined;
@@ -669,7 +671,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     if (!current()) return false;
     const { entropyRepairRows,
       liveSurfaceSnapshot, loadCompiledSurfaceAsync, saveCompiledSurfaceAsync,
-      updateObservationPoolAsync, sessionWindowEvidenceAsync } = entropy;
+      sessionWindowEvidenceAsync } = entropy;
     let retry = false;
     const agentDir = resolveAgentDir();
     const cwd = state.cwd ?? context.cwd;
@@ -684,7 +686,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     const evidence = await sessionWindowEvidenceAsync(files, { windowsOnly: true });
     if (!current()) return false;
     try {
-      await updateObservationPoolAsync(agentDir, evidence.observationWindows, caches.observations);
+      await caches.pool.update(agentDir, evidence.observationWindows, caches.observations);
     } catch (error) {
       if (error instanceof FileLockTimeoutError) {
         retry = true;
@@ -784,6 +786,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     clearEntropyRetry();
     entropyStopping = false;
     entropyLifecycleEpoch += 1;
+    void entropyCaches?.pool.close();
     entropyCaches = undefined;
     entropyEvidenceThisTurn = false;
     entropyCompilePending = undefined;
@@ -1403,6 +1406,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     }
     await settleEntropyCompiles();
     entropyLifecycleEpoch += 1;
+    void entropyCaches?.pool.close();
     entropyCaches = undefined;
     entropyCompilePending = undefined;
     unsubscribeComponentRegistration();

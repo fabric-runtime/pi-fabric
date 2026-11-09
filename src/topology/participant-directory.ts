@@ -335,6 +335,11 @@ export interface ParticipantDirectoryOptions {
 export type ParticipantSnapshotSource = () => FabricParticipantRecord[];
 
 /** A participant is live while its owner host holds an unexpired lease for the same identity and root. */
+/** Equal records but for their `updatedAt` stamp; key order is significant, as in the full comparison. */
+const sameExceptUpdatedAt = (left: unknown, right: unknown): boolean =>
+  isObject(left) && isObject(right) &&
+  JSON.stringify({ ...left, updatedAt: 0 }) === JSON.stringify({ ...right, updatedAt: 0 });
+
 const liveOwner = (
   participant: FabricParticipantRecord,
   hosts: Map<string, FabricHostRecord>,
@@ -356,6 +361,9 @@ export class ParticipantDirectory implements FabricParticipantSource {
   #timer: NodeJS.Timeout | undefined;
   #closed = false;
   #refreshing: Promise<void> | undefined;
+  #refreshingRenews = false;
+  /** When this host last stamped its lease and liveness timestamps. */
+  #renewedAt = 0;
   #refreshScheduled = false;
   #refreshAgain = false;
   #quiescing = false;
@@ -411,19 +419,39 @@ export class ParticipantDirectory implements FabricParticipantSource {
     this.#refreshScheduled = true;
     queueMicrotask(() => {
       this.#refreshScheduled = false;
-      void this.refresh().catch(() => undefined);
+      void this.#run(false).catch(() => undefined);
     });
   }
 
+  /** Publish every record and renew this host's lease, as the heartbeat does. */
   async refresh(): Promise<void> {
+    return this.#run(true);
+  }
+
+  // An event refresh (scheduleRefresh) publishes changed records only. Nested
+  // tool calls schedule one each, and re-stamping unchanged timestamps then
+  // rewrote the whole project mesh state three times per call, synchronously,
+  // on the interactive thread. Liveness stays with the heartbeat: a lease and
+  // its timestamps are renewed by refresh(), or by any refresh once the last
+  // renewal is a heartbeat old, so they are never older than before.
+  async #run(renew: boolean): Promise<void> {
     if (this.#closed) return;
-    if (this.#refreshing) return this.#refreshing;
-    const operation = this.#refresh();
+    if (this.#refreshing) {
+      if (!renew || this.#refreshingRenews) return this.#refreshing;
+      await this.#refreshing.catch(() => undefined);
+      return this.#run(true);
+    }
+    const renewing = renew || Date.now() - this.#renewedAt >= this.#heartbeatMs;
+    const operation = this.#refresh(renewing);
     this.#refreshing = operation;
+    this.#refreshingRenews = renewing;
     try {
       await operation;
     } finally {
-      if (this.#refreshing === operation) this.#refreshing = undefined;
+      if (this.#refreshing === operation) {
+        this.#refreshing = undefined;
+        this.#refreshingRenews = false;
+      }
       if (this.#refreshAgain) {
         this.#refreshAgain = false;
         this.scheduleRefresh();
@@ -477,7 +505,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
         }
       }
       if (!options.kinds || options.kinds.includes("actor")) {
-        for (const entry of this.mesh.listAll(LEGACY_ACTOR_PREFIX)) {
+        for (const entry of this.#legacyActorEntries(legacyRoots)) {
           const actor = legacyActorFromEntry(entry, legacyRoots);
           if (actor && !byId.has(actor.id)) byId.set(actor.id, actor);
         }
@@ -698,7 +726,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
     await Promise.allSettled(prune.map(({ entry }) => this.mesh.delete({ key: entry.key, ifVersion: entry.version })));
   }
 
-  async #refresh(): Promise<void> {
+  async #refresh(renew: boolean): Promise<void> {
     const now = Date.now();
     const desired = new Map<string, FabricParticipantRecord>();
     for (const source of this.#sources) {
@@ -743,27 +771,27 @@ export class ParticipantDirectory implements FabricParticipantSource {
           .catch(() => undefined);
       }
     } else if (root && legacySessionKey && root.cwd && root.sessionId) {
-      await this.mesh.put({
-        key: legacySessionKey,
-        value: {
-          id: root.id,
-          name: root.label ?? `Peer ${root.sessionId.slice(0, 8)}`,
-          ...(root.label ? { label: root.label } : {}),
-          kind: "peer",
-          status: root.status === "running" ? "running" : "idle",
-          runner: "pi",
-          transport: "host",
-          cwd: root.cwd,
-          sessionId: root.sessionId,
-          ...(root.model ? { model: root.model } : {}),
-          ...(root.thinking ? { thinking: root.thinking } : {}),
-          startedAt: root.startedAt,
-          updatedAt: now,
-          pendingMessages: root.pendingMessages === true,
-          local: false,
-        },
-        identity: this.options.identity,
-      });
+      const value = {
+        id: root.id,
+        name: root.label ?? `Peer ${root.sessionId.slice(0, 8)}`,
+        ...(root.label ? { label: root.label } : {}),
+        kind: "peer",
+        status: root.status === "running" ? "running" : "idle",
+        runner: "pi",
+        transport: "host",
+        cwd: root.cwd,
+        sessionId: root.sessionId,
+        ...(root.model ? { model: root.model } : {}),
+        ...(root.thinking ? { thinking: root.thinking } : {}),
+        startedAt: root.startedAt,
+        updatedAt: now,
+        pendingMessages: root.pendingMessages === true,
+        local: false,
+      };
+      const legacy = renew ? undefined : this.mesh.get(legacySessionKey);
+      if (!legacy || legacy.updatedBy.id !== this.options.identity.id || !sameExceptUpdatedAt(legacy.value, value)) {
+        await this.mesh.put({ key: legacySessionKey, value, identity: this.options.identity });
+      }
     }
 
     const existing = this.mesh
@@ -782,8 +810,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
         }),
     );
     const legacyActorOwners = new Map(
-      this.mesh
-        .listAll(LEGACY_ACTOR_PREFIX)
+      this.#legacyActorEntries(legacyRoots)
         .flatMap((entry) => {
           const actor = legacyActorFromEntry(entry, legacyRoots);
           return actor ? [[actor.id, actor.ownerIdentityId] as const] : [];
@@ -791,7 +818,9 @@ export class ParticipantDirectory implements FabricParticipantSource {
     );
     for (const record of desired.values()) {
       const current = existingById.get(record.id);
-      if (current && JSON.stringify(current.participant) === JSON.stringify(record)) continue;
+      if (current && (renew
+        ? JSON.stringify(current.participant) === JSON.stringify(record)
+        : sameExceptUpdatedAt(current.participant, record))) continue;
       const key = keyFor(PARTICIPANT_PREFIX, record.id);
       const occupied = current?.entry ?? this.mesh.get(key);
       const occupiedParticipant = occupied && participantFromEntry(occupied);
@@ -827,6 +856,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
       await this.mesh.delete({ key: entry.key, ifVersion: entry.version }).catch(() => undefined);
     }
 
+    if (!renew) return;
     // Stamp this host's lease last, once every slower write above is done: a
     // refresh that outruns its own lease must not publish an already-expired
     // lease, which would make peers — and this host's own list() — read the
@@ -846,6 +876,7 @@ export class ParticipantDirectory implements FabricParticipantSource {
       value: host,
       identity: this.options.identity,
     });
+    this.#renewedAt = leaseAt;
 
     // The sweep runs beside the heartbeat instead of holding it up. A batch
     // that leaves work behind brings the next sweep forward to the next beat.
@@ -1018,6 +1049,29 @@ export class ParticipantDirectory implements FabricParticipantSource {
       }
     }
     return undefined;
+  }
+
+  /**
+   * The legacy actor entries `legacyActorFromEntry` can accept, in key order:
+   * only those under a live legacy root's `actors/<sessionId>/`. Listing the
+   * whole `actors/` prefix cloned every actor state in the project on every
+   * refresh, which dominated presence work once a project held many actors.
+   */
+  #legacyActorEntries(roots: ReadonlyMap<string, FabricParticipantInfo>): MeshStateEntry[] {
+    const byKey = new Map<string, MeshStateEntry>();
+    for (const root of roots.values()) {
+      if (!root.sessionId) continue;
+      let entries: MeshStateEntry[];
+      try {
+        entries = this.mesh.listAll(`${LEGACY_ACTOR_PREFIX}${root.sessionId}/`);
+      } catch {
+        // A session id that is no valid key prefix: fall back to the full scan.
+        return this.mesh.listAll(LEGACY_ACTOR_PREFIX);
+      }
+      for (const entry of entries) byKey.set(entry.key, entry);
+    }
+    // listAll's order, so callers keep their first-wins choice per id.
+    return [...byKey.values()].sort((left, right) => left.key.localeCompare(right.key));
   }
 
   #legacySessionKey(): string | undefined {

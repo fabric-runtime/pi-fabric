@@ -7,11 +7,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { writeJsonAtomic, writeJsonAtomicAsync } from "../core/atomic-write.js";
+import { writeFileAtomicAsync, writeJsonAtomic } from "../core/atomic-write.js";
 import { withExclusiveFileLock, withExclusiveFileLockAsync } from "../core/file-lock.js";
 import {
   OBSERVATION_POOL_VERSION,
   SessionObservationCache,
+  mergeObservationSummaries,
+  type SummarizedObservationWindow,
   type EntropyObservationWindow,
   type EntropyObservationPoolEntry,
   type EntropyObservationPoolFile,
@@ -155,9 +157,11 @@ export const loadObservationPool = (agentDir: string): LoadedObservationPool => 
   return { file: parsedFile };
 };
 
-export const loadObservationPoolAsync = async (
+// The pool text as read, so a locked rewrite can compare against it without
+// reading the whole file a second time.
+const readObservationPoolAsync = async (
   agentDir: string,
-): Promise<LoadedObservationPool> => {
+): Promise<LoadedObservationPool & { raw?: string }> => {
   const file = poolPath(observationPoolDirectory(agentDir));
   let raw: string;
   try {
@@ -173,7 +177,14 @@ export const loadObservationPoolAsync = async (
     return { error: "observation pool is malformed JSON" };
   }
   const parsedFile = parsePoolFile(parsed);
-  return parsedFile ? { file: parsedFile } : { error: "observation pool is invalid" };
+  return parsedFile ? { file: parsedFile, raw } : { error: "observation pool is invalid" };
+};
+
+export const loadObservationPoolAsync = async (
+  agentDir: string,
+): Promise<LoadedObservationPool> => {
+  const { raw: _raw, ...loaded } = await readObservationPoolAsync(agentDir);
+  return loaded;
 };
 
 export interface SavedObservationPool {
@@ -211,36 +222,42 @@ export const saveObservationPool = (
     },
   );
 
+// `current` is the pool text read under the same lock, when the caller has it.
 const writeObservationPoolAsync = async (
   agentDir: string,
   file: EntropyObservationPoolFile,
+  current?: string,
 ): Promise<SavedObservationPool> => {
   const target = poolPath(observationPoolDirectory(agentDir));
   const serialized = `${JSON.stringify(file, null, 2)}\n`;
-  try {
-    if (await fs.promises.readFile(target, "utf8") === serialized) {
-      return { file, written: false };
+  if (current !== undefined) {
+    if (current === serialized) return { file, written: false };
+  } else {
+    try {
+      if (await fs.promises.readFile(target, "utf8") === serialized) {
+        return { file, written: false };
+      }
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") throw error;
     }
-  } catch (error) {
-    if (errorCode(error) !== "ENOENT") throw error;
   }
-  await writeJsonAtomicAsync(target, file, {
-    space: 2, newline: true, mode: 0o600, dirMode: 0o700,
-  });
+  // Write the bytes just compared: the pool can be tens of megabytes, and a
+  // second serialization doubled the time this update held the thread.
+  await writeFileAtomicAsync(target, serialized, { mode: 0o600, dirMode: 0o700 });
   return { file, written: true };
 };
 
-/** Rebase observations on the latest pool while holding the cross-process lock. */
-export const updateObservationPoolAsync = async (
+/**
+ * The locked half of an update: rebase per-window summaries on the latest
+ * pool, read inside the lock so writes from other Pi processes survive. This
+ * is the part that parses, merges and rewrites the whole machine-wide pool,
+ * so the extension runs it on a worker thread (pool-writer.ts).
+ */
+export const updateObservationPoolFromSummariesAsync = async (
   agentDir: string,
-  windows: readonly EntropyObservationWindow[],
-  cache = new SessionObservationCache(),
-): Promise<SavedObservationPool> => {
-  // Warm expensive summaries outside the critical section. The second merge
-  // reuses immutable snapshots, but must read the pool inside the lock to
-  // preserve writes from other Pi processes.
-  await cache.merge(undefined, windows);
-  return withExclusiveFileLockAsync(
+  summarized: readonly SummarizedObservationWindow[],
+): Promise<SavedObservationPool> =>
+  withExclusiveFileLockAsync(
     {
       directory: observationPoolDirectory(agentDir),
       lockName: "observation-pool.lock",
@@ -250,16 +267,25 @@ export const updateObservationPoolAsync = async (
       staleMs: POOL_STALE_LOCK_MS,
     },
     async () => {
-      const loaded = await loadObservationPoolAsync(agentDir);
+      const loaded = await readObservationPoolAsync(agentDir);
       if (loaded.error) throw new Error(loaded.error);
-      const merged = await cache.merge(loaded.file, windows);
+      const merged = mergeObservationSummaries(loaded.file, summarized);
       if (loaded.file && merged.mergedSessions === 0) {
         return { file: loaded.file, written: false };
       }
-      return writeObservationPoolAsync(agentDir, merged.file);
+      return writeObservationPoolAsync(agentDir, merged.file, loaded.raw);
     },
   );
-};
+
+/** Rebase observations on the latest pool while holding the cross-process lock. */
+export const updateObservationPoolAsync = async (
+  agentDir: string,
+  windows: readonly EntropyObservationWindow[],
+  cache = new SessionObservationCache(),
+): Promise<SavedObservationPool> =>
+  // Summarize expensive windows outside the critical section; the cache
+  // reuses unchanged and appended windows across turns.
+  updateObservationPoolFromSummariesAsync(agentDir, await cache.summarize(windows));
 
 export const saveObservationPoolAsync = async (
   agentDir: string,
