@@ -71,6 +71,12 @@ const extractMessages = (branch: unknown[]): ActorMessage[] => {
         messages.push(message);
         foundWrapped = true;
       }
+    } else if (entry && typeof entry === "object") {
+      const summary = entry as { type?: unknown; summary?: unknown };
+      if ((summary.type === "compaction" || summary.type === "branch_summary") && typeof summary.summary === "string") {
+        messages.push({ role: "summary", content: summary.summary });
+        foundWrapped = true;
+      }
     }
   }
   if (foundWrapped) return messages;
@@ -129,9 +135,9 @@ const buildDigest = (messages: ActorMessage[]): ActorDigest => {
 
 const compactBlocks = (msg: ActorMessage): string[] => {
   const lines: string[] = [];
-  if (msg.role === "user") {
+  if (msg.role === "user" || msg.role === "summary") {
     const t = textOf(msg.content).trim();
-    if (t) lines.push(`user: ${clip(t, 200)}`);
+    if (t) lines.push(`${msg.role}: ${clip(t, 200)}`);
   } else if (msg.role === "assistant") {
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {

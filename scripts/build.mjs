@@ -66,6 +66,7 @@ const lazyEntryPoints = [
   "src/native-tool-catalog.ts",
   "src/native-image-artifacts.ts",
   "src/memory/extractive-history.ts",
+  "src/memory/history-paging.ts",
   "src/cli/mesh.ts",
   "src/cli/decisions.ts",
   "src/thinking-control.ts",

@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FabricMcpConfig } from "../src/config.js";
+import { normalizeFabricConfig, type FabricMcpConfig } from "../src/config.js";
+import { RuntimeStateBuiltins } from "../src/runtime-state-builtins.js";
+import { ActionRegistry } from "../src/core/action-registry.js";
+import { FabricShellJobStore } from "../src/core/shell-jobs.js";
+import { CapturedToolCatalog } from "../src/capture/catalog.js";
+import type { FabricProviderComponent, FabricProviderComponentManifest } from "../src/components/provider-component.js";
+import type { FabricComponentContext } from "../src/components/types.js";
 import {
   MCP_DESCRIPTOR_CACHE_VERSION,
   McpDescriptorCacheStore,
@@ -48,6 +54,37 @@ beforeEach(() => {
 });
 
 describe("McpProvider lazy mcporter runtime", () => {
+  it("keeps built-in mounting idle and initializes on the first MCP discovery", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-mcp-mount-"));
+    const configPath = path.join(cwd, "mcporter.json");
+    fs.writeFileSync(configPath, JSON.stringify({ mcpServers: {}, imports: [] }));
+    createRuntime.mockResolvedValue({ listServers: () => [], getDefinitions: () => [], close });
+    const warmup = vi.spyOn(McpProvider.prototype, "warmup").mockImplementation(() => {});
+    const components: FabricProviderComponent[] = [];
+    const manifest = { install: async (component: FabricProviderComponent) => { components.push(component); } };
+    const jobs = new FabricShellJobStore();
+    let provider: McpProvider | undefined;
+    try {
+      const builtins = new RuntimeStateBuiltins(manifest as unknown as FabricProviderComponentManifest, new ActionRegistry(), () => {});
+      await builtins.tools(cwd, normalizeFabricConfig({ fullCodeMode: false, mcp: config(configPath) }), new CapturedToolCatalog(), { jobs, getHangMs: () => 0 });
+      const component = components.find(value => value.definition.name === "fabric.provider.mcp");
+      expect(component).toBeDefined();
+      await component!.definition.activate({
+        provide(value: McpProvider) { provider = value; },
+        defer() {},
+      } as unknown as FabricComponentContext, undefined);
+      expect(warmup).not.toHaveBeenCalled();
+      expect(createRuntime).not.toHaveBeenCalled();
+      expect(provider).toBeInstanceOf(McpProvider);
+      await provider!.list({}, { ...invocation, cwd });
+      expect(createRuntime).toHaveBeenCalledTimes(1);
+    } finally {
+      warmup.mockRestore();
+      await provider?.close();
+      await jobs.close();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
   it("hydrates a valid descriptor cache without creating the runtime", async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-mcp-lazy-"));
     const configPath = path.join(cwd, "mcporter.json");

@@ -1,0 +1,58 @@
+[
+  {
+    "name": "core-manager-64",
+    "cmd": "bun install --frozen-lockfile && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode manager --mib 64",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "core-manager-256",
+    "cmd": "bun install --frozen-lockfile && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode manager --mib 256",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "core-manager-600",
+    "cmd": "bun install --frozen-lockfile && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode manager --mib 600",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "core-sdk-256",
+    "cmd": "bun install --frozen-lockfile && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode sdk --mib 256",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "fabric-sdk-256",
+    "cmd": "bun install --frozen-lockfile && bun run build && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode fabric --mib 256",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "core-sdk-120",
+    "cmd": "bun install --frozen-lockfile && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode sdk --mib 1 --cycles 120",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "fabric-sdk-120",
+    "cmd": "bun install --frozen-lockfile && bun run build && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode fabric --mib 1 --cycles 120",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  },
+  {
+    "name": "core-checkpoint-600",
+    "cmd": "bun install --frozen-lockfile && node --expose-gc --max-old-space-size=6144 scripts/benchmark-session-memory.mjs --mode checkpoint --mib 600",
+    "cpu": 2,
+    "memory": 10,
+    "timeout": 480
+  }
+]

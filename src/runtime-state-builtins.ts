@@ -119,7 +119,9 @@ export class RuntimeStateBuiltins {
       unmounted: (provider) => {
         if (mcpProvider === provider) mcpProvider = undefined;
       },
-      start: (provider) => { provider.warmup(); },
+      // Registration must not import mcporter or revalidate servers. The first
+      // MCP list/describe/invoke hydrates its cache and starts that work. This
+      // also keeps actor-only recovery from loading an unrelated MCP runtime.
     }));
     if (capturedToolsProvider && !enforceSchema) {
       await this.install(createProviderComponent({

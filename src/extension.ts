@@ -16,6 +16,7 @@ import { installRegisteredToolCapture } from "./capture/interceptor.js";
 import { registerFabricCommand } from "./commands/fabric.js";
 import { resolveAgentDir } from "./core/agent-dir.js";
 import { FileLockTimeoutError } from "./core/file-lock.js";
+import { settleLifecyclePublication } from "./core/lifecycle-settlement.js";
 import { setActiveCompiledSurface } from "./entropy/active.js";
 import {
   filterPrewalkContinuationMessages,
@@ -252,6 +253,30 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     ...(FABRIC_ENTRY_IDENTITY ? { entryIdentity: FABRIC_ENTRY_IDENTITY } : {}),
     ...(options.managedHost ? {managedHost: options.managedHost} : {}),
   });
+  let historyPaging: { manager: object; controller: AbortController; pending: Promise<void> } | undefined;
+  const stopHistoryPaging = (): void => {
+    historyPaging?.controller.abort();
+    historyPaging = undefined;
+  };
+  const pageHistory = (context: ExtensionContext): Promise<void> => {
+    const manager = context.sessionManager;
+    if (!state.bootstrapped || state.managedHostOptions || state.config.memory.pageHistory === false ||
+      context.signal?.aborted || typeof manager.buildContextEntries !== "function") return Promise.resolve();
+    if (historyPaging?.manager === manager) return historyPaging.pending;
+    stopHistoryPaging();
+    const controller = new AbortController();
+    const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
+    const run = { manager, controller, pending: Promise.resolve() };
+    run.pending = import("./memory/history-paging.js")
+      .then(module => module.pageSessionHistory(manager, signal))
+      .then(() => undefined)
+      .catch(error => {
+        if (!signal.aborted) console.warn(`[pi-fabric] history paging failed: ${error instanceof Error ? error.message : String(error)}`);
+      })
+      .finally(() => { if (historyPaging === run) historyPaging = undefined; });
+    historyPaging = run;
+    return run.pending;
+  };
   const directToolApproval = new FabricDirectToolApproval(
     pi,
     () => state.config,
@@ -754,6 +779,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   };
 
   pi.on("session_start", async (_event, context) => {
+    stopHistoryPaging();
     await sealScope();
     clearEntropyRetry();
     entropyStopping = false;
@@ -800,6 +826,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   // Branch changes move the leaf: emitted echoes and spent reminder budget
   // must track it exactly. Rewind removes abandoned-branch residue.
   pi.on("session_tree", async (_event, context) => {
+    stopHistoryPaging();
     state.thinking.invalidate();
     proxyContract.reset();
     refreshProxyLedger(context);
@@ -819,8 +846,10 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     await state.publishHostLifecycle("pi.input", event);
   });
 
-  pi.on("agent_start", async (event) => {
-    if (state.initialized) await state.publishHostLifecycle("pi.agent_start", event);
+  pi.on("agent_start", async (event, context) => {
+    // Unlike before_agent_start, this boundary has the core run abort signal.
+    await pageHistory(context);
+    if (state.initialized) await settleLifecyclePublication(state, "pi.agent_start", event, context.signal?.aborted === true);
   });
 
   pi.on("agent_end", async (event, context) => {
@@ -830,7 +859,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     } catch (error) {
       console.warn(`[pi-fabric] thinking revert failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (state.initialized) await state.publishHostLifecycle("pi.agent_end", event);
+    if (state.initialized) await settleLifecyclePublication(state, "pi.agent_end", event, context.signal?.aborted === true);
   });
 
   pi.on("turn_end", async (event, context) => {
@@ -838,7 +867,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     // dropped entries for completed fabric_exec runs, this catches turns where
     // the program never executed (type errors, aborts).
     if (state.initialized) state.resetSpeculation();
-    if (state.initialized) await state.publishHostLifecycle("pi.turn_end", event);
+    if (state.initialized) await settleLifecyclePublication(state, "pi.turn_end", event, context.signal?.aborted === true);
     // A turn with new action evidence only enqueues the background compiler;
     // the hook returns without scanning session files or waiting on a lock.
     if (entropyEvidenceThisTurn) {
@@ -857,7 +886,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       // Managed runtimes never construct native prewalk/compact controllers.
       // The Pi-owned mode also leaves automatic compaction scheduling to the host.
       if (!interrupted && state.config.compaction.engine === "fabric") await compactAtConfiguredThreshold(context, state.config);
-      if (state.initialized) await state.publishHostLifecycle("pi.agent_settled", event);
+      if (state.initialized) await settleLifecyclePublication(state, "pi.agent_settled", event, interrupted);
       return;
     }
     if (!state.initialized) {
@@ -899,7 +928,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
           state.compact.noteAutoCompaction(trigger, committed),
       );
     }
-    await state.publishHostLifecycle("pi.agent_settled", event);
+    await settleLifecyclePublication(state, "pi.agent_settled", event, interrupted);
   });
 
   // Speculative PTC: follow fabric_exec argument streaming and pre-launch
@@ -1008,7 +1037,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     if (!state.initialized) return;
     if (event.toolName === "fabric_exec") entropyEvidenceThisTurn = true;
     state.noteMainActivity(context);
-    if (event.isError) {
+    if (event.isError && !context.signal?.aborted) {
       const classified = classifyToolResult({
         toolName: event.toolName,
         isError: true,
@@ -1033,6 +1062,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   // noted before then is handed over when it does.
   let compactionOwners: Promise<CompactionOwnerObserver> | undefined;
   pi.on("session_compact", async (event, context) => {
+    void pageHistory(context);
     // A claimed owner's result is expected, not a lost ownership race.
     const fabricEngine = !compactionOwner()
       && (state.bootstrapped ? state.config : DEFAULT_FABRIC_CONFIG).compaction.engine === "fabric";
@@ -1348,13 +1378,15 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
   });
 
   registerFabricActorHostEventObservers(pi, (eventName, event, context) => {
-    if (!state.initialized) return;
+    if (!state.initialized || context.signal?.aborted ||
+      (event.type === "agent_settled" && event.aborted)) return;
     state.dispatchHostEvent(eventName, event, context);
   });
 
   installTerminalTitle(pi, fabricTerminalTitle);
 
   pi.on("session_shutdown", async (_event, context) => {
+    stopHistoryPaging();
     // A claim never outlives the runtime it was made in: reload, session
     // replacement and quit all shut this instance down. Cleared before any
     // await, so a later step that throws cannot leave the old handle active.

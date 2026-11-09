@@ -89,6 +89,17 @@ describe("buildActorContext", () => {
     expect(ctx.transcript.find((l) => l.startsWith("bash:"))).toContain("-> 0");
   });
 
+  it("includes compaction and branch summaries without treating them as user requests", () => {
+    const result = buildActorContext([
+      { type: "compaction", summary: 'Earlier work touched "src/auth.ts".' },
+      { type: "branch_summary", summary: "The alternate attempt was abandoned." },
+      ...branch([{ role: "user", content: "Continue fixing login" }]),
+    ], 14, 40_000);
+    expect(result.transcript[0]).toBe('summary: Earlier work touched "src/auth.ts".');
+    expect(result.transcript[1]).toBe("summary: The alternate attempt was abandoned.");
+    expect(result.digest.filesTouched).toContain("src/auth.ts");
+    expect(result.digest.lastUserRequest).toBe("Continue fixing login");
+  });
   it("produces a byte-stable digest for identical input (cache-friendly)", () => {
     const b = branch([
       { role: "user", content: "go" },

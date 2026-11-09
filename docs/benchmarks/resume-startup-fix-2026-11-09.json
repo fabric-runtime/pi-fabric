@@ -1,0 +1,5452 @@
+{
+  "date": "2026-11-09",
+  "source": "Exclusive boat VM; same synthetic stack; fresh CLI processes; paired eager/first-use warmup; cache state varies",
+  "placement": {
+    "resume-fix": {
+      "vm": "bx_q8jf6ypu",
+      "type": "large",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "vcpus": 4,
+      "vm_vcpus": 8,
+      "exclusive": true,
+      "co_tenants": 0
+    }
+  },
+  "summary": [
+    {
+      "variant": "eager",
+      "scenario": "core-resumed",
+      "completed": true,
+      "beforeTuiMs": 467.5,
+      "initMs": 145.34,
+      "totalMs": 613.04,
+      "fabricMs": []
+    },
+    {
+      "variant": "eager",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "beforeTuiMs": 7259.38,
+      "initMs": 1155.18,
+      "totalMs": 8415.37,
+      "fabricMs": [
+        525.92,
+        0.04,
+        0.51,
+        0.08
+      ],
+      "runtimeMs": 390.02
+    },
+    {
+      "variant": "eager",
+      "scenario": "stack-empty",
+      "completed": true,
+      "beforeTuiMs": 1360.24,
+      "initMs": 732.4,
+      "totalMs": 2093,
+      "fabricMs": [
+        31.51,
+        0.03,
+        0.06,
+        0.09
+      ]
+    },
+    {
+      "variant": "first-use",
+      "scenario": "core-resumed",
+      "completed": true,
+      "beforeTuiMs": 382.85,
+      "initMs": 136.87,
+      "totalMs": 519.87,
+      "fabricMs": []
+    },
+    {
+      "variant": "first-use",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "beforeTuiMs": 1175.04,
+      "initMs": 582.44,
+      "totalMs": 1757.76,
+      "fabricMs": [
+        316.26,
+        0.03,
+        0.38,
+        0.05
+      ],
+      "runtimeMs": 214.49
+    },
+    {
+      "variant": "first-use",
+      "scenario": "stack-empty",
+      "completed": true,
+      "beforeTuiMs": 1145.22,
+      "initMs": 612.5,
+      "totalMs": 1758.18,
+      "fabricMs": [
+        17.7,
+        0.02,
+        0.03,
+        0.08
+      ]
+    },
+    {
+      "variant": "first-use",
+      "scenario": "core-resumed",
+      "completed": true,
+      "beforeTuiMs": 294.63,
+      "initMs": 142.54,
+      "totalMs": 437.34,
+      "fabricMs": []
+    },
+    {
+      "variant": "first-use",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "beforeTuiMs": 1175.38,
+      "initMs": 668.92,
+      "totalMs": 1844.85,
+      "fabricMs": [
+        393.12,
+        0.04,
+        0.48,
+        0.07
+      ],
+      "runtimeMs": 292.04
+    },
+    {
+      "variant": "first-use",
+      "scenario": "stack-empty",
+      "completed": true,
+      "beforeTuiMs": 1465.55,
+      "initMs": 826.07,
+      "totalMs": 2292.3,
+      "fabricMs": [
+        31.58,
+        0.04,
+        0.04,
+        0.09
+      ]
+    },
+    {
+      "variant": "eager",
+      "scenario": "core-resumed",
+      "completed": true,
+      "beforeTuiMs": 381.31,
+      "initMs": 162.28,
+      "totalMs": 543.79,
+      "fabricMs": []
+    },
+    {
+      "variant": "eager",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "beforeTuiMs": 1463.85,
+      "initMs": 787.13,
+      "totalMs": 2251.52,
+      "fabricMs": [
+        377.21,
+        0.04,
+        0.41,
+        0.05
+      ],
+      "runtimeMs": 269.56
+    },
+    {
+      "variant": "eager",
+      "scenario": "stack-empty",
+      "completed": true,
+      "beforeTuiMs": 1622.83,
+      "initMs": 807.82,
+      "totalMs": 2431.59,
+      "fabricMs": [
+        39.07,
+        0.03,
+        0.07,
+        0.1
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "variant": "eager",
+      "type": "cli-resume-profile",
+      "scenario": "core-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.1
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 11.75
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 467.5,
+          "messages": 4,
+          "extensions": 3
+        },
+        {
+          "name": "init.start",
+          "atMs": 467.7
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 468.14
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 468.21,
+          "wallMs": 0.06
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 468.21
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 468.29,
+          "wallMs": 0.08
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 469.12
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 470.88
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 470.98,
+          "wallMs": 0.11
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 573.15
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 573.24,
+          "wallMs": 0.09
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 585.78
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 586.58
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 587.38
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 588.06,
+          "wallMs": 0.67
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 588.57
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 589.66,
+          "wallMs": 1.08
+        },
+        {
+          "name": "notices.state",
+          "atMs": 589.68,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 589.69
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 589.87,
+          "wallMs": 0.18
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 589.88,
+          "wallMs": 3.31
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 589.93
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 589.99,
+          "wallMs": 0.06
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 590
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 590.03,
+          "wallMs": 0.03
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 590.03
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 591.3,
+          "wallMs": 1.26
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 591.31,
+          "wallMs": 5.54
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 591.33
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 591.7
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 592.16
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 592.46
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 592.49,
+          "wallMs": 0.04
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 593.53,
+          "wallMs": 1.37
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 593.54,
+          "wallMs": 1.85
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 593.6,
+          "wallMs": 2.27
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 593.64
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 593.65,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 593.66
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 612.65
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 612.86,
+          "wallMs": 19.19
+        },
+        {
+          "name": "init.end",
+          "atMs": 613.04,
+          "wallMs": 145.34
+        }
+      ]
+    },
+    {
+      "variant": "eager",
+      "type": "cli-resume-profile",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.09
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 12.07
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 7259.38,
+          "messages": 4,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 7260.19
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 7260.76
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 7260.86,
+          "wallMs": 0.09
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 7260.87
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 7260.97,
+          "wallMs": 0.09
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 7262.01
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 7263.82
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 7263.96,
+          "wallMs": 0.14
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 7365.7
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 7365.81,
+          "wallMs": 0.11
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 7400.67
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 7401.69
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 7402.53
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 7402.73,
+          "wallMs": 0.2
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 7402.76
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 7403.2,
+          "wallMs": 0.44
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 7403.21
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 7406.13
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 7407.34,
+          "wallMs": 4.13
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 7407.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 7407.8,
+          "wallMs": 0.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 7408.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 7408.17,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 7408.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 7408.74,
+          "wallMs": 0.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 7408.74
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 7409.18,
+          "wallMs": 0.44
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 7409.72
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 7411.51,
+          "wallMs": 2.32
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 7412.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 7582.43,
+          "wallMs": 170.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 7586.16
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 7587.7
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 7597.98,
+          "wallMs": 10.28
+        },
+        {
+          "name": "fabric.FabricState.ensure.start",
+          "atMs": 7600.18
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.start",
+          "atMs": 7718.17
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.start",
+          "atMs": 7957.77
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.end",
+          "atMs": 8013.01,
+          "wallMs": 55.24
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.start",
+          "atMs": 8021.21
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.end",
+          "atMs": 8033.65,
+          "wallMs": 12.43
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.start",
+          "atMs": 8100.49
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.end",
+          "atMs": 8104.6,
+          "wallMs": 4.11
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.end",
+          "atMs": 8108.2,
+          "wallMs": 390.02
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.start",
+          "atMs": 8108.24
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.end",
+          "atMs": 8109.34,
+          "wallMs": 1.1
+        },
+        {
+          "name": "fabric.FabricState.ensure.end",
+          "atMs": 8112.08,
+          "wallMs": 511.89
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 8112.09,
+          "wallMs": 525.92
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 8112.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 8112.14,
+          "wallMs": 0.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 8112.19
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 8112.7,
+          "wallMs": 0.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 8112.7
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 8112.78,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 8112.79
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 8114.23,
+          "wallMs": 1.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 8114.24
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 8114.61,
+          "wallMs": 0.36
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 8114.61
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 8114.63,
+          "wallMs": 0.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 8114.65
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 8120.27,
+          "wallMs": 5.61
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 8120.75
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 8122.09,
+          "wallMs": 1.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 8122.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 8122.32,
+          "wallMs": 0.14
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 8122.55
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 8126.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 8126.47,
+          "wallMs": 3.92
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 8126.57
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 8126.72,
+          "wallMs": 0.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 8126.9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 8359.61,
+          "wallMs": 232.71
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 8359.65
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 8359.98,
+          "wallMs": 0.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 8359.99
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 8360.13,
+          "wallMs": 0.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 8360.14
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 8360.58
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 8361.44,
+          "wallMs": 955.31
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 8362.8,
+          "wallMs": 236.71
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 8369.5,
+          "wallMs": 8.92
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 8370.71,
+          "wallMs": 10.57
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 8370.73
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 8371.03,
+          "wallMs": 0.3
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 8371.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 8371.75,
+          "wallMs": 0.71
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 8371.77
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 8372.15,
+          "wallMs": 0.38
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 8372.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 8372.26,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 8372.31
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 8372.41,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 8372.99
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 8373.15,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 8373.2
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 8373.27,
+          "wallMs": 0.07
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 8391.55
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 8393.04,
+          "wallMs": 1.5
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 8394.24
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 8395.85,
+          "wallMs": 1.61
+        },
+        {
+          "name": "notices.state",
+          "atMs": 8395.9,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 8395.91
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 8396.03,
+          "wallMs": 0.12
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 8396.44,
+          "wallMs": 994.75
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 8396.49
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 8396.56,
+          "wallMs": 0.07
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 8396.57
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 8396.61,
+          "wallMs": 0.04
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 8396.61
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 8396.93,
+          "wallMs": 0.32
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 8396.98,
+          "wallMs": 996.32
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 8397
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 8397.09
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 8397.25
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 8397.4
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 8397.41,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 8398.22,
+          "wallMs": 0.97
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 8398.22,
+          "wallMs": 1.14
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 8398.26,
+          "wallMs": 1.26
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 8398.28
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 8398.29,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 8398.3
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 8414.66
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 8414.85,
+          "wallMs": 16.54
+        },
+        {
+          "name": "init.end",
+          "atMs": 8415.37,
+          "wallMs": 1155.18
+        }
+      ]
+    },
+    {
+      "variant": "eager",
+      "type": "cli-resume-profile",
+      "scenario": "stack-empty",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.08
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 9.96
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1360.24,
+          "messages": 0,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1360.6
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1360.91
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1371,
+          "wallMs": 10.08
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1371.03
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1371.22,
+          "wallMs": 0.19
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1372.47
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1374.17
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1374.26,
+          "wallMs": 0.09
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1476.9
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1477,
+          "wallMs": 0.1
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1498.17
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1498.9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1499.72
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1499.94,
+          "wallMs": 0.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1499.99
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1500.36,
+          "wallMs": 0.37
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1500.36
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1504.61
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1505.64,
+          "wallMs": 5.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1505.65
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1507.1,
+          "wallMs": 1.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1507.42
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1507.51,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1507.62
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1508.24,
+          "wallMs": 0.62
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1508.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1508.62,
+          "wallMs": 0.37
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1508.68
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1510.2,
+          "wallMs": 1.52
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1510.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1552.89,
+          "wallMs": 42.66
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1561.74
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1564.05
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1590.6,
+          "wallMs": 26.55
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1593.26,
+          "wallMs": 31.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1593.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1593.32,
+          "wallMs": 0.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1593.32
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1593.38,
+          "wallMs": 0.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1593.38
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1593.48,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 1593.49
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 1594.77,
+          "wallMs": 1.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 1603.29
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 1603.78,
+          "wallMs": 0.5
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1603.8
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1603.83,
+          "wallMs": 0.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1603.84
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1609.96,
+          "wallMs": 6.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 1611
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 1611.6,
+          "wallMs": 0.6
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 1611.66
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 1611.76,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 1611.83
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1615.77
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 1616.04,
+          "wallMs": 4.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 1616.13
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 1616.22,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 1616.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 1646.14,
+          "wallMs": 29.87
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 1646.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 1646.41,
+          "wallMs": 0.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 1646.41
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 1646.58,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 1646.58
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1647.01
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1647.87,
+          "wallMs": 143.26
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1649.8,
+          "wallMs": 34.03
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1661.06,
+          "wallMs": 14.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 1663.34,
+          "wallMs": 16.75
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 1663.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 1663.56,
+          "wallMs": 0.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 1663.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 1664.17,
+          "wallMs": 0.6
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 1664.19
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 1664.34,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 1664.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 1664.43,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 1664.5
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 1664.61,
+          "wallMs": 0.11
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1665.17
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1665.35,
+          "wallMs": 0.18
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1665.41
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1665.42,
+          "wallMs": 0.01
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 1679.77
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 1684.08,
+          "wallMs": 4.31
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 1684.77
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 1686.07,
+          "wallMs": 1.3
+        },
+        {
+          "name": "notices.state",
+          "atMs": 1686.1,
+          "coreChangelog": true,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 1686.11
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 1686.36,
+          "wallMs": 0.25
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 1686.69,
+          "wallMs": 187.8
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1686.74
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1686.9,
+          "wallMs": 0.15
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1686.91
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1686.94,
+          "wallMs": 0.04
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 1686.94
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 1687.94,
+          "wallMs": 1
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 1688.02,
+          "wallMs": 189.85
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 1688.03
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 1688.11
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 1688.24
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1688.35
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1688.37,
+          "wallMs": 0.02
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 1688.37,
+          "wallMs": 0.14
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 1688.38,
+          "wallMs": 0.27
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 1688.41,
+          "wallMs": 0.38
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1688.43
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1688.44,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 1688.45
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 2092.11,
+          "wallMs": 403.66
+        },
+        {
+          "name": "init.end",
+          "atMs": 2093,
+          "wallMs": 732.4
+        }
+      ]
+    },
+    {
+      "variant": "first-use",
+      "type": "cli-resume-profile",
+      "scenario": "core-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.11
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 11.99
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 382.85,
+          "messages": 4,
+          "extensions": 3
+        },
+        {
+          "name": "init.start",
+          "atMs": 383.01
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 383.32
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 383.38,
+          "wallMs": 0.06
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 383.39
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 383.44,
+          "wallMs": 0.05
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 384.16
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 386.94
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 387.03,
+          "wallMs": 0.1
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 489.16
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 489.24,
+          "wallMs": 0.08
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 499.21
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 500.02
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 501.32
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 502.07,
+          "wallMs": 0.76
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 502.78
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 503.72,
+          "wallMs": 0.94
+        },
+        {
+          "name": "notices.state",
+          "atMs": 503.75,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 503.75
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 503.85,
+          "wallMs": 0.1
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 503.86,
+          "wallMs": 3.85
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 503.89
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 503.95,
+          "wallMs": 0.05
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 503.96
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 503.98,
+          "wallMs": 0.03
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 503.98
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 504.32,
+          "wallMs": 0.33
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 504.32,
+          "wallMs": 5.12
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 504.33
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 504.56
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 504.76
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 504.92
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 504.94,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 505.87,
+          "wallMs": 1.11
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 505.87,
+          "wallMs": 1.31
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 505.92,
+          "wallMs": 1.59
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 505.94
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 505.95,
+          "wallMs": 0.01
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 505.95
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 519.66
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 519.77,
+          "wallMs": 13.82
+        },
+        {
+          "name": "init.end",
+          "atMs": 519.87,
+          "wallMs": 136.87
+        }
+      ]
+    },
+    {
+      "variant": "first-use",
+      "type": "cli-resume-profile",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.08
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 13.36
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1175.04,
+          "messages": 4,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1175.33
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1175.64
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1175.71,
+          "wallMs": 0.07
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1175.72
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1175.79,
+          "wallMs": 0.07
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1176.35
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1177.38
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1177.43,
+          "wallMs": 0.05
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1280.31
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1280.47,
+          "wallMs": 0.15
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1302.6
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1303.68
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1304.77
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1305.06,
+          "wallMs": 0.29
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1305.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1305.59,
+          "wallMs": 0.48
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1305.6
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1309.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1311.07,
+          "wallMs": 5.47
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1311.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1311.61,
+          "wallMs": 0.52
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1311.96
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1312.07,
+          "wallMs": 0.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1312.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1312.94,
+          "wallMs": 0.72
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1312.94
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1313.49,
+          "wallMs": 0.54
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1313.58
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1315.68,
+          "wallMs": 2.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1315.71
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1358.32,
+          "wallMs": 42.61
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1362.63
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1364.9
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1379.39,
+          "wallMs": 14.48
+        },
+        {
+          "name": "fabric.FabricState.ensure.start",
+          "atMs": 1382.86
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.start",
+          "atMs": 1461.85
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.start",
+          "atMs": 1549.03
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.end",
+          "atMs": 1610.65,
+          "wallMs": 61.62
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.start",
+          "atMs": 1618.16
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.end",
+          "atMs": 1633.09,
+          "wallMs": 14.93
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.start",
+          "atMs": 1671.55
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.end",
+          "atMs": 1674.06,
+          "wallMs": 2.51
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.end",
+          "atMs": 1676.34,
+          "wallMs": 214.49
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.start",
+          "atMs": 1676.36
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.end",
+          "atMs": 1676.94,
+          "wallMs": 0.58
+        },
+        {
+          "name": "fabric.FabricState.ensure.end",
+          "atMs": 1678.89,
+          "wallMs": 296.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1678.89,
+          "wallMs": 316.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1678.9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1678.94,
+          "wallMs": 0.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1678.96
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1679.34,
+          "wallMs": 0.38
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1679.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1679.39,
+          "wallMs": 0.05
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 1679.4
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 1680.23,
+          "wallMs": 0.83
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 1680.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 1680.45,
+          "wallMs": 0.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1680.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1680.46,
+          "wallMs": 0.01
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1680.47
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1686.26,
+          "wallMs": 5.78
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 1686.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 1687.08,
+          "wallMs": 0.62
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 1687.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 1687.26,
+          "wallMs": 0.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 1687.44
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1689.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 1689.56,
+          "wallMs": 2.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 1689.63
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 1689.75,
+          "wallMs": 0.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 1689.93
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 1709.44,
+          "wallMs": 19.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 1709.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 1709.67,
+          "wallMs": 0.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 1709.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 1709.8,
+          "wallMs": 0.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 1709.8
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1710.14
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1710.69,
+          "wallMs": 401.03
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1711.75,
+          "wallMs": 22.41
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1717.78,
+          "wallMs": 7.64
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 1719.03,
+          "wallMs": 9.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 1719.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 1719.26,
+          "wallMs": 0.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 1719.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 1719.82,
+          "wallMs": 0.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 1719.85
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 1720.03,
+          "wallMs": 0.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 1720.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 1720.12,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 1720.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 1720.25,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1720.85
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1721.04,
+          "wallMs": 0.19
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1721.09
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1721.17,
+          "wallMs": 0.08
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 1736.89
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 1738.28,
+          "wallMs": 1.39
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 1739.02
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 1740.35,
+          "wallMs": 1.34
+        },
+        {
+          "name": "notices.state",
+          "atMs": 1740.39,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 1740.39
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 1740.52,
+          "wallMs": 0.13
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 1740.82,
+          "wallMs": 437.15
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1740.87
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1740.92,
+          "wallMs": 0.05
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1740.92
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1740.95,
+          "wallMs": 0.02
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 1740.95
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 1741.18,
+          "wallMs": 0.23
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 1741.23,
+          "wallMs": 438.63
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 1741.24
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 1741.32
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 1741.46
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1741.62
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1741.64,
+          "wallMs": 0.02
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 1742.33,
+          "wallMs": 0.87
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 1742.33,
+          "wallMs": 1.01
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 1742.38,
+          "wallMs": 1.13
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1742.4
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1742.42,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 1742.42
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 1757.3
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 1757.39,
+          "wallMs": 14.97
+        },
+        {
+          "name": "init.end",
+          "atMs": 1757.76,
+          "wallMs": 582.44
+        }
+      ]
+    },
+    {
+      "variant": "first-use",
+      "type": "cli-resume-profile",
+      "scenario": "stack-empty",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.11
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 8.94
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1145.22,
+          "messages": 0,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1145.68
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1146
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1156.5,
+          "wallMs": 10.45
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1156.52
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1156.78,
+          "wallMs": 0.26
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1157.86
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1159.4
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1159.49,
+          "wallMs": 0.1
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1262.31
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1262.39,
+          "wallMs": 0.09
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1275.11
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1275.68
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1276.3
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1276.43,
+          "wallMs": 0.13
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1276.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1276.73,
+          "wallMs": 0.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1276.74
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1278.94
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1279.8,
+          "wallMs": 3.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1279.8
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1280.16,
+          "wallMs": 0.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1280.37
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1280.44,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1280.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1280.95,
+          "wallMs": 0.4
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1280.96
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1281.32,
+          "wallMs": 0.36
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1281.37
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1282.71,
+          "wallMs": 1.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1282.73
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1314.82,
+          "wallMs": 32.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1318.67
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1320.08
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1332.5,
+          "wallMs": 12.42
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1336.37,
+          "wallMs": 17.7
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1336.39
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1336.41,
+          "wallMs": 0.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1336.41
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1336.44,
+          "wallMs": 0.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1336.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1336.53,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 1336.53
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 1337.41,
+          "wallMs": 0.87
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 1345.6
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 1346.03,
+          "wallMs": 0.43
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1346.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1346.06,
+          "wallMs": 0.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1346.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1351.73,
+          "wallMs": 5.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 1352.74
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 1353.23,
+          "wallMs": 0.49
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 1353.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 1353.37,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 1353.41
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1355.36
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 1355.52,
+          "wallMs": 2.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 1355.57
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 1355.63,
+          "wallMs": 0.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 1355.68
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 1372.8,
+          "wallMs": 17.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 1372.82
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 1373,
+          "wallMs": 0.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 1373
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 1373.09,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 1373.09
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1373.37
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1373.83,
+          "wallMs": 94.89
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1374.37,
+          "wallMs": 19.01
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1379.84,
+          "wallMs": 6.47
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 1380.99,
+          "wallMs": 7.9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 1381
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 1381.16,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 1381.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 1381.69,
+          "wallMs": 0.53
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 1381.7
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 1381.84,
+          "wallMs": 0.14
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 1381.84
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 1381.92,
+          "wallMs": 0.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 1381.94
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 1382.02,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1382.43
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1382.59,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1382.63
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1382.64,
+          "wallMs": 0.01
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 1395.6
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 1396.6,
+          "wallMs": 1
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 1397.21
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 1399.69,
+          "wallMs": 2.48
+        },
+        {
+          "name": "notices.state",
+          "atMs": 1399.74,
+          "coreChangelog": true,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 1399.75
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 1400.03,
+          "wallMs": 0.28
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 1400.39,
+          "wallMs": 124.71
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1400.48
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1400.63,
+          "wallMs": 0.15
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1400.63
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1400.67,
+          "wallMs": 0.04
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 1400.68
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 1400.91,
+          "wallMs": 0.23
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 1400.95,
+          "wallMs": 125.85
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 1400.97
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 1401.04
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 1401.14
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1401.28
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1401.29,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 1401.3,
+          "wallMs": 0.15
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 1401.3,
+          "wallMs": 0.26
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 1401.33,
+          "wallMs": 0.37
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1401.35
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1401.36,
+          "wallMs": 0.01
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 1401.37
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 1757.64,
+          "wallMs": 356.27
+        },
+        {
+          "name": "init.end",
+          "atMs": 1758.18,
+          "wallMs": 612.5
+        }
+      ]
+    },
+    {
+      "variant": "first-use",
+      "type": "cli-resume-profile",
+      "scenario": "core-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.09
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 9.33
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 294.63,
+          "messages": 4,
+          "extensions": 3
+        },
+        {
+          "name": "init.start",
+          "atMs": 294.8
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 295.2
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 295.27,
+          "wallMs": 0.06
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 295.27
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 295.35,
+          "wallMs": 0.07
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 296.19
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 297.82
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 297.91,
+          "wallMs": 0.1
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 400.04
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 400.15,
+          "wallMs": 0.11
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 413.54
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 414.25
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 415.18
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 415.96,
+          "wallMs": 0.79
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 416.65
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 417.58,
+          "wallMs": 0.93
+        },
+        {
+          "name": "notices.state",
+          "atMs": 417.6,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 417.62
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 417.72,
+          "wallMs": 0.1
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 417.73,
+          "wallMs": 3.49
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 417.77
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 417.83,
+          "wallMs": 0.07
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 417.84
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 417.87,
+          "wallMs": 0.03
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 417.88
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 418.24,
+          "wallMs": 0.36
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 418.24,
+          "wallMs": 4.71
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 418.24
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 418.32
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 418.49
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 418.65
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 418.66,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 419.39,
+          "wallMs": 0.89
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 419.39,
+          "wallMs": 1.07
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 419.43,
+          "wallMs": 1.18
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 419.53
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 419.53,
+          "wallMs": 0.01
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 419.54
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 437.08
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 437.22,
+          "wallMs": 17.68
+        },
+        {
+          "name": "init.end",
+          "atMs": 437.34,
+          "wallMs": 142.54
+        }
+      ]
+    },
+    {
+      "variant": "first-use",
+      "type": "cli-resume-profile",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.07
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 9.02
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1175.38,
+          "messages": 4,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1175.93
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1176.38
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1176.47,
+          "wallMs": 0.08
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1176.47
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1176.56,
+          "wallMs": 0.09
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1177.41
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1179.16
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1179.25,
+          "wallMs": 0.08
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1282.37
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1282.49,
+          "wallMs": 0.12
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1306.3
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1307.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1308.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1308.2,
+          "wallMs": 0.17
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1308.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1308.61,
+          "wallMs": 0.38
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1308.62
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1310.94
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1311.8,
+          "wallMs": 3.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1311.81
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1312.28,
+          "wallMs": 0.47
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1312.53
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1312.62,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1312.73
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1313.19,
+          "wallMs": 0.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1313.19
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1313.66,
+          "wallMs": 0.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1313.82
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1315.43,
+          "wallMs": 1.61
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1315.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1356.77,
+          "wallMs": 41.3
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1359.47
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1360.48
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1381.51,
+          "wallMs": 21.02
+        },
+        {
+          "name": "fabric.FabricState.ensure.start",
+          "atMs": 1385.91
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.start",
+          "atMs": 1456.63
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.start",
+          "atMs": 1548.48
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.end",
+          "atMs": 1655.64,
+          "wallMs": 107.16
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.start",
+          "atMs": 1666.63
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.end",
+          "atMs": 1681.31,
+          "wallMs": 14.68
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.start",
+          "atMs": 1740.51
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.end",
+          "atMs": 1744.82,
+          "wallMs": 4.31
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.end",
+          "atMs": 1748.67,
+          "wallMs": 292.04
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.start",
+          "atMs": 1748.7
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.end",
+          "atMs": 1749.61,
+          "wallMs": 0.91
+        },
+        {
+          "name": "fabric.FabricState.ensure.end",
+          "atMs": 1752.58,
+          "wallMs": 366.68
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1752.59,
+          "wallMs": 393.12
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1752.61
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1752.65,
+          "wallMs": 0.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1752.69
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1753.18,
+          "wallMs": 0.48
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1753.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1753.25,
+          "wallMs": 0.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 1753.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 1754.51,
+          "wallMs": 1.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 1754.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 1754.84,
+          "wallMs": 0.32
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1754.84
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1754.86,
+          "wallMs": 0.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1754.88
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1759.36,
+          "wallMs": 4.48
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 1759.57
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 1760.24,
+          "wallMs": 0.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 1760.3
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 1760.37,
+          "wallMs": 0.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 1760.52
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1763.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 1763.49,
+          "wallMs": 2.97
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 1763.59
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 1763.76,
+          "wallMs": 0.17
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 1763.93
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 1792.42,
+          "wallMs": 28.48
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 1792.43
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 1792.66,
+          "wallMs": 0.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 1792.66
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 1792.81,
+          "wallMs": 0.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 1792.82
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1793.28
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1794.11,
+          "wallMs": 483.17
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1795.22,
+          "wallMs": 31.96
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1800.3,
+          "wallMs": 7.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 1801.82,
+          "wallMs": 9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 1801.83
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 1802.05,
+          "wallMs": 0.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 1802.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 1802.64,
+          "wallMs": 0.58
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 1802.65
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 1802.82,
+          "wallMs": 0.17
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 1802.83
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 1802.92,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 1802.96
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 1803.05,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1803.81
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1804.07,
+          "wallMs": 0.26
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1804.14
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1804.26,
+          "wallMs": 0.12
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 1821.19
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 1822.68,
+          "wallMs": 1.49
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 1823.59
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 1825.24,
+          "wallMs": 1.65
+        },
+        {
+          "name": "notices.state",
+          "atMs": 1825.27,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 1825.27
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 1825.38,
+          "wallMs": 0.11
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 1825.91,
+          "wallMs": 518.8
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1825.98
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1826.06,
+          "wallMs": 0.08
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1826.07
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1826.11,
+          "wallMs": 0.05
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 1826.11
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 1826.44,
+          "wallMs": 0.32
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 1826.55,
+          "wallMs": 520.2
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 1826.57
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 1826.67
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 1826.84
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1827.03
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1827.04,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 1827.77,
+          "wallMs": 0.94
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 1827.78,
+          "wallMs": 1.11
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 1827.82,
+          "wallMs": 1.25
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1827.83
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1827.85,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 1827.86
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 1844.17
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 1844.32,
+          "wallMs": 16.46
+        },
+        {
+          "name": "init.end",
+          "atMs": 1844.85,
+          "wallMs": 668.92
+        }
+      ]
+    },
+    {
+      "variant": "first-use",
+      "type": "cli-resume-profile",
+      "scenario": "stack-empty",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.11
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 13.63
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1465.55,
+          "messages": 0,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1466.24
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1466.65
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1484.41,
+          "wallMs": 17.72
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1484.45
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1484.97,
+          "wallMs": 0.51
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1486.9
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1489.28
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1489.38,
+          "wallMs": 0.1
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1591.95
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1592.07,
+          "wallMs": 0.11
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1615.87
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1618.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1619.37
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1619.53,
+          "wallMs": 0.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1619.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1620.07,
+          "wallMs": 0.5
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1620.08
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1623.71
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1625.25,
+          "wallMs": 5.17
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1625.27
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1625.94,
+          "wallMs": 0.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1626.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1626.37,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1626.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1627.86,
+          "wallMs": 1.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1627.88
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1628.94,
+          "wallMs": 1.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1629.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1631.42,
+          "wallMs": 2.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1631.48
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1671.69,
+          "wallMs": 40.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1676.54
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1678.78
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1702.72,
+          "wallMs": 23.94
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1708.13,
+          "wallMs": 31.58
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1708.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1708.18,
+          "wallMs": 0.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1708.19
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1708.23,
+          "wallMs": 0.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1708.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1708.33,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 1708.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 1709.47,
+          "wallMs": 1.14
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 1719.36
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 1720.22,
+          "wallMs": 0.86
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1720.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1720.28,
+          "wallMs": 0.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1720.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1725.98,
+          "wallMs": 5.69
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 1727.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 1728.54,
+          "wallMs": 1.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 1728.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 1729.01,
+          "wallMs": 0.34
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 1729.13
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1732.64
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 1733.04,
+          "wallMs": 3.91
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 1733.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 1733.32,
+          "wallMs": 0.14
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 1733.4
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 1757.79,
+          "wallMs": 24.39
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 1757.85
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 1758.21,
+          "wallMs": 0.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 1758.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 1758.38,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 1758.38
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1758.9
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1768.53,
+          "wallMs": 144.81
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1770.22,
+          "wallMs": 37.58
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1781.3,
+          "wallMs": 22.4
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 1783.74,
+          "wallMs": 25.35
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 1783.76
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 1784.15,
+          "wallMs": 0.39
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 1784.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 1784.88,
+          "wallMs": 0.72
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 1784.89
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 1785.08,
+          "wallMs": 0.19
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 1785.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 1785.17,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 1785.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 1785.32,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1785.86
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1786.06,
+          "wallMs": 0.2
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1786.12
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1786.12,
+          "wallMs": 0.01
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 1803.85
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 1805.23,
+          "wallMs": 1.38
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 1806
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 1807.65,
+          "wallMs": 1.64
+        },
+        {
+          "name": "notices.state",
+          "atMs": 1807.69,
+          "coreChangelog": true,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 1807.7
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 1808.07,
+          "wallMs": 0.37
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 1808.47,
+          "wallMs": 190.02
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1808.53
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1808.68,
+          "wallMs": 0.16
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1808.69
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1808.73,
+          "wallMs": 0.04
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 1808.74
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 1809.07,
+          "wallMs": 0.34
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 1809.13,
+          "wallMs": 193.27
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 1809.15
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 1809.23
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 1809.35
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1809.5
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1809.52,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 1809.52,
+          "wallMs": 0.17
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 1809.52,
+          "wallMs": 0.29
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 1809.56,
+          "wallMs": 0.41
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1809.58
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1809.59,
+          "wallMs": 0.01
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 1809.6
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 2291.47,
+          "wallMs": 481.87
+        },
+        {
+          "name": "init.end",
+          "atMs": 2292.3,
+          "wallMs": 826.07
+        }
+      ]
+    },
+    {
+      "variant": "eager",
+      "type": "cli-resume-profile",
+      "scenario": "core-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.12
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 11.56
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 381.31,
+          "messages": 4,
+          "extensions": 3
+        },
+        {
+          "name": "init.start",
+          "atMs": 381.51
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 381.94
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 382,
+          "wallMs": 0.06
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 382.01
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 382.07,
+          "wallMs": 0.07
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 382.87
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 384.8
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 384.9,
+          "wallMs": 0.1
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 487.45
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 487.54,
+          "wallMs": 0.09
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 515.98
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 516.83
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 517.51
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 518.94,
+          "wallMs": 0.66
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 519.68
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 521.11,
+          "wallMs": 1.43
+        },
+        {
+          "name": "notices.state",
+          "atMs": 521.14,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 521.15
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 521.25,
+          "wallMs": 0.1
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 521.26,
+          "wallMs": 4.43
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 521.29
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 521.34,
+          "wallMs": 0.06
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 521.35
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 521.38,
+          "wallMs": 0.03
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 521.38
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 521.79,
+          "wallMs": 0.41
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 521.8,
+          "wallMs": 5.83
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 521.8
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 521.88
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 522.05
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 522.19
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 522.2,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 523.14,
+          "wallMs": 1.09
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 523.14,
+          "wallMs": 1.26
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 523.21,
+          "wallMs": 1.41
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 523.23
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 523.24,
+          "wallMs": 0.01
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 523.25
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 542.63
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 543.6,
+          "wallMs": 20.35
+        },
+        {
+          "name": "init.end",
+          "atMs": 543.79,
+          "wallMs": 162.28
+        }
+      ]
+    },
+    {
+      "variant": "eager",
+      "type": "cli-resume-profile",
+      "scenario": "stack-resumed",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.1
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 12.32
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1463.85,
+          "messages": 4,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1464.39
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1464.85
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1464.92,
+          "wallMs": 0.07
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1464.93
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1465.02,
+          "wallMs": 0.08
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1465.92
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1467.81
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1467.9,
+          "wallMs": 0.1
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1570.08
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1570.22,
+          "wallMs": 0.12
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1593.24
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1594.24
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1595.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1595.48,
+          "wallMs": 0.23
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1595.54
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1596.03,
+          "wallMs": 0.49
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1596.04
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1599.32
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1600.6,
+          "wallMs": 4.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1600.63
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1601.38,
+          "wallMs": 0.75
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1601.67
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1601.76,
+          "wallMs": 0.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1601.86
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1602.47,
+          "wallMs": 0.6
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1602.47
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1603.04,
+          "wallMs": 0.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1603.09
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1605.11,
+          "wallMs": 2.01
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1605.14
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1640.77,
+          "wallMs": 35.62
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1644.99
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1647.16
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1661.28,
+          "wallMs": 14.11
+        },
+        {
+          "name": "fabric.FabricState.ensure.start",
+          "atMs": 1664.37
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.start",
+          "atMs": 1748.18
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.start",
+          "atMs": 1843.66
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.tools.end",
+          "atMs": 1916.44,
+          "wallMs": 72.78
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.start",
+          "atMs": 1923.65
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.mesh.end",
+          "atMs": 1945.89,
+          "wallMs": 22.24
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.start",
+          "atMs": 2008.38
+        },
+        {
+          "name": "fabric.RuntimeStateBuiltins.memory.end",
+          "atMs": 2014.15,
+          "wallMs": 5.76
+        },
+        {
+          "name": "fabric.FabricRuntimeState.initialize.end",
+          "atMs": 2017.74,
+          "wallMs": 269.56
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.start",
+          "atMs": 2017.77
+        },
+        {
+          "name": "fabric.FabricRuntimeState.settleComponents.end",
+          "atMs": 2018.74,
+          "wallMs": 0.96
+        },
+        {
+          "name": "fabric.FabricState.ensure.end",
+          "atMs": 2022.19,
+          "wallMs": 357.83
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 2022.2,
+          "wallMs": 377.21
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 2022.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 2022.25,
+          "wallMs": 0.04
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 2022.32
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 2022.72,
+          "wallMs": 0.41
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 2022.73
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 2022.78,
+          "wallMs": 0.05
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 2022.79
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 2024.07,
+          "wallMs": 1.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 2024.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 2024.41,
+          "wallMs": 0.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 2024.42
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 2024.44,
+          "wallMs": 0.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 2024.46
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 2031.08,
+          "wallMs": 6.62
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 2031.24
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 2031.82,
+          "wallMs": 0.58
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 2032.43
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 2032.58,
+          "wallMs": 0.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 2032.72
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 2036.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 2036.43,
+          "wallMs": 3.72
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 2036.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 2036.63,
+          "wallMs": 0.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 2036.75
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 2177.5,
+          "wallMs": 140.74
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 2177.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 2177.76,
+          "wallMs": 0.25
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 2177.77
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 2177.91,
+          "wallMs": 0.14
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 2177.91
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 2178.3
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 2179.03,
+          "wallMs": 579.71
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 2181.85,
+          "wallMs": 145.6
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 2206.84,
+          "wallMs": 28.54
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 2208.72,
+          "wallMs": 30.81
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 2208.74
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 2209.11,
+          "wallMs": 0.36
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 2209.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 2209.74,
+          "wallMs": 0.63
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 2209.76
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 2209.91,
+          "wallMs": 0.15
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 2209.91
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 2209.99,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 2210.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 2210.18,
+          "wallMs": 0.12
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 2210.69
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 2210.86,
+          "wallMs": 0.17
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 2210.92
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 2211.01,
+          "wallMs": 0.09
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 2226.24
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 2227.75,
+          "wallMs": 1.51
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 2228.4
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 2229.87,
+          "wallMs": 1.47
+        },
+        {
+          "name": "notices.state",
+          "atMs": 2229.91,
+          "coreChangelog": false,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 2229.91
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 2230.01,
+          "wallMs": 0.09
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 2231.66,
+          "wallMs": 637.42
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 2231.73
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 2231.8,
+          "wallMs": 0.07
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 2231.81
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 2231.84,
+          "wallMs": 0.03
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 2231.84
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 2232.09,
+          "wallMs": 0.25
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 2232.15,
+          "wallMs": 638.92
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 2232.16
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 2232.28
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 2232.43
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 2232.58
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 2232.59,
+          "wallMs": 0.01
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 2233.34,
+          "wallMs": 0.91
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 2233.34,
+          "wallMs": 1.06
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 2233.4,
+          "wallMs": 1.24
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 2233.42
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 2233.44,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 2233.45
+        },
+        {
+          "name": "terminal.restoredFrame",
+          "atMs": 2250.89
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 2251.01,
+          "wallMs": 17.57
+        },
+        {
+          "name": "init.end",
+          "atMs": 2251.52,
+          "wallMs": 787.13
+        }
+      ]
+    },
+    {
+      "variant": "eager",
+      "type": "cli-resume-profile",
+      "scenario": "stack-empty",
+      "completed": true,
+      "records": [
+        {
+          "name": "preload",
+          "atMs": 0.1
+        },
+        {
+          "name": "cli.instrumented",
+          "atMs": 15.54
+        },
+        {
+          "name": "interactive.constructed",
+          "atMs": 1622.83,
+          "messages": 0,
+          "extensions": 30
+        },
+        {
+          "name": "init.start",
+          "atMs": 1623.77
+        },
+        {
+          "name": "getChangelogForDisplay.start",
+          "atMs": 1624.23
+        },
+        {
+          "name": "getChangelogForDisplay.end",
+          "atMs": 1642.86,
+          "wallMs": 18.57
+        },
+        {
+          "name": "getExtensionChangelogUpdates.start",
+          "atMs": 1642.91
+        },
+        {
+          "name": "getExtensionChangelogUpdates.end",
+          "atMs": 1643.55,
+          "wallMs": 0.63
+        },
+        {
+          "name": "terminal.firstWrite",
+          "atMs": 1645.31
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1647.49
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1647.59,
+          "wallMs": 0.11
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1751.43
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1751.52,
+          "wallMs": 0.08
+        },
+        {
+          "name": "rebindCurrentSession.start",
+          "atMs": 1773.45
+        },
+        {
+          "name": "bindCurrentSessionExtensions.start",
+          "atMs": 1774.22
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.start",
+          "atMs": 1775.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-tps/extensions/pi-tps/index.ts.end",
+          "atMs": 1775.23,
+          "wallMs": 0.17
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.start",
+          "atMs": 1775.27
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hide-providers/hide-providers.ts.end",
+          "atMs": 1775.83,
+          "wallMs": 0.56
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.start",
+          "atMs": 1775.85
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1779.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/index.ts.end",
+          "atMs": 1780.75,
+          "wallMs": 4.9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1780.77
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1781.37,
+          "wallMs": 0.59
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.start",
+          "atMs": 1781.7
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-neuralwatt-provider/neuralwatt-mcr.ts.end",
+          "atMs": 1781.8,
+          "wallMs": 0.11
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.start",
+          "atMs": 1781.94
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-toggle-skills/toggle-skills.ts.end",
+          "atMs": 1782.79,
+          "wallMs": 0.85
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.start",
+          "atMs": 1782.8
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-model-sort/model-sort.ts.end",
+          "atMs": 1783.3,
+          "wallMs": 0.49
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.start",
+          "atMs": 1783.95
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-retry/retry.ts.end",
+          "atMs": 1786.02,
+          "wallMs": 2.7
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.start",
+          "atMs": 1786.06
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-vision-handoff/vision-handoff.ts.end",
+          "atMs": 1832.98,
+          "wallMs": 46.92
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1837.3
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.start",
+          "atMs": 1839.78
+        },
+        {
+          "name": "fabric.FabricState.bootstrap.end",
+          "atMs": 1870.11,
+          "wallMs": 30.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1876.37,
+          "wallMs": 39.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1876.41
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1876.44,
+          "wallMs": 0.03
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1876.45
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1876.51,
+          "wallMs": 0.07
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1876.52
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1876.62,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.start",
+          "atMs": 1876.62
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-queue-steer/index.ts.end",
+          "atMs": 1877.96,
+          "wallMs": 1.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.start",
+          "atMs": 1888.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-streaming-guard/src/index.ts.end",
+          "atMs": 1888.89,
+          "wallMs": 0.73
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1888.9
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1888.93,
+          "wallMs": 0.02
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.start",
+          "atMs": 1888.93
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-openai/index.ts.end",
+          "atMs": 1895.33,
+          "wallMs": 6.4
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.start",
+          "atMs": 1896.69
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fireworks-provider/index.ts.end",
+          "atMs": 1897.79,
+          "wallMs": 1.1
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.start",
+          "atMs": 1898.33
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-aster-provider/index.ts.end",
+          "atMs": 1898.51,
+          "wallMs": 0.18
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.start",
+          "atMs": 1898.62
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1901.97
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-hypercharm-provider/index.ts.end",
+          "atMs": 1902.21,
+          "wallMs": 3.59
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.start",
+          "atMs": 1902.72
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-deepseek-provider/index.ts.end",
+          "atMs": 1902.85,
+          "wallMs": 0.5
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.start",
+          "atMs": 1902.92
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-multiprovider/extensions/multiprovider.ts.end",
+          "atMs": 1928.98,
+          "wallMs": 26.05
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.start",
+          "atMs": 1929.01
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-math/src/index.ts.end",
+          "atMs": 1929.27,
+          "wallMs": 0.26
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.start",
+          "atMs": 1929.27
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-runinfra-provider/index.ts.end",
+          "atMs": 1929.43,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.start",
+          "atMs": 1929.43
+        },
+        {
+          "name": "model.refresh.start",
+          "atMs": 1929.94
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1930.94,
+          "wallMs": 28.96
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1932.17,
+          "wallMs": 152.91
+        },
+        {
+          "name": "model.refresh.end",
+          "atMs": 1942.83,
+          "wallMs": 12.89
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-better-grok/index.ts.end",
+          "atMs": 1944.49,
+          "wallMs": 15.05
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.start",
+          "atMs": 1944.51
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-coralbricks-provider/index.ts.end",
+          "atMs": 1944.79,
+          "wallMs": 0.28
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.start",
+          "atMs": 1944.8
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-opencode-go-provider/index.ts.end",
+          "atMs": 1945.23,
+          "wallMs": 0.43
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.start",
+          "atMs": 1945.24
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-resume/fast-resume.ts.end",
+          "atMs": 1945.41,
+          "wallMs": 0.16
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.start",
+          "atMs": 1945.41
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-fast-tree/fast-tree.ts.end",
+          "atMs": 1945.5,
+          "wallMs": 0.08
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.start",
+          "atMs": 1945.55
+        },
+        {
+          "name": "hook.session_start:/work/pi-fabric/resume-stack/extensions/pi-pareto-inference-provider/index.ts.end",
+          "atMs": 1945.65,
+          "wallMs": 0.1
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1946.18
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1946.37,
+          "wallMs": 0.18
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.start",
+          "atMs": 1946.42
+        },
+        {
+          "name": "hook.resources_discover:/work/pi-fabric/dist/index.js.end",
+          "atMs": 1946.43,
+          "wallMs": 0.01
+        },
+        {
+          "name": "setupAutocompleteProvider.start",
+          "atMs": 1958.77
+        },
+        {
+          "name": "setupAutocompleteProvider.end",
+          "atMs": 1959.87,
+          "wallMs": 1.1
+        },
+        {
+          "name": "showLoadedResources.start",
+          "atMs": 1960.52
+        },
+        {
+          "name": "showLoadedResources.end",
+          "atMs": 1961.85,
+          "wallMs": 1.34
+        },
+        {
+          "name": "notices.state",
+          "atMs": 1961.89,
+          "coreChangelog": true,
+          "extensionChangelogs": 0
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.start",
+          "atMs": 1961.9
+        },
+        {
+          "name": "showStartupNoticesIfNeeded.end",
+          "atMs": 1962.18,
+          "wallMs": 0.28
+        },
+        {
+          "name": "bindCurrentSessionExtensions.end",
+          "atMs": 1962.53,
+          "wallMs": 188.31
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1962.59
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1962.73,
+          "wallMs": 0.14
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1962.74
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1962.78,
+          "wallMs": 0.04
+        },
+        {
+          "name": "updateTerminalTitle.start",
+          "atMs": 1962.78
+        },
+        {
+          "name": "updateTerminalTitle.end",
+          "atMs": 1963.07,
+          "wallMs": 0.29
+        },
+        {
+          "name": "rebindCurrentSession.end",
+          "atMs": 1963.13,
+          "wallMs": 189.68
+        },
+        {
+          "name": "renderInitialMessages.start",
+          "atMs": 1963.15
+        },
+        {
+          "name": "renderSessionEntries.start",
+          "atMs": 1963.23
+        },
+        {
+          "name": "renderSessionItems.start",
+          "atMs": 1963.35
+        },
+        {
+          "name": "updateEditorBorderColor.start",
+          "atMs": 1963.5
+        },
+        {
+          "name": "updateEditorBorderColor.end",
+          "atMs": 1963.51,
+          "wallMs": 0.02
+        },
+        {
+          "name": "renderSessionItems.end",
+          "atMs": 1963.52,
+          "wallMs": 0.17
+        },
+        {
+          "name": "renderSessionEntries.end",
+          "atMs": 1963.52,
+          "wallMs": 0.29
+        },
+        {
+          "name": "renderInitialMessages.end",
+          "atMs": 1963.57,
+          "wallMs": 0.42
+        },
+        {
+          "name": "updateAvailableProviderCount.start",
+          "atMs": 1963.59
+        },
+        {
+          "name": "updateAvailableProviderCount.end",
+          "atMs": 1963.6,
+          "wallMs": 0.02
+        },
+        {
+          "name": "tui.renderNow.start",
+          "atMs": 1963.61
+        },
+        {
+          "name": "tui.renderNow.end",
+          "atMs": 2430.94,
+          "wallMs": 467.32
+        },
+        {
+          "name": "init.end",
+          "atMs": 2431.59,
+          "wallMs": 807.82
+        }
+      ]
+    }
+  ],
+  "build": {
+    "archiveSha256": "a26332b702c891a308bcb02efeb92bf63300bc353642289aeebb0ad97df62c80",
+    "bytes": 3917193,
+    "files": 1640
+  }
+}

@@ -1510,7 +1510,11 @@ export class FabricRuntimeState {
     ) return observed;
     const idle = context.isIdle();
     if (!this.#actors.observeHostEvent(event, idle)) return observed;
-    const branch = context.sessionManager.getBranch();
+    // Match the model projection. Scanning the full branch here rehydrates
+    // compacted history on every streaming event and can stall cancellation.
+    const branch = typeof context.sessionManager.buildContextEntries === "function"
+      ? context.sessionManager.buildContextEntries()
+      : context.sessionManager.getBranch();
     const { digest, transcript } = buildActorContext(
       branch as unknown[],
       this.#config.mesh.actorContextEntries,

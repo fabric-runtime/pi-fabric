@@ -36,6 +36,12 @@ afterEach(() => {
 });
 
 describe("Fabric configuration", () => {
+  it("defaults history paging on independently of search and permits an explicit opt-out", () => {
+    expect(DEFAULT_FABRIC_CONFIG.memory.pageHistory).toBe(true);
+    expect(normalizeFabricConfig({ memory: { enabled: false } }).memory.pageHistory).toBe(true);
+    expect(normalizeFabricConfig({ memory: { pageHistory: false } }).memory.pageHistory).toBe(false);
+    expect(normalizeFabricConfig({ memory: { pageHistory: "false" } }).memory.pageHistory).toBe(true);
+  });
   it("defaults CPU slices to JSON-safe unlimited and validates millisecond limits", () => {
     expect(DEFAULT_FABRIC_CONFIG.executor.maxCpuSliceMs).toBe(0);
     expect(normalizeFabricConfig({}).executor.maxCpuSliceMs).toBe(0);

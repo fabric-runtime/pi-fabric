@@ -403,6 +403,8 @@ export const DEFAULT_EXTRACTIVE_CONFIG: FabricExtractiveConfig = {
 };
 
 export interface FabricMemoryConfig {
+  /** Page immutable, inactive historical message payloads to private local storage. */
+  pageHistory?: boolean;
   extractive?: FabricExtractiveConfig;
   enabled: boolean;
   indexDir?: string;
@@ -651,6 +653,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     aliases: {},
   },
   memory: {
+    pageHistory: true,
     extractive: { ...DEFAULT_EXTRACTIVE_CONFIG },
     enabled: true,
     maxSessions: 500,
@@ -1497,6 +1500,7 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
       aliases: normalizeModelAliases(modelsSection.aliases),
     },
     memory: {
+      pageHistory: booleanValue(memory.pageHistory, true),
       extractive: {
         enabled: booleanValue(extractive.enabled, false),
         provider: stringValue(extractive.provider) || DEFAULT_EXTRACTIVE_CONFIG.provider,

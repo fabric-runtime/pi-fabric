@@ -86,6 +86,31 @@ describe("Fabric compaction extension hooks", () => {
     if (mode !== "inactive") expect(publish).toHaveBeenCalledWith("pi.agent_settled", event);
   });
 
+  it.each(["agent_start", "agent_end", "turn_end", "agent_settled"])("settles an aborted %s without waiting for the mesh lock or actor history", async (name) => {
+    const handlers = await loadExtension();
+    vi.spyOn(FabricState.prototype, "config", "get").mockReturnValue(structuredClone(DEFAULT_FABRIC_CONFIG));
+    vi.spyOn(FabricState.prototype, "initialized", "get").mockReturnValue(true);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(FabricState.prototype, "compact", "get").mockReturnValue(new CompactController());
+    const dispatch = vi.spyOn(FabricState.prototype, "dispatchHostEvent");
+    let release!: () => void;
+    const publish = vi.spyOn(FabricState.prototype, "publishHostLifecycle")
+      .mockImplementation(() => new Promise<void>(resolve => { release = resolve; }));
+    const controller = new AbortController();
+    controller.abort();
+    const context = { ...hostContext(), signal: controller.signal };
+    const event = { type: name, aborted: true };
+    const pending = Promise.all(handlers.get(name)!.map(handler => handler(event, context)));
+    try {
+      const outcome = await Promise.race([
+        pending.then(() => "settled"),
+        new Promise<string>(resolve => setImmediate(() => resolve("blocked"))),
+      ]);
+      expect(outcome).toBe("settled");
+      expect(publish).toHaveBeenCalledWith(`pi.${name}`, event);
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally { release?.(); await pending; }
+  });
   it("still waits for threshold compaction after a completed run", async () => {
     const handlers = await loadExtension();
     const config = structuredClone(DEFAULT_FABRIC_CONFIG);

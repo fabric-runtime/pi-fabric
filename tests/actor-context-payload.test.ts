@@ -129,7 +129,8 @@ describe("runtime actor host dispatch", () => {
       modelRegistry: { find: vi.fn(), getApiKeyAndHeaders: vi.fn() },
       sessionManager: {
         getSessionId: () => "actor-context", getSessionFile: () => undefined,
-        getBranch: () => branch, getLeafId: () => undefined,
+        getBranch: () => branch,
+        buildContextEntries: () => branch, getLeafId: () => undefined,
       },
       ui: { setStatus: vi.fn(), notify: vi.fn() },
     } as unknown as ExtensionContext;
@@ -149,7 +150,9 @@ describe("runtime actor host dispatch", () => {
     const dispatched = vi.spyOn(ActorDirectory.prototype, "dispatchObservedHostEvent").mockReturnValue(1);
     try {
       await runtime.initialize(context, config);
+      const historicalBranch = vi.spyOn(context.sessionManager, "getBranch");
       runtime.dispatchHostEvent("input", { type: "input", text: "go" }, context);
+      expect(historicalBranch).not.toHaveBeenCalled();
 
       const calls = dispatched.mock.calls.filter(([event]) => event === "input");
       expect(calls).toHaveLength(1);

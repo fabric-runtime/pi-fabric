@@ -1,0 +1,280 @@
+{
+  "date": "2026-11-09",
+  "backend": "Modal fallback through supercomputer after boat setup/admission failures",
+  "runtime": {
+    "node": "24.22.1",
+    "bun": "1.4.4",
+    "core": "1.5.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "validation": {
+    "typecheck": "passed",
+    "targetedTests": 104,
+    "targetedFiles": 9,
+    "build": "passed",
+    "lazyGraph": "passed",
+    "gcAssertions": "passed",
+    "sdkFixture": "passed"
+  },
+  "artifactSha256": "ed4191b63f50d77e9f4c63780520da86c8fb515606efbff78d1fb2f3a698c372",
+  "notes": [
+    "The paged fixture uses text-block arrays to check collection of retired content with WeakRef.",
+    "The compiled Fabric SDK fixture uses string content, an offline provider, and two session replacements.",
+    "Three GCs with event-loop yields precede each sample. These are heap observations, not timing comparisons.",
+    "RSS stayed high; paging can temporarily increase peak memory and does not guarantee an immediate OS footprint drop."
+  ],
+  "samples": [
+    {
+      "step": "process-baseline",
+      "rssMiB": 93.26,
+      "heapTotalMiB": 7.8,
+      "heapUsedMiB": 4.84,
+      "externalMiB": 2.35,
+      "arrayBuffersMiB": 0.14,
+      "peakRssMiB": 93.5,
+      "node": "v24.22.1",
+      "platform": "linux",
+      "arch": "x64",
+      "mode": "paged",
+      "requestedMiB": 600
+    },
+    {
+      "step": "core-imported",
+      "rssMiB": 214.18,
+      "heapTotalMiB": 99.87,
+      "heapUsedMiB": 32.03,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 214.43,
+      "coreVersion": "1.5.0"
+    },
+    {
+      "step": "fixture-written",
+      "rssMiB": 216.18,
+      "heapTotalMiB": 99.87,
+      "heapUsedMiB": 31.97,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 216.18,
+      "fixtureBytes": 629173225,
+      "fixtureMiB": 600.03,
+      "fixtureEntries": 19090
+    },
+    {
+      "step": "history-loaded",
+      "rssMiB": 973.3,
+      "heapTotalMiB": 847.93,
+      "heapUsedMiB": 635.84,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 995.25,
+      "entries": 19090
+    },
+    {
+      "step": "full-context-built",
+      "rssMiB": 974.03,
+      "heapTotalMiB": 848.1,
+      "heapUsedMiB": 636.05,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 995.25,
+      "contextMessages": 19090
+    },
+    {
+      "step": "compacted",
+      "rssMiB": 974.76,
+      "heapTotalMiB": 847.93,
+      "heapUsedMiB": 635.93,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 995.25,
+      "entries": 19091,
+      "contextMessages": 1
+    },
+    {
+      "step": "history-paged",
+      "rssMiB": 1041.27,
+      "heapTotalMiB": 182.68,
+      "heapUsedMiB": 51.91,
+      "externalMiB": 9.68,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "pagedEntries": 19090,
+      "pagedMiB": 597.26
+    },
+    {
+      "step": "active-context-only-control",
+      "rssMiB": 1040.63,
+      "heapTotalMiB": 169.38,
+      "heapUsedMiB": 35.94,
+      "externalMiB": 9.71,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "entries": 1
+    },
+    {
+      "step": "new-empty-session",
+      "rssMiB": 1040.63,
+      "heapTotalMiB": 169.38,
+      "heapUsedMiB": 35.99,
+      "externalMiB": 9.73,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "entries": 0
+    },
+    {
+      "step": "reopen-1",
+      "rssMiB": 1043.1,
+      "heapTotalMiB": 852.93,
+      "heapUsedMiB": 639.02,
+      "externalMiB": 9.73,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "entries": 19091,
+      "contextMessages": 1
+    },
+    {
+      "step": "release-1",
+      "rssMiB": 1042.05,
+      "heapTotalMiB": 168.88,
+      "heapUsedMiB": 35.17,
+      "externalMiB": 9.73,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "entries": 0
+    },
+    {
+      "step": "reopen-2",
+      "rssMiB": 1043.6,
+      "heapTotalMiB": 852.68,
+      "heapUsedMiB": 639.04,
+      "externalMiB": 9.73,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "entries": 19091,
+      "contextMessages": 1
+    },
+    {
+      "step": "release-2",
+      "rssMiB": 1042.55,
+      "heapTotalMiB": 168.88,
+      "heapUsedMiB": 35.19,
+      "externalMiB": 9.73,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13,
+      "entries": 0
+    },
+    {
+      "step": "manager-released",
+      "rssMiB": 1042.55,
+      "heapTotalMiB": 168.88,
+      "heapUsedMiB": 35.18,
+      "externalMiB": 9.73,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 2242.13
+    },
+    {
+      "step": "process-baseline",
+      "rssMiB": 91.41,
+      "heapTotalMiB": 7.8,
+      "heapUsedMiB": 4.84,
+      "externalMiB": 2.35,
+      "arrayBuffersMiB": 0.14,
+      "peakRssMiB": 91.66,
+      "node": "v24.22.1",
+      "platform": "linux",
+      "arch": "x64",
+      "mode": "fabric",
+      "requestedMiB": 256
+    },
+    {
+      "step": "core-imported",
+      "rssMiB": 213.29,
+      "heapTotalMiB": 100.37,
+      "heapUsedMiB": 32.01,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 214.12,
+      "coreVersion": "1.5.0"
+    },
+    {
+      "step": "fixture-written",
+      "rssMiB": 216.34,
+      "heapTotalMiB": 100.37,
+      "heapUsedMiB": 31.94,
+      "externalMiB": 3.37,
+      "arrayBuffersMiB": 0.15,
+      "peakRssMiB": 216.34,
+      "fixtureBytes": 268458487,
+      "fixtureMiB": 256.02,
+      "fixtureEntries": 8152
+    },
+    {
+      "step": "sdk-created",
+      "rssMiB": 612.17,
+      "heapTotalMiB": 478.84,
+      "heapUsedMiB": 318.45,
+      "externalMiB": 8.22,
+      "arrayBuffersMiB": 0.47,
+      "peakRssMiB": 626.57,
+      "entries": 8153,
+      "contextMessages": 8152
+    },
+    {
+      "step": "sdk-compacted",
+      "rssMiB": 612.17,
+      "heapTotalMiB": 478.84,
+      "heapUsedMiB": 318.43,
+      "externalMiB": 8.22,
+      "arrayBuffersMiB": 0.47,
+      "peakRssMiB": 626.57,
+      "entries": 8154,
+      "contextMessages": 1
+    },
+    {
+      "step": "sdk-first-turn",
+      "rssMiB": 718.29,
+      "heapTotalMiB": 325.17,
+      "heapUsedMiB": 100.53,
+      "externalMiB": 42.14,
+      "arrayBuffersMiB": 0.95,
+      "peakRssMiB": 723.05,
+      "requests": 2,
+      "completedFabricRuns": 1
+    },
+    {
+      "step": "sdk-new-session-1",
+      "rssMiB": 718.25,
+      "heapTotalMiB": 230.85,
+      "heapUsedMiB": 95.44,
+      "externalMiB": 42.17,
+      "arrayBuffersMiB": 0.95,
+      "peakRssMiB": 723.05,
+      "entries": 7,
+      "requests": 4,
+      "completedFabricRuns": 2
+    },
+    {
+      "step": "sdk-new-session-2",
+      "rssMiB": 718.63,
+      "heapTotalMiB": 231.35,
+      "heapUsedMiB": 95.66,
+      "externalMiB": 42.17,
+      "arrayBuffersMiB": 0.95,
+      "peakRssMiB": 723.05,
+      "entries": 7,
+      "requests": 6,
+      "completedFabricRuns": 3
+    },
+    {
+      "step": "sdk-released",
+      "rssMiB": 718.38,
+      "heapTotalMiB": 229.6,
+      "heapUsedMiB": 93.45,
+      "externalMiB": 42.17,
+      "arrayBuffersMiB": 0.95,
+      "peakRssMiB": 723.05
+    }
+  ]
+}
