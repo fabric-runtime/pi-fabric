@@ -119,6 +119,12 @@ export interface FabricShellJobOptions {
   ownerId?: string;
   description?: string;
   monitor?: ShellMonitorOptions;
+  /**
+   * The caller's own process timeout. When set, a monitor's expiry ends only the
+   * watch; the process keeps running until this timeout or its own exit. Without
+   * it, the monitor deadline still bounds a watcher command that has no other end.
+   */
+  processTimeoutMs?: number;
   /** An observer task owns its subscription, never the target process or participant. */
   observes?: { kind: "task" | "participant"; id: string };
 }
@@ -146,6 +152,8 @@ export interface FabricShellJobInfo {
   description?: string;
   lastOutputAt?: number;
   monitor?: ShellMonitorOptions;
+  /** When the monitor's watch expired while its process kept running. */
+  monitorEndedAt?: number;
   observes?: { kind: "task" | "participant"; id: string };
   lastEvent?: ShellMonitorBatch & { at: number };
   durable?: FabricDurableTaskInfo;
@@ -213,6 +221,7 @@ class FabricShellJob implements FabricShellJobHandle {
   #deadline: ReturnType<typeof setTimeout> | undefined;
   #timedOut = false;
   lastOutputAt?: number;
+  monitorEndedAt?: number;
   lastEvent?: ShellMonitorBatch & { at: number };
   readonly #replay = new ShellReplay();
   unread = false;
@@ -230,11 +239,34 @@ class FabricShellJob implements FabricShellJobHandle {
     if (options.monitor) {
       this.#monitor = new ShellMonitor(options.monitor, batch => this.recordMonitorEvent(batch));
       this.#deadline = setTimeout(() => {
+        // A caller-set process timeout governs the process; expiry stops watching only.
+        if (options.processTimeoutMs !== undefined && !options.observes) {
+          this.#endMonitor();
+          return;
+        }
         this.#timedOut = true;
         this.stop("Monitor deadline reached");
       }, options.monitor.timeoutMs);
       this.#deadline.unref?.();
     }
+  }
+
+  /** Whether a monitor is still watching this task. */
+  get monitorActive(): boolean {
+    return this.options.monitor !== undefined && this.monitorEndedAt === undefined && !this.finished && !this.abort.signal.aborted;
+  }
+
+  #endMonitor(): void {
+    if (this.finished || this.abort.signal.aborted || this.monitorEndedAt !== undefined) return;
+    this.#deadline = undefined;
+    this.#monitor?.close(true);
+    this.#monitor = undefined;
+    this.monitorEndedAt = Date.now();
+    const seconds = Math.round((this.options.processTimeoutMs ?? 0) / 1000);
+    this.recordMonitorEvent({
+      lines: [`[Monitor expired; the process keeps running until it exits or its ${seconds}s timeout]`],
+      omitted: 0,
+    });
   }
 
   /** Subscribe from now; retained output is available separately through read(). */
@@ -491,6 +523,7 @@ class FabricShellJob implements FabricShellJobHandle {
       ...(this.durable ? { durable: { ...this.durable } } : {}),
       ...(this.options.monitor ? { monitor: { ...this.options.monitor } } : {}),
       ...(this.lastOutputAt !== undefined ? { lastOutputAt: this.lastOutputAt } : {}),
+      ...(this.monitorEndedAt !== undefined ? { monitorEndedAt: this.monitorEndedAt } : {}),
       ...(this.lastEvent ? { lastEvent: { ...this.lastEvent, lines: [...this.lastEvent.lines] } } : {}),
       eventCount: this.eventCount,
       unread: this.unread,
@@ -719,6 +752,9 @@ export const raceShellHang = async <T>(options: {
         }
         const message = result.error instanceof Error ? result.error.message : String(result.error);
         await job.finish(null, "\n\n[" + message + "]\n");
+      }).catch((error: unknown) => {
+        // A detached job's bookkeeping failure is a log line, never a process crash.
+        console.warn(`[pi-fabric] background ${job.tool} task ${job.id} could not record its end: ${error instanceof Error ? error.message : String(error)}`);
       });
       return { status: "spilled" };
     }
@@ -737,6 +773,3 @@ export const raceShellHang = async <T>(options: {
     if (hangTimer) clearTimeout(hangTimer);
   }
 };
-      }).catch((error: unknown) => {
-        // A detached job's bookkeeping failure is a log line, never a process crash.
-        console.warn(`[pi-fabric] background ${job.tool} task ${job.id} could not record its end: ${error instanceof Error ? error.message : String(error)}`);

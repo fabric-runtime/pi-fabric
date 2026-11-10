@@ -21,7 +21,7 @@ export const shellMonitorSchema = {
   type: "object", additionalProperties: false, required: ["delivery"],
   properties: {
     delivery: { type: "string", enum: ["ui", "wake"], description: "ui only updates task inspection; wake also delivers bounded events to the owning agent (may use LLM turns)." },
-    timeoutMs: { type: "integer", minimum: 1000, maximum: 1800000, description: "Monitor lifetime, default 5 minutes, maximum 30 minutes. No automatic renewal." },
+    timeoutMs: { type: "integer", minimum: 1000, maximum: 1800000, description: "Monitor lifetime, default 5 minutes, maximum 30 minutes. No automatic renewal. With an explicit shell timeout, expiry ends only the watch; without one, it stops the command." },
     intervalMs: { type: "integer", minimum: 1000, maximum: 60000, description: "Minimum event batch interval, default 5 seconds. Not a shell polling interval." },
     match: { type: "string", minLength: 1, maxLength: 256, description: "Optional case-sensitive literal substring filter on bounded output lines (not a regex)." },
   },

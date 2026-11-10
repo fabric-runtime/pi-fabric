@@ -600,7 +600,7 @@ export class PiToolsProvider implements FabricProvider {
     const command = typeof args.command === "string" ? args.command : "";
     const monitor = parseShellMonitor(args.monitor);
     if (monitor && args.background === false) throw new Error("monitor runs in the background; omit background:false");
-    if (monitor && this.#shellJobs.live().filter(job => job.options.monitor).length >= 8) throw new Error("At most 8 monitors may run per session; stop an existing task first");
+    if (monitor && this.#shellJobs.live().filter(job => job.monitorActive).length >= 8) throw new Error("At most 8 monitors may run per session; stop an existing task first");
     const durable = args.durable === true;
     if (durable) {
       if (name !== "bash") throw new Error("durable is available for pi.bash only");
@@ -617,6 +617,9 @@ export class PiToolsProvider implements FabricProvider {
       ownerId: context.extensionContext.sessionManager?.getSessionId?.(),
       ...(typeof args.description === "string" ? { description: args.description } : {}),
       ...(monitor ? { monitor } : {}),
+      // The caller's explicit timeout (seconds) outlives a monitor's watch.
+      ...(monitor && typeof args.timeout === "number" && Number.isFinite(args.timeout) && args.timeout > 0
+        ? { processTimeoutMs: args.timeout * 1000 } : {}),
     });
     let tool: ToolDefinition<any, any, any>;
     try {

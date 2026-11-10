@@ -380,8 +380,8 @@ return await tools.call({ref: "agents.observe", args: {
   supported by this first local adapter.
 - `timeoutMs` defaults to five minutes, maximum thirty minutes. **Expiration,
   `tasks.stop({id: watch.id})`, interruption and session teardown stop only the observer**, not
-  its target. This deliberately differs from a launch-time shell `monitor`, whose
-  deadline owns and stops its watcher command. No automatic renewal.
+  its target. A launch-time shell `monitor` differs only when its command has no
+  timeout of its own: then the deadline stops that watcher command. No automatic renewal.
 - `tasks.list/get/watch/stop` inspect and control observation handles. In the
   footer, observations appear beneath their task or local participant, with separate
   work/observation counts, delivery and expiry. The inspector labels “stop watching”
@@ -425,8 +425,11 @@ Unchanged polls require **zero LLM turns** when the script emits nothing.
 
 Limits:
 
-- Five-minute default lifetime; 1 second minimum, 30 minutes maximum. Expiration
-  stops the command and produces one terminal outcome. Renewal is a new explicit
+- Five-minute default lifetime; 1 second minimum, 30 minutes maximum. When the
+  shell call sets its own `timeout`, expiration ends only the watch: one final
+  event says so, and the process keeps running until it exits or reaches that
+  timeout. Without a `timeout`, expiration stops the command and produces one
+  terminal outcome, so a watcher script cannot run unbounded. Renewal is a new explicit
   call; there is no automatic restart or hidden supervisor LLM.
 - At most eight concurrent monitors per session. Output batches are spaced by
   `intervalMs` (1–60 seconds, default 5 seconds). This is a **delivery** interval,

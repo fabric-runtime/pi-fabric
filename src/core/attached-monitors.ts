@@ -63,7 +63,7 @@ export class AttachedMonitors {
   async start(options: AttachedMonitorOptions, ownerId?: string, signal?: AbortSignal) {
     signal?.throwIfAborted();
     if (this.#closed) throw new Error("Attached monitors are closed");
-    if (this.jobs.live().filter(job => job.options.monitor && !job.abort.signal.aborted).length >= 8)
+    if (this.jobs.live().filter(job => job.monitorActive).length >= 8)
       throw new Error("At most 8 monitors may run per session");
     if (options.delivery === "wake" && this.jobs.live().some(job => !job.abort.signal.aborted &&
       job.options.monitor?.delivery === "wake" && job.options.observes?.kind === options.target.kind && job.options.observes.id === options.target.id))

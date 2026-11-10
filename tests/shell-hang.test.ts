@@ -111,6 +111,24 @@ describe("pi.bash auto-spill", () => {
     expect(job.abort.signal.aborted).toBe(true);
   });
 
+  it("ends only the watch when a monitor expires before the shell's own timeout", async () => {
+    // Field report: timeouts of 3600s and 5500s were killed at the 300s monitor expiry.
+    const { result, jobs } = await invokeBash("printf 'CI: waiting\\n'; sleep 2.5; printf 'CI: finished\\n'", 0, undefined, {
+      timeout: 3600,
+      monitor: { delivery: "ui", timeoutMs: 1000, intervalMs: 1000 },
+    });
+    const job = jobs.get(result.details!.taskId!)!;
+    await vi.waitFor(() => expect(job.info().monitorEndedAt).toBeDefined(), { timeout: 4000 });
+    expect(job.abort.signal.aborted).toBe(false);
+    expect(job.info().finishedAt).toBeUndefined();
+    expect(job.monitorActive).toBe(false);
+    expect(job.info().lastEvent?.lines.at(-1)).toContain("Monitor expired; the process keeps running");
+    await vi.waitFor(() => expect(job.info().finishedAt).toBeDefined(), { timeout: 8000 });
+    expect(job.info().status).toBe("exited");
+    expect(job.info().exitCode).toBe(0);
+    expect((await job.outputText())).toContain("CI: finished");
+  }, 15_000);
+
   it("requires explicit valid monitor delivery before creating a shell job", async () => {
     await expect(invokeBash("echo forbidden", 0, undefined, { monitor: {} })).rejects.toThrow();
     await expect(invokeBash("echo forbidden", 0, undefined, { background: false, monitor: { delivery: "wake" } })).rejects.toThrow("background:false");

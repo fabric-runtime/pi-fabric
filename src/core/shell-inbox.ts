@@ -163,7 +163,7 @@ export class ShellEventInbox {
   }
 
   #stopMonitors(): void {
-    for (const job of this.jobs.live()) if (job.options.monitor) job.stop("Owning agent interrupted or failed");
+    for (const job of this.jobs.live()) if (job.monitorActive) job.stop("Owning agent interrupted or failed");
   }
 
   #accept(event: FabricShellJobEvent): void {

@@ -28,7 +28,7 @@ export function installFabricShellHangKeys(
     enabled: options.enabled, ownsInput: options.ownsInput, halted: () => false,
     halt: () => {
       let count = 0;
-      for (const job of options.jobs()?.live() ?? []) if (job.options.monitor && job.stop("Main interrupted")) count++;
+      for (const job of options.jobs()?.live() ?? []) if (job.monitorActive && job.stop("Main interrupted")) count++;
       return count;
     },
   });
