@@ -1356,6 +1356,9 @@ export class AgentManager {
         ...(this.config.maxTokensPerChild > 0
           ? ["--max-tokens", String(this.config.maxTokensPerChild)]
           : []),
+        ...(this.config.maxTurnsPerChild > 0
+          ? ["--max-turns", String(this.config.maxTurnsPerChild)]
+          : []),
         "--transport",
         adapter.kind,
         ...(recursive || inheritedFullCodeMode || requiresFabricKernel

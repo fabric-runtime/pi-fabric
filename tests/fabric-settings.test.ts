@@ -867,6 +867,23 @@ describe("FabricSettingsComponent", () => {
     expect(lines).toContain("Off");
   });
 
+  it("surfaces the per-child turn limit, off by default and set when configured", () => {
+    const render = (maxTurnsPerChild: number) => {
+      const items = buildFabricSettingsItems(
+        theme,
+        { ...DEFAULT_FABRIC_CONFIG, agents: { ...DEFAULT_FABRIC_CONFIG.agents, maxTurnsPerChild } },
+        () => {},
+        { keepVisibleCandidates: ["fabric_exec"], modelSource: fakeModelSource },
+      );
+      const agents = items.find((item) => item.id === "agents")!.submenu!("", () => {});
+      // The section shows 16 rows at a time; search reaches the row.
+      for (const char of "turn limit") agents.handleInput?.(char);
+      return agents.render(120).join("\n");
+    };
+    expect(render(0)).toMatch(/Turn limit ›\s+Off/);
+    expect(render(300)).toMatch(/Turn limit ›\s+300/);
+  });
+
   it("shows a configured token limit formatted compactly", () => {
     const items = buildFabricSettingsItems(
       theme,

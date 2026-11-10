@@ -1543,6 +1543,49 @@ describe("AgentManager", () => {
     expect(result.error ?? "").toContain("agents.maxTokensPerChild");
     expect(result.error ?? "").toContain("/fabric settings");
   });
+
+  it("stops a child before it starts a turn past the per-child turn limit", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-turns-"));
+    roots.push(root);
+    const fakePi = path.resolve("tests/fixtures/fake-pi-rpc.mjs");
+    fs.chmodSync(fakePi, 0o755);
+    // Every fake turn ends on a tool call, as in a model re-reading the same file.
+    const config = { ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi" as const, maxTurnsPerChild: 3 };
+    const manager = new AgentManager(process.cwd(), config, {
+      workerPath: path.resolve("src/worker.ts"),
+      piBinary: fakePi,
+      runRoot: root,
+      fullCodeMode: false,
+    });
+    managers.push(manager);
+    const result = await manager.run({ task: "TOOL_LOOP TOOL_LOOP_TURNS=30", transport: "process", timeoutMs: 10_000 });
+    expect(result.status).toBe("timed_out");
+    expect(result.error ?? "").toMatch(/turn limit/i);
+    expect(result.error ?? "").toMatch(/3 turns/);
+    // The parent model reads this error verbatim: it names the key and the remedy.
+    expect(result.error ?? "").toContain("agents.maxTurnsPerChild");
+    expect(result.error ?? "").toContain("/fabric settings");
+  });
+
+  it("lets a child that answers on its last allowed turn complete", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-turns-"));
+    roots.push(root);
+    const fakePi = path.resolve("tests/fixtures/fake-pi-rpc.mjs");
+    fs.chmodSync(fakePi, 0o755);
+    // Two tool turns and a final answer: exactly three turns, the limit.
+    const config = { ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi" as const, maxTurnsPerChild: 3 };
+    const manager = new AgentManager(process.cwd(), config, {
+      workerPath: path.resolve("src/worker.ts"),
+      piBinary: fakePi,
+      runRoot: root,
+      fullCodeMode: false,
+    });
+    managers.push(manager);
+    const result = await manager.run({ task: "TOOL_LOOP TOOL_LOOP_TURNS=2", transport: "process", timeoutMs: 10_000 });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe("completed");
+    expect(result.turns).toBe(3);
+  });
 });
 
 describe("AgentManager multimodal prompts", () => {

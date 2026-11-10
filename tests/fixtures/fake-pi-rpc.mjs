@@ -61,6 +61,30 @@ input.on("line", (line) => {
     return;
   }
 
+  // Each turn ends on a tool call, so Pi would start another model call; the
+  // run answers only after TOOL_LOOP_TURNS such turns (a runaway child).
+  if (task.includes("TOOL_LOOP")) {
+    const turns = Number(/TOOL_LOOP_TURNS=(\d+)/.exec(task)?.[1] ?? 30);
+    let turn = 0;
+    const next = () => {
+      turn += 1;
+      if (turn > turns) {
+        finishAttempt(successMessage("loop finished"), false);
+        return;
+      }
+      const message = {
+        ...successMessage(""),
+        content: [{ type: "toolCall", id: `call-${turn}`, name: "read", arguments: { path: "same.png" } }],
+        stopReason: "toolUse",
+      };
+      send({ type: "message_end", message });
+      send({ type: "turn_end", message, toolResults: [] });
+      setTimeout(next, 10);
+    };
+    next();
+    return;
+  }
+
   if (task.includes("FAIL_PROVIDER")) {
     finishAttempt(providerFailure(), false);
     return;

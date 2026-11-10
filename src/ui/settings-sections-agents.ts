@@ -24,6 +24,8 @@ import {
   BUDGET_VALUES,
   formatTokens,
   TOKEN_VALUES,
+  formatTurns,
+  TURN_VALUES,
   formatMs,
 } from "./settings-values.js";
 import { thinkingLabel } from "../thinking.js";
@@ -295,6 +297,17 @@ export const buildAgentsSection = (
             formatTokens,
             "Agent token limit",
             "Maximum cumulative tokens a single agent may use before it is terminated (0 disables).",
+          ),
+        }),
+        setting("agents.maxTurnsPerChild", "Turn limit", formatTurns(config.agents.maxTurnsPerChild), {
+          description:
+            "Maximum turns a single agent may take before it is stopped (0 disables). A turn that ends with an answer still completes. Stops a child that keeps calling tools.",
+          submenu: numericSubmenu(
+            theme,
+            TURN_VALUES,
+            formatTurns,
+            "Agent turn limit",
+            "Maximum turns a single agent may take before it is stopped (0 disables).",
           ),
         }),
         setting("agents.timeoutMs", "Timeout", formatMs(config.agents.timeoutMs), {
