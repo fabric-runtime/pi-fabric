@@ -1,3 +1,4 @@
+import { fabricControlAbort } from "../core/control-abort.js";
 import { stableJsonHash } from "../core/stable-hash.js";
 import { consume } from "../verified/policy.js";
 import { admitSpeculation, checkSpeculation, speculationExpired, SpeculationAccounting } from "../verified/speculation.js";
@@ -9,6 +10,10 @@ import type {
   FabricSpeculationServeResult,
   FabricSpeculationStats,
 } from "./types.js";
+
+// Ending speculative work is control flow: anything left awaiting it sees a
+// branded reason the crash guard recognizes, never a bare DOMException.
+const ended = (why: string): Error => fabricControlAbort(`Fabric speculation ${why}`);
 
 interface SpeculationEntry {
   parentToolCallId: string;
@@ -149,7 +154,7 @@ export class FabricSpeculationStore implements FabricSpeculationRuntime {
     this.#accounting.record(event[reason]);
     // Staleness invalidates the signal at either checkpoint. A current
     // provider failure has already settled and historically does not abort.
-    if (reason !== "failed") entry.controller.abort();
+    if (reason !== "failed") entry.controller.abort(ended(`refused (${reason})`));
     return { hit: false, reason };
   }
 
@@ -157,11 +162,11 @@ export class FabricSpeculationStore implements FabricSpeculationRuntime {
   onInvocationEnd(parentToolCallId: string): void {
     this.#endedInvocations.add(parentToolCallId);
     for (const entry of this.#serving) {
-      if (entry.parentToolCallId === parentToolCallId) entry.controller.abort();
+      if (entry.parentToolCallId === parentToolCallId) entry.controller.abort(ended("ended with its invocation"));
     }
     for (const [key, entry] of this.#entries) {
       if (entry.parentToolCallId !== parentToolCallId) continue;
-      entry.controller.abort();
+      entry.controller.abort(ended("ended with its invocation"));
       this.#entries.delete(key);
       this.#accounting.record("wasted");
     }
@@ -170,8 +175,8 @@ export class FabricSpeculationStore implements FabricSpeculationRuntime {
   /** Turn backstop: speculation never outlives a turn. */
   reset(): void {
     this.bumpEpoch();
-    for (const entry of this.#serving) entry.controller.abort();
-    for (const entry of this.#entries.values()) entry.controller.abort();
+    for (const entry of this.#serving) entry.controller.abort(ended("reset"));
+    for (const entry of this.#entries.values()) entry.controller.abort(ended("reset"));
     this.#entries.clear();
     this.#endedInvocations.clear();
   }
@@ -185,7 +190,7 @@ export class FabricSpeculationStore implements FabricSpeculationRuntime {
   #sweepExpired(now: number): void {
     for (const [key, entry] of this.#entries) {
       if (!speculationExpired(now, entry.createdAt, this.#entryTtlMs)) continue;
-      entry.controller.abort();
+      entry.controller.abort(ended("expired"));
       this.#entries.delete(key);
       this.#accounting.record("wasted");
     }

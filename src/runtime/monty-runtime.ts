@@ -9,6 +9,7 @@ import { HumanWaitDeadlinePause } from "./deadline-pause.js";
 import { montyBindings } from "./monty-bridge.js";
 import { MONTY_BOOTSTRAP_SOURCE, montyErrorText, prepareMontySource } from "./monty-source.js";
 import { montyInput, normalizeMontyValue } from "./monty-values.js";
+import { fabricControlAbort } from "../core/control-abort.js";
 
 const require = createRequire(import.meta.url);
 
@@ -83,7 +84,7 @@ export class MontyRuntime implements FabricKernelRuntime {
     const stop = (reason: "aborted" | "timed_out"): void => {
       if (stopped) return;
       stopped = reason;
-      hostAbort.abort(new Error(reason === "aborted" ? "Execution cancelled" : "Execution timed out"));
+      hostAbort.abort(fabricControlAbort(reason === "aborted" ? "Execution cancelled" : "Execution timed out"));
       kill();
     };
     const abort = (): void => stop("aborted");
@@ -197,7 +198,7 @@ export class MontyRuntime implements FabricKernelRuntime {
     } finally {
       if (timer) clearTimeout(timer);
       options.signal?.removeEventListener("abort", abort);
-      hostAbort.abort(new Error("Monty execution ended"));
+      hostAbort.abort(fabricControlAbort("Monty execution ended"));
       // Initiate pool closure first to prevent worker replacement. Native cleanup
       // is best effort and bounded: its failures must not replace the guest result.
       let cleanupFailed = false;

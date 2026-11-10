@@ -12,6 +12,7 @@ import {
   resolveScriptRuntime,
   resolveScriptRuntimeSync,
 } from "../agents/transports/process-utils.js";
+import { fabricControlAbort } from "../core/control-abort.js";
 
 interface ChildCallMessage {
   type: "call";
@@ -129,7 +130,7 @@ export class NodeProcessRuntime {
         if (deadline) clearTimeout(deadline);
         if (abortHandler) options.signal?.removeEventListener("abort", abortHandler);
         if (!hostAbortController.signal.aborted && hostTasks.size > 0) {
-          hostAbortController.abort(new Error(result.error ?? "Process execution stopped"));
+          hostAbortController.abort(fabricControlAbort(result.error ?? "Process execution stopped"));
         }
         child.removeAllListeners();
         if (child.connected) child.disconnect();
@@ -200,7 +201,7 @@ export class NodeProcessRuntime {
           finishing = true;
           if (deadline) clearTimeout(deadline);
           if (hostTasks.size > 0 && !hostAbortController.signal.aborted) {
-            hostAbortController.abort(new Error(message.result.error ?? "Process execution stopped"));
+            hostAbortController.abort(fabricControlAbort(message.result.error ?? "Process execution stopped"));
           }
           void (async () => {
             const completed = await settleWithin(hostTasks, HOST_TASK_SETTLE_GRACE_MS);

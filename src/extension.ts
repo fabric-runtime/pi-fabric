@@ -112,6 +112,7 @@ import { truncateMiddle } from "./util.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureLoadedFileIdentity } from "./build-identity.js";
+import { installFabricCrashGuard } from "./core/crash-guard.js";
 
 export const FABRIC_MANAGED_HOST_VERSION = 2;
 export type { FabricManagedHostOptions } from "./managed-host.js";
@@ -202,6 +203,9 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     );
     return;
   }
+  // A failure in a program, action, speculation or background job reaches its
+  // tool result or a log line; it never takes down the Pi process.
+  installFabricCrashGuard(path.resolve(FABRIC_ENTRY_DIR, ".."));
   if (!options.managedHost) registerJevAuth(pi);
   // Clipboard paths are attachments, not a reason to spend a model turn on read.
   // Keep filesystem/MIME work off the registration and ordinary-input paths.

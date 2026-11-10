@@ -2,6 +2,7 @@ import releaseSyncVariant from "@jitl/quickjs-singlefile-mjs-release-sync";
 import { newQuickJSWASMModuleFromVariant, newVariant } from "quickjs-emscripten-core";
 import ts from "typescript";
 import { runAbortable, settleWithin } from "../async-settlement.js";
+import { fabricControlAbort } from "../core/control-abort.js";
 import { piBashExitMetadata } from "../core/pi-bash-error.js";
 import { PI_ARGUMENT_NORMALIZATION_SOURCE } from "../core/pi-arguments.js";
 import { PI_CORE_TOOL_NAMES } from "../core/pi-tools.js";
@@ -991,7 +992,7 @@ export class QuickJsRuntime {
     const hostAbortController = new AbortController();
     const abortHostCalls = (reason: string): void => {
       if (!hostAbortController.signal.aborted) {
-        hostAbortController.abort(new Error(reason));
+        hostAbortController.abort(fabricControlAbort(reason));
       }
     };
 
@@ -1541,7 +1542,7 @@ export class QuickJsRuntime {
           : timedOut
             ? timeoutMessage()
             : "Fabric guest execution ended before its host calls settled";
-        if (!hostAbortController.signal.aborted) hostAbortController.abort(new Error(cleanupMessage));
+        if (!hostAbortController.signal.aborted) hostAbortController.abort(fabricControlAbort(cleanupMessage));
         rejectExecutionGate(cleanupMessage);
         const errorHandle = context.newError(cleanupMessage);
         for (const promise of pendingHostPromises) promise.reject(errorHandle);

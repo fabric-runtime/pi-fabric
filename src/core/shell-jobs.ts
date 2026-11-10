@@ -9,6 +9,7 @@ import type { PiShellToolName } from "./pi-tools.js";
 import { SHELL_MONITOR_PREVIEWS, ShellMonitor, type ShellMonitorOptions, type ShellMonitorBatch } from "./shell-monitor.js";
 import { ShellReplay, type ShellReplayPage } from "./shell-replay.js";
 import type { DurableShellBridge } from "../jev-fabric/bridge.js";
+import { fabricControlAbort } from "./control-abort.js";
 
 export { DEFAULT_SHELL_HANG_MS, SHELL_HANG_MAX_MS } from "./shell-limits.js";
 const SHELL_HANG_SNAPSHOT_BYTES = 8_000;
@@ -262,7 +263,7 @@ class FabricShellJob implements FabricShellJobHandle {
     if (this.#deadline) clearTimeout(this.#deadline);
     this.#deadline = undefined;
     this.#monitor?.close(false);
-    this.abort.abort(new Error(reason));
+    this.abort.abort(fabricControlAbort(reason));
     this.onChange("stopping");
     return true;
   }
@@ -276,7 +277,7 @@ class FabricShellJob implements FabricShellJobHandle {
     if (this.#deadline) clearTimeout(this.#deadline);
     this.#deadline = undefined;
     this.#monitor?.close(false);
-    this.detached.abort(new Error("Detached from the Pi session"));
+    this.detached.abort(fabricControlAbort("Detached from the Pi session"));
   }
 
   acknowledge(): void {
@@ -632,20 +633,20 @@ export class FabricShellJobStore {
   killWaiting(): number {
     const jobs = this.waiting();
     for (const job of jobs) {
-      if (!job.abort.signal.aborted) job.abort.abort(new Error("Command aborted"));
+      if (!job.abort.signal.aborted) job.abort.abort(fabricControlAbort("Command aborted"));
     }
     return jobs.length;
   }
 
   async close(): Promise<void> {
     this.#closed = true;
-    this.#closing.abort(new Error("Shell job store is closed"));
+    this.#closing.abort(fabricControlAbort("Shell job store is closed"));
     this.#listeners.clear();
     const live = this.live();
     for (const job of live) {
       // A durable process belongs to its jev-fabric store and outlives this session.
       if (job.durable) job.detach();
-      else if (!job.abort.signal.aborted) job.abort.abort(new Error("Fabric session ended"));
+      else if (!job.abort.signal.aborted) job.abort.abort(fabricControlAbort("Fabric session ended"));
     }
     await Promise.allSettled(live.map((job) => job.finish(null, job.durable
       ? `\n\n[Detached: jev-fabric job ${job.durable.jobId ?? "(starting)"} keeps running outside this session]\n`
@@ -736,3 +737,6 @@ export const raceShellHang = async <T>(options: {
     if (hangTimer) clearTimeout(hangTimer);
   }
 };
+      }).catch((error: unknown) => {
+        // A detached job's bookkeeping failure is a log line, never a process crash.
+        console.warn(`[pi-fabric] background ${job.tool} task ${job.id} could not record its end: ${error instanceof Error ? error.message : String(error)}`);

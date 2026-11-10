@@ -14,6 +14,7 @@ import type { FabricHostCall, FabricKernelRuntime, FabricSandboxOptions, FabricS
 import { CPYTHON_CHILD_SOURCE } from "./cpython-child-source.js";
 import { HumanWaitDeadlinePause } from "./deadline-pause.js";
 import { linuxCPythonNetworkFilter } from "./cpython-linux-sandbox.js";
+import { fabricControlAbort } from "../core/control-abort.js";
 
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const HOST_SETTLE_MS = 250;
@@ -175,7 +176,7 @@ export class CPythonRuntime implements FabricKernelRuntime {
         if (deadline) clearTimeout(deadline);
         if (transportDeadline) clearTimeout(transportDeadline);
         options.signal?.removeEventListener("abort", abort);
-        if (!hostAbort.signal.aborted) hostAbort.abort(new Error(result.error ?? "CPython execution ended"));
+        if (!hostAbort.signal.aborted) hostAbort.abort(fabricControlAbort(result.error ?? "CPython execution ended"));
         channel?.destroy();
         ipc?.server.close();
         child.stdout?.destroy();
@@ -205,7 +206,7 @@ export class CPythonRuntime implements FabricKernelRuntime {
         // A startup failure can reset fd 3 (or break the seccomp pipe) before
         // stderr/close arrives. Stop host work now, but give the child's natural
         // close a bounded chance to supply the real exit status and diagnostics.
-        hostAbort.abort(new Error(message));
+        hostAbort.abort(fabricControlAbort(message));
         transportDeadline = setTimeout(() => fail(message), TRANSPORT_DIAGNOSTIC_MS);
         transportDeadline.unref?.();
       };
@@ -255,11 +256,11 @@ export class CPythonRuntime implements FabricKernelRuntime {
             fail("Invalid CPython terminal result"); return;
           }
           finishing = true;
-          if (result.terminationReason !== "completed") hostAbort.abort(new Error(String(result.error ?? "Python guest failed")));
+          if (result.terminationReason !== "completed") hostAbort.abort(fabricControlAbort(String(result.error ?? "Python guest failed")));
           void (async () => {
             const done = await settleWithin(hostTasks, HOST_SETTLE_MS);
             if (!done) {
-              hostAbort.abort(new Error("Fabric guest execution ended before its host calls settled"));
+              hostAbort.abort(fabricControlAbort("Fabric guest execution ended before its host calls settled"));
               await settleWithin(hostTasks, HOST_SETTLE_MS);
             }
             // stdout/stderr are separate channels; allow their ready data to drain.
