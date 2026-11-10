@@ -32,6 +32,11 @@ const FILE_HIGHLIGHT_TICK_LINE_BUDGET = 96;
 const FILE_HIGHLIGHT_TICK_CHAR_BUDGET = 16_000;
 const FILE_HIGHLIGHT_ENTRY_LIMIT = 24;
 const FILE_HIGHLIGHT_CHAR_LIMIT = 4_000_000;
+// Longer lines render plain. TextMate grammars can be quadratic in one line's
+// length: a TypeScript string literal took 75 ms at 2k characters, 1.2 s at
+// 8k and 100 s at 80k, in one regex search a time limit cannot interrupt.
+const HIGHLIGHT_MAX_LINE_CHARS = 2_000;
+const TOKENIZE_OPTIONS = { tokenizeMaxLineLength: HIGHLIGHT_MAX_LINE_CHARS } as const;
 const CACHE_LIMIT = 192;
 const CACHE_CHAR_LIMIT = 4_000_000;
 const PRELOADED_LANGUAGES = [
@@ -356,7 +361,15 @@ export async function initHighlighting(theme: string, syntaxEnabled = true): Pro
   const version = ++initVersion;
   initializingTheme = theme;
   try {
-    const { createHighlighter } = await import("shiki");
+    // Shiki's default engine is Oniguruma compiled to WebAssembly. Its linear
+    // memory only grows: compiling the grammars' scanners took it from 16 MB
+    // to 172 MB on ordinary files, held for the life of Pi. The JavaScript
+    // engine produced the same tokens on that corpus, in about 53 MB of
+    // collectable heap.
+    const [{ createHighlighter }, { createJavaScriptRegexEngine }] = await Promise.all([
+      import("shiki"),
+      import("shiki/engine/javascript"),
+    ]);
     // Resolve the theme object from pi-fabric's own module graph and hand
     // createHighlighter the *object*, not a bare id string. Shiki's internal
     // lazy `import("@shikijs/themes/<id>)` for string ids cannot be resolved
@@ -368,6 +381,9 @@ export async function initHighlighting(theme: string, syntaxEnabled = true): Pro
     const next = await createHighlighter({
       themes: [themeObject],
       langs: await resolveShikiLanguageObjects(PRELOADED_LANGUAGES),
+      // Forgiving: a pattern the engine cannot translate stops matching
+      // instead of failing the grammar.
+      engine: createJavaScriptRegexEngine({ forgiving: true }),
     });
     if (version !== initVersion) {
       next.dispose();
@@ -548,6 +564,7 @@ export function highlightCode(
     const tokens = highlighter.codeToTokensBase(text, {
       lang: shikiLang as never,
       theme: currentTheme as never,
+      ...TOKENIZE_OPTIONS,
     });
     const rendered = tokens.map((line) =>
       normalizeContrast(line.map(ansiFromToken).join("")),
@@ -663,6 +680,7 @@ const advanceFileHighlight = (entry: FileHighlightEntry): void => {
     const tokens = instance.codeToTokensBase(entry.sourceLines.slice(start, end).join("\n"), {
       lang: entry.lang as never,
       theme: currentTheme as never,
+      ...TOKENIZE_OPTIONS,
       ...(entry.state ? { grammarState: entry.state } : {}),
     });
     const rendered = tokens.map((line) =>

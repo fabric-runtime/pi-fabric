@@ -367,12 +367,27 @@ export const mergeObservationWindow = (
   })),
 );
 
+// The cache keeps only the ends of the array it summarized, not the array.
+// Session snapshots are immutable and an appended snapshot reuses the earlier
+// observation objects, so the ends identify the summarized prefix. Holding the
+// arrays here would pin every session's observations after the session reader
+// has evicted them.
 interface CachedObservationWindow {
-  observations: readonly EntropyValueObservation[];
+  length: number;
+  first: EntropyValueObservation | undefined;
+  last: EntropyValueObservation | undefined;
   counts: Record<string, number>;
   digestCounts: Record<string, number>;
   summary: ObservationSummary;
 }
+
+const extendsSummarized = (
+  cached: CachedObservationWindow,
+  observations: readonly EntropyValueObservation[],
+): boolean =>
+  cached.length <= observations.length &&
+  (cached.length === 0 ||
+    (observations[0] === cached.first && observations[cached.length - 1] === cached.last));
 
 /** For immutable session-reader snapshots only; ordinary public merges stay pure. */
 export class SessionObservationCache {
@@ -390,12 +405,11 @@ export class SessionObservationCache {
     const summarized: SummarizedObservationWindow[] = [];
     for (const window of windows) {
       let cached = this.#windows.get(window.file);
-      if (cached?.observations !== window.observations) {
-        const append = cached && cached.observations.length <= window.observations.length &&
-          cached.observations.every((observation, index) => observation === window.observations[index]);
+      const append = cached !== undefined && extendsSummarized(cached, window.observations);
+      if (!append || cached!.length !== window.observations.length) {
         const counts = append ? { ...cached!.counts } : {};
         const digestCounts = append ? { ...cached!.digestCounts } : {};
-        const start = append ? cached!.observations.length : 0;
+        const start = append ? cached!.length : 0;
         for (let index = start; index < window.observations.length; index++) {
           const observation = window.observations[index]!;
           const identity = observationIdentity(observation);
@@ -403,10 +417,15 @@ export class SessionObservationCache {
           digestCounts[identity] = (digestCounts[identity] ?? 0) + 1;
           if ((index + 1) % COOPERATIVE_OBSERVATION_CHUNK === 0) await yieldToLoop();
         }
-        const digest = append && start === window.observations.length
-          ? cached!.summary.digest
-          : await digestFromIdentityCountsAsync(digestCounts);
-        cached = { observations: window.observations, counts, digestCounts, summary: { counts, digest } };
+        const digest = await digestFromIdentityCountsAsync(digestCounts);
+        cached = {
+          length: window.observations.length,
+          first: window.observations[0],
+          last: window.observations.at(-1),
+          counts,
+          digestCounts,
+          summary: { counts, digest },
+        };
       }
       this.#windows.delete(window.file);
       this.#windows.set(window.file, cached!);

@@ -11,6 +11,7 @@ import {
   projectSessionFiles,
   projectSessionFilesAsync,
   sessionWindowEvidence,
+  sessionEvidenceCacheUsage,
   sessionWindowEvidenceAsync,
   trendFromScores,
   type EntropySurfaceSnapshot,
@@ -206,6 +207,34 @@ describe("async session pipeline", () => {
     expect((await sessionWindowEvidenceAsync([file])).traces).toHaveLength(1);
     fs.appendFileSync(file, `${line.slice(split)}\n`);
     expect((await sessionWindowEvidenceAsync([file])).traces).toHaveLength(2);
+  });
+
+  it("bounds cached evidence by size but always keeps the active window", async () => {
+    const agentDir = makeTempDir();
+    // One audit with a 3 MB argument per session: eight sessions alone exceed
+    // the cache's byte budget.
+    const largeSession = (name: string): string => {
+      const file = writeSession(agentDir, "/repo", name, new Date(2021, 0, 1));
+      const record = JSON.parse(sessionLine());
+      record.message.details.audits = [{ ref: "pi.write", args: { path: name, content: name.padEnd(3_000_000, "x") } }];
+      fs.writeFileSync(file, `${JSON.stringify(record)}\n`);
+      return file;
+    };
+    const older = Array.from({ length: 6 }, (_, index) => largeSession(`older-${index}.jsonl`));
+    const window = Array.from({ length: 8 }, (_, index) => largeSession(`window-${index}.jsonl`));
+    await sessionWindowEvidenceAsync(older);
+    const evidence = await sessionWindowEvidenceAsync(window);
+    expect(evidence.observationWindows).toHaveLength(8);
+    expect(sessionEvidenceCacheUsage().files).toBe(8);
+
+    // The window is still cached: reading it again scans nothing.
+    const stream = vi.spyOn(fs, "createReadStream");
+    try {
+      await sessionWindowEvidenceAsync(window);
+      expect(stream).not.toHaveBeenCalled();
+    } finally {
+      stream.mockRestore();
+    }
   });
 });
 

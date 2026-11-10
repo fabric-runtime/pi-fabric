@@ -1,3 +1,5 @@
+import v8 from "node:v8";
+import vm from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackgroundEntropyCompiler, compileEntropySurface } from "../src/entropy/compiler.js";
 import { SessionEntropyMeter, measureEntropy, type EntropyTraceWindow } from "../src/entropy/meter.js";
@@ -139,6 +141,27 @@ describe("incremental observation pool", () => {
     for (let i = 0; i < 16; i++) await cache.merge(undefined, [{ file: `evict-${i}`, observations: [] }]);
     await cache.merge(undefined, windows);
     expect(reads).toBeGreaterThan(initialReads);
+  });
+});
+
+describe("observation cache retention", () => {
+  it("keeps summaries without pinning the session's observation arrays", async () => {
+    v8.setFlagsFromString("--expose-gc");
+    const gc = vm.runInNewContext("gc") as () => void;
+    const cache = new SessionObservationCache();
+    let collected = false;
+    const registry = new FinalizationRegistry<void>(() => { collected = true; });
+    const before = await (async () => {
+      const observations = Array.from({ length: 10_000 }, (_, i) => ({ ref: "demo.run", key: "mode", value: `v${i % 7}` }));
+      registry.register(observations);
+      return cache.summarize([{ file: "a", observations }]);
+    })();
+    for (let attempt = 0; attempt < 10 && !collected; attempt++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      gc();
+    }
+    expect(collected).toBe(true);
+    expect(before[0]!.summary.counts["demo.run\u0000mode\u0000string:v0"]).toBe(1_429);
   });
 });
 

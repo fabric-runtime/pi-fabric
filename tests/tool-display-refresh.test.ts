@@ -1,3 +1,5 @@
+import v8 from "node:v8";
+import vm from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import { FabricToolDisplayController } from "../src/ui/tool-display.js";
 
@@ -9,13 +11,32 @@ const flushDrainTurns = async (turns: number): Promise<void> => {
   }
 };
 
+// Pi gives each transcript component one renderer state object. The test
+// keeps them alive, as Pi's transcript does for cards it still shows.
+const cardStates = new Map<string, object>();
+const observeCard = (
+  controller: FabricToolDisplayController,
+  id: string,
+  kind: "call" | "result",
+  invalidate: () => void,
+): void => {
+  let state = cardStates.get(id);
+  if (!state) cardStates.set(id, state = {});
+  controller.observe(id, kind, { invalidate, state });
+};
+
+const collectGarbage = (): (() => void) => {
+  v8.setFlagsFromString("--expose-gc");
+  return vm.runInNewContext("gc") as () => void;
+};
+
 describe("FabricToolDisplayController.refresh", () => {
   it("invalidates each card once even when call and result kinds are registered", async () => {
     const controller = new FabricToolDisplayController();
     const call = vi.fn();
     const result = vi.fn();
-    controller.observe("card-a", "call", call);
-    controller.observe("card-a", "result", result);
+    observeCard(controller, "card-a", "call", call);
+    observeCard(controller, "card-a", "result", result);
 
     controller.refresh();
     await flushDrainTurns(2);
@@ -29,7 +50,7 @@ describe("FabricToolDisplayController.refresh", () => {
   it("falls back to the call invalidator for cards without a result yet", async () => {
     const controller = new FabricToolDisplayController();
     const call = vi.fn();
-    controller.observe("streaming-card", "call", call);
+    observeCard(controller, "streaming-card", "call", call);
 
     controller.refresh();
     await flushDrainTurns(2);
@@ -42,7 +63,7 @@ describe("FabricToolDisplayController.refresh", () => {
     const counts = new Map<string, number>();
     for (let index = 0; index < 8; index++) {
       const id = `card-${index}`;
-      controller.observe(id, "call", vi.fn(() => {
+      observeCard(controller, id, "call", vi.fn(() => {
         counts.set(id, (counts.get(id) ?? 0) + 1);
       }));
     }
@@ -63,8 +84,8 @@ describe("FabricToolDisplayController.refresh", () => {
       throw new Error("component disposed");
     });
     const alive = vi.fn();
-    controller.observe("disposed-card", "call", disposed);
-    controller.observe("alive-card", "call", alive);
+    observeCard(controller, "disposed-card", "call", disposed);
+    observeCard(controller, "alive-card", "call", alive);
 
     controller.refresh();
     await flushDrainTurns(2);
@@ -76,7 +97,7 @@ describe("FabricToolDisplayController.refresh", () => {
   it("drops pending refresh work on clear so rebuilt transcripts are not touched", async () => {
     const controller = new FabricToolDisplayController();
     const invalidate = vi.fn();
-    controller.observe("card-a", "call", invalidate);
+    observeCard(controller, "card-a", "call", invalidate);
 
     controller.refresh();
     controller.clear();
@@ -85,9 +106,44 @@ describe("FabricToolDisplayController.refresh", () => {
     expect(invalidate).not.toHaveBeenCalled();
 
     // Cards re-observed after the clear refresh normally.
-    controller.observe("card-b", "call", invalidate);
+    observeCard(controller, "card-b", "call", invalidate);
     controller.refresh();
     await flushDrainTurns(2);
     expect(invalidate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("FabricToolDisplayController retention", () => {
+  // Pi's ToolExecutionComponent: its invalidate closure holds the component,
+  // and the component holds the arguments, the result and the renderer state.
+  const renderCard = (controller: FabricToolDisplayController, id: string) => {
+    const component = { payload: new Array(1_000).fill(id), rendererState: {}, invalidations: 0 };
+    const invalidate = () => { component.invalidations += 1; };
+    controller.observe(id, "call", { invalidate, state: component.rendererState });
+    controller.observe(id, "result", { invalidate, state: component.rendererState });
+    return component;
+  };
+
+  it("does not keep cards alive after Pi drops their components", async () => {
+    const gc = collectGarbage();
+    const controller = new FabricToolDisplayController();
+    const collected: string[] = [];
+    const registry = new FinalizationRegistry<string>((id) => collected.push(id));
+    const kept = renderCard(controller, "kept");
+    // Compaction: Pi clears the transcript and rebuilds only the kept cards.
+    (() => {
+      for (let index = 0; index < 100; index++) {
+        registry.register(renderCard(controller, `dropped-${index}`), `dropped-${index}`);
+      }
+    })();
+    for (let attempt = 0; attempt < 10 && collected.length < 100; attempt++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      gc();
+    }
+    expect(collected).toHaveLength(100);
+
+    controller.refresh();
+    await flushDrainTurns(2);
+    expect(kept.invalidations).toBe(1);
   });
 });

@@ -1,5 +1,6 @@
+import path from "node:path";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GUEST_TYPE_DECLARATIONS, guestTypeDeclarations } from "../src/runtime/guest-types.js";
 import {
   normalizeTypeScriptPath,
@@ -314,6 +315,23 @@ if (!Array.isArray(page)) { const total: string = page.total; }
         true,
       );
       expect(rejected.errors.map((error) => error.line)).toEqual([2, 3, 5]);
+    }
+  });
+
+  it("parses TypeScript's lib files once for every cached checker", () => {
+    const libDirectory = normalizeTypeScriptPath(path.dirname(ts.getDefaultLibFilePath({})));
+    const code = 'return [1, 2].map((value) => value * 2).includes(4);';
+    // Distinct declarations select distinct checkers, each with its own program.
+    expect(typeCheckFabricCode(code, `${GUEST_TYPE_DECLARATIONS}\n// checker a`).errors).toEqual([]);
+    const reads = vi.spyOn(ts.sys, "readFile");
+    try {
+      expect(typeCheckFabricCode(code, `${GUEST_TYPE_DECLARATIONS}\n// checker b`).errors).toEqual([]);
+      const libReads = reads.mock.calls
+        .map(([fileName]) => normalizeTypeScriptPath(fileName))
+        .filter((fileName) => fileName.startsWith(`${libDirectory}/`));
+      expect(libReads).toEqual([]);
+    } finally {
+      reads.mockRestore();
     }
   });
 });

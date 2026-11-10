@@ -48,6 +48,18 @@ let nextCheckerId = 0;
 export const normalizeTypeScriptPath = (fileName: string): string =>
   fileName.replaceAll("\\", "/");
 
+// TypeScript's own lib declarations are identical for every checker (the
+// compiler options above are fixed), and parsed they are several megabytes.
+// TypeScript's DocumentRegistry shares bound source files across programs the
+// same way. Other files a guest program reaches stay per checker, so evicting
+// a checker still releases them.
+const libDirectory = `${normalizeTypeScriptPath(
+  path.dirname(ts.getDefaultLibFilePath(compilerOptions)),
+)}/`;
+const sharedLibFiles = new Map<string, ts.SourceFile>();
+const isLibFile = (fileName: string): boolean =>
+  normalizeTypeScriptPath(fileName).startsWith(libDirectory);
+
 
 class FabricTypeChecker {
   readonly #guestFile: string;
@@ -98,7 +110,8 @@ class FabricTypeChecker {
       getSourceFile: (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
         if (isGuestFile(fileName)) return this.#sourceFile;
         if (isDeclarationFile(fileName)) return this.#declarationSource;
-        const cached = this.#stableFiles.get(fileName);
+        const files = isLibFile(fileName) ? sharedLibFiles : this.#stableFiles;
+        const cached = files.get(fileName);
         if (cached) return cached;
         const source = this.#baseHost.getSourceFile(
           fileName,
@@ -106,7 +119,7 @@ class FabricTypeChecker {
           onError,
           shouldCreateNewSourceFile,
         );
-        if (source) this.#stableFiles.set(fileName, source);
+        if (source) files.set(fileName, source);
         return source;
       },
     };

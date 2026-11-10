@@ -34,6 +34,12 @@ const DEFAULT_SESSION_WINDOW = 8;
 const SESSION_STAT_CONCURRENCY = 32;
 const SESSION_READ_CONCURRENCY = 4;
 const SESSION_EVIDENCE_CACHE_LIMIT = 16;
+// Estimated bytes the evidence cache may hold beyond the active window. The
+// DEFAULT_SESSION_WINDOW most recently read files are always kept, so the
+// background compile never rescans a session it read on the previous turn;
+// older entries (files that left the window, or a `/fabric` sweep across the
+// machine) stay only while the total fits.
+const SESSION_EVIDENCE_CACHE_BYTES = 16 * 1024 * 1024;
 
 interface StampedSessionFile {
   file: string;
@@ -47,9 +53,42 @@ interface CachedSessionEvidence {
   ino: number;
   currentModel?: string;
   evidence: EntropySessionEvidence;
+  /** Estimated retained bytes of `evidence`. */
+  bytes: number;
 }
 
 const asyncEvidenceCache = new Map<string, CachedSessionEvidence>();
+let asyncEvidenceCacheBytes = 0;
+
+// Rough V8 retained size: headers, slots and string payloads. Observation
+// values are the audit argument strings themselves, so an observation counts
+// only its own object. The walk yields between chunks so a first scan of a
+// large session never blocks Pi's event loop on the estimate.
+const OBJECT_BYTES = 32;
+const SLOT_BYTES = 8;
+const STRING_BYTES = 16;
+const OBSERVATION_BYTES = 48;
+const ESTIMATE_CHUNK = 4_096;
+
+const estimateEvidenceBytesAsync = async (evidence: EntropySessionEvidence): Promise<number> => {
+  let bytes = OBJECT_BYTES * 3 + evidence.valueObservations.length * (OBSERVATION_BYTES + SLOT_BYTES);
+  const stack: unknown[] = [evidence.traces, evidence.auditCalls];
+  let visited = 0;
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (typeof value === "string") bytes += STRING_BYTES + value.length;
+    else if (Array.isArray(value)) {
+      bytes += OBJECT_BYTES + value.length * SLOT_BYTES;
+      for (const item of value) stack.push(item);
+    } else if (value !== null && typeof value === "object") {
+      const entries = Object.entries(value);
+      bytes += OBJECT_BYTES + entries.length * SLOT_BYTES * 2;
+      for (const [, item] of entries) stack.push(item);
+    } else bytes += SLOT_BYTES;
+    if (++visited % ESTIMATE_CHUNK === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  return bytes;
+};
 
 const mapConcurrent = async <T, R>(
   items: readonly T[],
@@ -448,13 +487,39 @@ const evidenceWindow = (
   observationWindows: [{ file, observations: evidence.valueObservations }],
 });
 
-const cacheSessionEvidence = (file: string, cached: CachedSessionEvidence): void => {
+const forgetSessionEvidence = (file: string): void => {
+  const cached = asyncEvidenceCache.get(file);
+  if (!cached) return;
   asyncEvidenceCache.delete(file);
+  asyncEvidenceCacheBytes -= cached.bytes;
+};
+
+const cacheSessionEvidence = (file: string, cached: CachedSessionEvidence): void => {
+  forgetSessionEvidence(file);
   asyncEvidenceCache.set(file, cached);
+  asyncEvidenceCacheBytes += cached.bytes;
   while (asyncEvidenceCache.size > SESSION_EVIDENCE_CACHE_LIMIT) {
-    asyncEvidenceCache.delete(asyncEvidenceCache.keys().next().value!);
+    forgetSessionEvidence(asyncEvidenceCache.keys().next().value!);
   }
 };
+
+// Runs after a batch of reads, when every file of the batch is among the most
+// recently read: trimming mid-batch could evict a window file the same batch
+// has yet to read and force a full rescan of it.
+const trimSessionEvidenceCache = (): void => {
+  while (
+    asyncEvidenceCache.size > DEFAULT_SESSION_WINDOW &&
+    asyncEvidenceCacheBytes > SESSION_EVIDENCE_CACHE_BYTES
+  ) {
+    forgetSessionEvidence(asyncEvidenceCache.keys().next().value!);
+  }
+};
+
+/** Cached session evidence: entry count and estimated bytes. For diagnostics and tests. */
+export const sessionEvidenceCacheUsage = (): { files: number; bytes: number } => ({
+  files: asyncEvidenceCache.size,
+  bytes: asyncEvidenceCacheBytes,
+});
 
 const sameSessionFile = (
   cached: CachedSessionEvidence,
@@ -509,13 +574,15 @@ const readSessionEvidenceAsync = async (
       }
     : scan.evidence;
   if (await endsAtLineBoundary(file, metadata)) {
+    const bytes = (append?.bytes ?? 0) + await estimateEvidenceBytesAsync(scan.evidence);
     cacheSessionEvidence(file, {
       ...metadata,
       ...(scan.currentModel ? { currentModel: scan.currentModel } : {}),
       evidence,
+      bytes,
     });
   } else {
-    asyncEvidenceCache.delete(file);
+    forgetSessionEvidence(file);
   }
   return evidenceWindow(file, evidence);
 };
@@ -525,6 +592,7 @@ export const sessionWindowEvidenceAsync = async (
   options: { windowsOnly?: boolean } = {},
 ): Promise<SessionWindowEvidence> => {
   const windows = await mapConcurrent(files, SESSION_READ_CONCURRENCY, readSessionEvidenceAsync);
+  trimSessionEvidenceCache();
   const traces: EntropyTraceInput[] = [];
   const valueObservations: EntropyValueObservation[] = [];
   const auditCalls: EntropyAuditCall[] = [];
@@ -555,6 +623,7 @@ export const measureSessionCorpusAsync = async (input: {
     SESSION_READ_CONCURRENCY,
     readSessionEvidenceAsync,
   );
+  trimSessionEvidenceCache();
   const sessions: SessionCorpusEntry[] = [];
   for (let index = 0; index < input.files.length; index++) {
     const window = windows[index];

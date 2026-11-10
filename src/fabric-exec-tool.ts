@@ -286,7 +286,7 @@ export const createFabricExecTool = (
       const mode = toolDisplayMode(state);
       const rendererState = context.state as FabricRendererState;
       const python = (rendererState.fabricKernel ?? toolKernel(state)) === "python";
-      toolDisplay?.observe(context.toolCallId, "call", context.invalidate);
+      toolDisplay?.observe(context.toolCallId, "call", context);
       const spinner = updateSpinner(
         rendererState.fabricSpinner ??= {},
         context.isPartial,
@@ -406,7 +406,7 @@ export const createFabricExecTool = (
         delete rendererState.fabricWriteBindingsCode;
         if (renderedKernel !== recordedKernel) context.invalidate();
       }
-      toolDisplay?.observe(context.toolCallId, "result", context.invalidate);
+      toolDisplay?.observe(context.toolCallId, "result", context);
       const spinner = updateSpinner(
         rendererState.fabricSpinner ??= {},
         isPartial,

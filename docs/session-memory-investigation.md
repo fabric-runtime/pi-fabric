@@ -172,3 +172,52 @@ core history retention and quantify minimal Fabric overhead, not ownership of
 every byte in the reported 1.8–2.25 GB macOS processes. A profile of one affected
 live process or a separately authorized representative workload is still needed
 for complete attribution. No user session was rewritten or terminated.
+
+## Fabric retention in a long-lived process (2026-11-10)
+
+A heap snapshot of a Pi process after five hours of Fabric work held 350 to
+430 MB of live heap. Session history was paged and was not the cause. Four
+Fabric structures were, and each one is bounded now.
+
+1. **Tool card invalidators (a leak).** `FabricToolDisplayController` kept the
+   invalidate closure of every `fabric_exec` card it had seen, so the setting
+   for compact or full tool display could redraw them. A closure holds Pi's
+   whole transcript component with the call's arguments and its result. Pi
+   drops those components when it rebuilds the transcript after compaction,
+   and the controller kept them alive: 34.7 MB after five hours, growing with
+   every call. The controller now holds each card's renderer state through a
+   `WeakRef` and keys the closures by that state in a `WeakMap`, so a card
+   lives exactly as long as Pi's transcript holds it.
+2. **TypeScript lib files.** Each of the up to four cached guest type checkers
+   parsed its own copy of TypeScript's lib declarations. They are parsed once
+   per process now. Heap for four checkers fell from 48.7 MB to 26.1 MB.
+3. **Entropy session evidence.** The session reader cached evidence for 16
+   files by count, and the observation summary cache held the same arrays for
+   another 16 files. Evidence outside the eight most recently read files now
+   stays only within an estimated 16 MiB, and the summary cache keeps the ends
+   of each array, enough to recognize an appended window. The active window
+   is always kept, so the background compile never rescans a session it read
+   on the previous turn.
+4. **Syntax highlighting.** Fabric's previews used Shiki's default engine,
+   Oniguruma compiled to WebAssembly. Its linear memory only grows: compiling
+   grammar scanners took it from 16 MB to 172 MB on this repository's files,
+   and four more passes over them left it there. Fabric uses Shiki's
+   JavaScript regex engine now. On 432 blocks (this repository's TypeScript,
+   JavaScript, Markdown, JSON, YAML, shell and Python files, plus long
+   single-line cases) it produced identical tokens for every block except
+   three long lines cut by Shiki's 500 ms time limit, and it settled at about
+   53 MB of collectable heap. Its warm tokenizing is slower: 112 ms at the
+   95th percentile per block against 46 ms. Highlighted blocks are cached, so
+   a block pays this once.
+
+The same measurement found a freeze. A TextMate grammar can be quadratic in
+one line's length, inside a single regex search that Shiki's time limit cannot
+interrupt: an 80,000-character TypeScript string literal blocked the thread
+for 100 seconds with Oniguruma and 10 seconds with the JavaScript engine.
+Lines longer than 2,000 characters now render plain, which bounds that case
+near 115 ms per line.
+
+The process footprint can still sit two to three times above the live heap:
+V8 returns freed memory to the system slowly after a spike. Fabric's shell job
+store keeps up to 256 finished jobs with their logs for 24 hours (about 14 MB
+in the snapshot), a fixed bound left as it is.
