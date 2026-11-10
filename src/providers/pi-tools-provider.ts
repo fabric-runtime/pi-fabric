@@ -27,6 +27,7 @@ import {
   trackShellOperations,
 } from "../core/shell-jobs.js";
 import { parseShellMonitor, shellMonitorSchema } from "../core/shell-monitor.js";
+import { abortSafeReadOperations } from "./pi-read-operations.js";
 import { expandSkillDirMarkersForRead } from "../core/skill-dir.js";
 import type {
   FabricActionDescriptor,
@@ -186,6 +187,16 @@ const expandReplaceAllEdit = (
   return { path: filePath, edits: [{ oldText: current, newText: next }] };
 };
 
+// Speculative reads are aborted routinely; Pi's own stream must not see that signal.
+const createAbortSafeReadDefinition = (cwd: string): ToolDefinition<any, any, any> => {
+  const operations = abortSafeReadOperations(
+    Reflect.get(PiCodingAgent, "detectSupportedImageMimeTypeFromFile") as Parameters<typeof abortSafeReadOperations>[0],
+  );
+  return operations
+    ? PiCodingAgent.createReadToolDefinition(cwd, { operations })
+    : PiCodingAgent.createReadToolDefinition(cwd);
+};
+
 const readTools = new Set<PiCoreToolName>(["read", "grep", "find", "ls"]);
 const writeTools = new Set<PiCoreToolName>(["edit", "write"]);
 
@@ -327,7 +338,7 @@ export class PiToolsProvider implements FabricProvider {
       ? new PowerShellCwdDefinitions(powerShellFactory)
       : undefined;
     this.#tools = this.#requireCapturedOverrides ? {} : {
-      read: PiCodingAgent.createReadToolDefinition(cwd),
+      read: createAbortSafeReadDefinition(cwd),
       bash: PiCodingAgent.createBashToolDefinition(cwd),
       ...(powerShellFactory ? { powershell: powerShellFactory(cwd) } : {}),
       edit: PiCodingAgent.createEditToolDefinition(cwd),
