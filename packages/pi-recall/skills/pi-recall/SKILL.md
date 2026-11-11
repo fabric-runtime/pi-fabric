@@ -30,10 +30,10 @@ probe a cold session with one rare literal term first. Page with
 
 ## Tool door
 
-The package also registers deferred tools `memory_recall` / `memory_expand`
-/ `memory_sessions`. How you reach them depends on the host contour (a
-bridge, the model surface, a wrapper CLI); the CLI above always works
-regardless.
+The package also registers tools `memory_recall` / `memory_expand` /
+`memory_sessions` (exposure `direct`: declared to the model in every
+session by default, still callable from codemode scripts). The CLI above
+always works regardless of the host contour.
 
 ## Hygiene
 

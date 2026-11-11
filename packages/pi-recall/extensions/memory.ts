@@ -138,7 +138,7 @@ const dispatchFailure = (action: "recall" | "expand" | "sessions", error: unknow
 export default function (pi: ExtensionAPI): void {
   pi.registerTool({
     name: "memory_recall",
-    exposure: "deferred",
+    exposure: "direct",
     label: "Memory recall",
     description:
       "Search session memory as bounded ranked snippets. Literal queries rank any matching term by default; queryMatch all narrows to co-located terms. Use memory_expand with a hit's session+index for full text.",
@@ -217,7 +217,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.registerTool({
     name: "memory_expand",
-    exposure: "deferred",
+    exposure: "direct",
     label: "Memory expand",
     description:
       "Read exact normalized session entries and nearby context as bounded lossless chunks. Copy session+index from a memory_recall hit; continuation offsets come from the returned next args.",
@@ -266,7 +266,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.registerTool({
     name: "memory_sessions",
-    exposure: "deferred",
+    exposure: "direct",
     label: "Memory sessions",
     description: "List known sessions in scope with id, file, cwd, mtime, entry count, and hot/cold tier.",
     parameters: Type.Object({

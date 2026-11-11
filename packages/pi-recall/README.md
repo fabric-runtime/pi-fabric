@@ -44,11 +44,15 @@ index **writes** at an isolated tree; never at a live index you don't own).
 
 `pi.extensions: ["./extensions/memory.ts"]` registers tools
 `memory_recall` / `memory_expand` / `memory_sessions` via `registerTool`
-(exposure `deferred`: callable through `ctx.executeTool` — e.g. a shell contour bridge — but not declared to the model by default),
-mirroring the fork's provider semantics (argument normalization, shared
-request cache, ambiguous-session response mapping). The engine's live-branch
-hook (unflushed live-session entries) is fork-side by design; here the
-session file on disk is the truth.
+with exposure `direct`: the trio is declared to the model in every session
+by default and stays callable from codemode scripts. (Earlier releases used
+`deferred` — callable only through `ctx.executeTool` — because the then-active
+prose contour reached the tools through a shell bridge; that contour is
+retired, so declaration is now unconditional.) This mirrors the fork's
+provider semantics (argument normalization, shared request cache,
+ambiguous-session response mapping). The engine's live-branch hook
+(unflushed live-session entries) is fork-side by design; here the session
+file on disk is the truth.
 
 ## Extraction seams (vs the in-repo module)
 
