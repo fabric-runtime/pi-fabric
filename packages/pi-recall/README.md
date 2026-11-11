@@ -2,7 +2,7 @@
 
 BM25-ranked recall over raw session JSONL + full-entry expand + multi-machine
 fs-sources + integrity/staleness refusal — the memory module of
-[e4779/pi-fabric](https://github.com/e4779/pi-fabric) extracted as an
+extracted from this repository as an
 engine-free pi package (Phase-1 of the pi-fresh plan). MIT.
 
 Full capability signature (ranked search over the raw session tree +
@@ -50,7 +50,7 @@ request cache, ambiguous-session response mapping). The engine's live-branch
 hook (unflushed live-session entries) is fork-side by design; here the
 session file on disk is the truth.
 
-## Extraction seams (vs e4779/pi-fabric)
+## Extraction seams (vs the in-repo module)
 
 `src/memory/*` is copied byte-identical. The engine coupling the plan claimed
 as "3 one-liners + type-only imports" verified out as:
