@@ -1,0 +1,44 @@
+{
+  "name": "@e4779/pi-recall",
+  "version": "0.1.3",
+  "type": "module",
+  "description": "Engine-free session memory: BM25-ranked recall over raw pi session JSONL, full-entry expand, session catalog, integrity refusal. CLI pi-recall + deferred pi tools (memory_recall/expand/sessions). Published from the pi-fabric fork; offered upstream.",
+  "bin": {
+    "pi-recall": "./bin/pi-recall"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/memory.ts"
+    ],
+    "skills": [
+      "./skills/pi-recall"
+    ]
+  },
+  "exports": {
+    ".": {
+      "types": "./src/memory.ts",
+      "import": "./src/memory.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "bun-types": "^1.4.4",
+    "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/e4779/pi-fabric.git",
+    "directory": "packages/pi-recall"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
