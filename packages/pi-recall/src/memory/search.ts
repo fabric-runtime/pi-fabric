@@ -267,6 +267,11 @@ const scoreDigestTerms = (
   filters: SearchFilters,
   maxDigests: number,
   match: MemoryQueryMatch,
+  /** Phrase queries match by substring in hydrated text: retain digests whose
+   *  vocabulary contains a term only inside a longer token (auth ⊂
+   *  authentication), mirroring the hot path's substring semantics, so a
+   *  possible match stays a hydration candidate instead of being dropped. */
+  substringMatch = false,
 ): { hits: DigestHit[]; complete: boolean } => {
   if (digests.length === 0 || terms.length === 0) return { hits: [], complete: true };
   const candidates: Array<{ digest: DigestShard; matches: string[]; structuralMatches: number }> = [];
@@ -274,7 +279,10 @@ const scoreDigestTerms = (
   for (const digest of digests) {
     if (!digestCanMatchFilters(digest, filters)) continue;
     const vocabulary = new Set(digest.vocabulary);
-    const matches = terms.filter((term) => vocabulary.has(term));
+    const matches = substringMatch
+      ? terms.filter((term) =>
+          vocabulary.has(term) || digest.vocabulary.some((token) => token.includes(term)))
+      : terms.filter((term) => vocabulary.has(term));
     if (matches.length === 0 || (match === "all" && matches.length !== terms.length)) continue;
     matchingDigests += 1;
     if (candidates.length < maxDigests) {
@@ -419,6 +427,16 @@ const searchRegex = async (
   if (coldMatches.size > 0 && hasFilters(filters)) {
     reasons.add("cold_structural_filter_requires_hydration");
   }
+  // Cold digests are regex-tested over vocabulary terms only. A pattern can
+  // match raw session text while matching no whole vocabulary term (e.g.
+  // `error\s+42` against the tokens "error" and "42"), so a vocabulary miss
+  // cannot establish that a cold session does not match: never report
+  // complete coverage while unhydrated cold sessions remain. Digests whose
+  // session was hydrated into a shard above were tested over full text.
+  const fullyTestedFiles = new Set(shards.map((shard) => shard.sessionFile));
+  if (digests.some((digest) => !fullyTestedFiles.has(digest.file))) {
+    reasons.add("cold_regex_requires_hydration");
+  }
   return {
     located,
     digestHits: [...coldMatches].map(([digest, count]) =>
@@ -504,7 +522,7 @@ export const searchMemoryIndex = async (
     const eligibleEntries = filteredEntryCount(shards, filters);
     located = collectPhraseMatches(shards, plan.phrase, filters, maxEntries);
     if (eligibleEntries > maxEntries) coverageReasons.add("candidate_entry_budget");
-    const digestResult = scoreDigestTerms(digests, plan.terms, filters, maxDigests, "all");
+    const digestResult = scoreDigestTerms(digests, plan.terms, filters, maxDigests, "all", true);
     digestHits = digestResult.hits;
     if (!digestResult.complete) coverageReasons.add("candidate_digest_budget");
     if (digestHits.length > 0) coverageReasons.add("cold_phrase_requires_hydration");

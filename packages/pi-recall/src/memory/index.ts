@@ -8,7 +8,7 @@ import type { LiveSessionBranch, MemoryBranches, SessionLineage } from "./lineag
 import { reconstructSessionLineage } from "./lineage.js";
 import type { NormalizedEntry } from "./normalize.js";
 import { DEFAULT_MEMORY_INDEX_PRIVACY, normalizeSession } from "./normalize.js";
-import { compareLexical, lexicalTermCounts, tokenizeLexical } from "./tokenize.js";
+import { compareLexical, lexicalTermCounts } from "./tokenize.js";
 
 export const MEMORY_CACHE_VERSION = 6;
 export const DEFAULT_HOT_SESSIONS = 50;
@@ -812,7 +812,11 @@ export const bm25Score = (
   filters: SearchFilters,
   candidateLimit = Number.MAX_SAFE_INTEGER,
 ): ScoredEntry[] => {
-  const queryTerms = [...new Set(terms.flatMap((term) => tokenizeLexical(term)))];
+  // Planned terms are already canonical lexical tokens. Re-tokenizing them
+  // would split tokens whose lowercase form carries a combining mark (e.g.
+  // İstanbul → "i̇stanbul"): entry counts keep the single token while the
+  // query would be scored as two, missing an exact literal hit.
+  const queryTerms = [...new Set(terms)];
   const matching: { entry: NormalizedEntry; mtime: number; counts: Map<string, number> }[] = [];
   for (const shard of shards) {
     for (const entry of shard.entries) {
