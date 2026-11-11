@@ -222,13 +222,24 @@ export async function processMemoryRecall(
     );
   };
   const observationsBefore: readonly SourceObservation[] | null = await plan.observeAll(branches);
-  const cached = offset === undefined
+  const staleContinuation = (): { code: string; message: string } => ({
+    code: "stale_continuation",
+    message: "Memory sources changed since the previous page; restart the recall from offset 0.",
+  });
+  const continuationLookup = offset === undefined
     ? undefined
     : cache.cachedRecallContinuation(
         recallContinuationKey(baseRequestArgs, context.fabricScope?.digest),
         observationsBefore,
       );
-  if (cached) {
+  if (continuationLookup?.status === "stale") {
+    // The remembered ranking is bound to source observations that no longer
+    // hold: applying this offset to freshly ranked results would repeat or
+    // skip hits, so the continuation is refused.
+    return recallFailure(staleContinuation());
+  }
+  if (continuationLookup?.status === "hit") {
+    const cached = continuationLookup.cached;
     const response = presentRecall({
       result: cached.result,
       ...(query === undefined ? {} : { query }),
@@ -250,6 +261,7 @@ export async function processMemoryRecall(
       return response;
     }
     cache.forgetRecallContinuation(cached);
+    return recallFailure(staleContinuation());
   }
 
   if (hydrate && refs[0]) {

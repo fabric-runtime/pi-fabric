@@ -51,6 +51,16 @@ export interface RecallContinuationCache {
   touchedAt: number;
 }
 
+/** A remembered continuation that no longer matches the observed sources
+ *  (or has outlived its TTL): its offset refers to a ranking that is gone,
+ *  so it must be refused, not silently re-applied to freshly ranked
+ *  results. */
+export type StaleRecallContinuation = { status: "stale" };
+
+export type RecallContinuationLookup =
+  | { status: "hit"; cached: RecallContinuationCache }
+  | StaleRecallContinuation;
+
 export const recallContinuationKey = (args: MemoryRecallCallArgs, scopeDigest?: string): string => JSON.stringify([
   scopeDigest ?? null,
   args.query ?? null,
@@ -92,7 +102,7 @@ export class MemoryRequestCache {
   cachedRecallContinuation(
     key: string,
     observations: readonly SourceObservation[] | null,
-  ): RecallContinuationCache | undefined {
+  ): RecallContinuationLookup | undefined {
     const cached = this.recallContinuation;
     if (!cached || cached.key !== key) return undefined;
     if (
@@ -101,10 +111,10 @@ export class MemoryRequestCache {
       !sameSourceObservations(cached.observations, observations)
     ) {
       this.recallContinuation = undefined;
-      return undefined;
+      return { status: "stale" };
     }
     cached.touchedAt = Date.now();
-    return cached;
+    return { status: "hit", cached };
   }
 
   rememberRecallContinuation(cached: RecallContinuationCache): void {

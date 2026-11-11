@@ -396,5 +396,14 @@ export const presentRecall = (input: RecallPresentationInput): MemoryRecallRespo
     selected = selected.slice(0, -1);
     response = build(selected);
   }
+  if (JSON.stringify(response).length > RECALL_MAX_RESPONSE_CHARS) {
+    // Pagination cannot shrink below one hit, and the echoed continuation
+    // arguments (query, scope, filters) are part of every page that has a
+    // next — an oversized query alone can breach the bound. Fail bounded
+    // instead of returning an oversized response.
+    throw new Error(
+      "memory.recall response exceeds its character bound: a single hit plus its continuation arguments no longer fits; narrow the query or filters",
+    );
+  }
   return response;
 };

@@ -314,7 +314,10 @@ export async function processMemoryExpand(
         };
       }
     } else if (requestedSelection.entryRange) {
-      canonical = { entryRange: requestedSelection.entryRange };
+      // Mixed selectors resolve to a union: keep the complete selection as
+      // the canonical key so a later range-only request can never be served
+      // the union's extra entries from this cache slot.
+      canonical = requestedSelection;
     } else {
       canonical = { indices: expansion.expanded.map((entry) => entry.index) };
     }
