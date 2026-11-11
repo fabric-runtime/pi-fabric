@@ -109,6 +109,37 @@ const normalizationOptions = (options: MemoryIndexOptions, lineage: SessionLinea
   indexToolOutput: options.indexToolOutput ?? DEFAULT_MEMORY_INDEX_PRIVACY.indexToolOutput,
 });
 
+/** Structural validity of an already-parsed shard record against the size of
+ *  the file it was read from. Pure, so cache cleanup can validate a record
+ *  it already parsed instead of reading the file a second time. */
+const validShardRecord = (parsed: Shard, fileSize: number): boolean =>
+  parsed.cacheVersion === MEMORY_CACHE_VERSION &&
+  parsed.kind === "shard" &&
+  typeof parsed.sessionFile === "string" &&
+  typeof parsed.sessionId === "string" &&
+  typeof parsed.sourceHash === "string" &&
+  parsed.sourceHash.length === 64 &&
+  (parsed.branches === "active" || parsed.branches === "all") &&
+  typeof parsed.lineageFingerprint === "string" &&
+  parsed.lineageFingerprint.length === 64 &&
+  typeof parsed.policy === "string" &&
+  typeof parsed.cacheBytes === "number" &&
+  parsed.cacheBytes === fileSize &&
+  typeof parsed.cacheSourceRatio === "number" &&
+  typeof parsed.totalEntryCount === "number" &&
+  typeof parsed.indexCoverage === "object" &&
+  parsed.indexCoverage !== null &&
+  typeof parsed.indexCoverage.complete === "boolean" &&
+  Array.isArray(parsed.indexCoverage.reasons) &&
+  parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") &&
+  Array.isArray(parsed.entries) &&
+  parsed.entries.every((entry) =>
+    entry !== null &&
+    typeof entry === "object" &&
+    typeof entry.index === "number" &&
+    typeof entry.sessionFile === "string" &&
+    typeof entry.text === "string");
+
 const readShardFile = (
   filePath: string,
   maxBytes = DEFAULT_MAX_SYNC_SOURCE_BYTES,
@@ -117,39 +148,58 @@ const readShardFile = (
     const stat = fs.statSync(filePath);
     if (!stat.isFile() || stat.size > maxBytes) return null;
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Shard;
-    if (
-      parsed.cacheVersion !== MEMORY_CACHE_VERSION ||
-      parsed.kind !== "shard" ||
-      typeof parsed.sessionFile !== "string" ||
-      typeof parsed.sessionId !== "string" ||
-      typeof parsed.sourceHash !== "string" ||
-      parsed.sourceHash.length !== 64 ||
-      (parsed.branches !== "active" && parsed.branches !== "all") ||
-      typeof parsed.lineageFingerprint !== "string" ||
-      parsed.lineageFingerprint.length !== 64 ||
-      typeof parsed.policy !== "string" ||
-      typeof parsed.cacheBytes !== "number" ||
-      parsed.cacheBytes !== stat.size ||
-      typeof parsed.cacheSourceRatio !== "number" ||
-      typeof parsed.totalEntryCount !== "number" ||
-      typeof parsed.indexCoverage !== "object" ||
-      parsed.indexCoverage === null ||
-      typeof parsed.indexCoverage.complete !== "boolean" ||
-      !Array.isArray(parsed.indexCoverage.reasons) ||
-      !parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") ||
-      !Array.isArray(parsed.entries) ||
-      !parsed.entries.every((entry) =>
-        entry !== null &&
-        typeof entry === "object" &&
-        typeof entry.index === "number" &&
-        typeof entry.sessionFile === "string" &&
-        typeof entry.text === "string")
-    ) return null;
-    return parsed;
+    return validShardRecord(parsed, stat.size) ? parsed : null;
   } catch {
     return null;
   }
 };
+
+/** Structural validity of an already-parsed digest record against the size
+ *  of the file it was read from; see validShardRecord. */
+const validDigestRecord = (parsed: DigestShard, fileSize: number): boolean =>
+  parsed.cacheVersion === MEMORY_CACHE_VERSION &&
+  parsed.kind === "digest" &&
+  typeof parsed.sessionId === "string" &&
+  typeof parsed.file === "string" &&
+  typeof parsed.sourceHash === "string" &&
+  parsed.sourceHash.length === 64 &&
+  (parsed.branches === "active" || parsed.branches === "all") &&
+  typeof parsed.lineageFingerprint === "string" &&
+  parsed.lineageFingerprint.length === 64 &&
+  typeof parsed.policy === "string" &&
+  typeof parsed.cacheBytes === "number" &&
+  parsed.cacheBytes === fileSize &&
+  typeof parsed.cacheSourceRatio === "number" &&
+  Array.isArray(parsed.filesTouched) &&
+  Array.isArray(parsed.vocabulary) &&
+  parsed.vocabulary.every((term, index) =>
+    typeof term === "string" && (index === 0 || parsed.vocabulary[index - 1]! < term)) &&
+  Array.isArray(parsed.addresses) &&
+  parsed.addresses.every((address) =>
+    Array.isArray(address) &&
+    address.length === 10 &&
+    typeof address[0] === "number" &&
+    (address[1] === null || typeof address[1] === "string") &&
+    (address[2] === null || typeof address[2] === "string") &&
+    (address[3] === null || typeof address[3] === "string") &&
+    (address[4] === null || typeof address[4] === "string") &&
+    (address[5] === null || typeof address[5] === "number") &&
+    (address[6] === null || typeof address[6] === "string") &&
+    (address[7] === null || typeof address[7] === "string") &&
+    (address[8] === null || typeof address[8] === "string") &&
+    (address[9] === null ||
+      address[9] === "succeeded" ||
+      address[9] === "failed" ||
+      address[9] === "aborted" ||
+      address[9] === "timed_out")) &&
+  typeof parsed.indexCoverage === "object" &&
+  parsed.indexCoverage !== null &&
+  typeof parsed.indexCoverage.complete === "boolean" &&
+  typeof parsed.indexCoverage.vocabularyBytes === "number" &&
+  Array.isArray(parsed.indexCoverage.reasons) &&
+  parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") &&
+  typeof parsed.mtime === "number" &&
+  typeof parsed.size === "number";
 
 const readDigestFile = (
   filePath: string,
@@ -159,52 +209,7 @@ const readDigestFile = (
     const stat = fs.statSync(filePath);
     if (!stat.isFile() || stat.size > maxBytes) return null;
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as DigestShard;
-    if (
-      parsed.cacheVersion !== MEMORY_CACHE_VERSION ||
-      parsed.kind !== "digest" ||
-      typeof parsed.sessionId !== "string" ||
-      typeof parsed.file !== "string" ||
-      typeof parsed.sourceHash !== "string" ||
-      parsed.sourceHash.length !== 64 ||
-      (parsed.branches !== "active" && parsed.branches !== "all") ||
-      typeof parsed.lineageFingerprint !== "string" ||
-      parsed.lineageFingerprint.length !== 64 ||
-      typeof parsed.policy !== "string" ||
-      typeof parsed.cacheBytes !== "number" ||
-      parsed.cacheBytes !== stat.size ||
-      typeof parsed.cacheSourceRatio !== "number" ||
-      !Array.isArray(parsed.filesTouched) ||
-      !Array.isArray(parsed.vocabulary) ||
-      !parsed.vocabulary.every((term, index) =>
-        typeof term === "string" && (index === 0 || parsed.vocabulary[index - 1]! < term)) ||
-      !Array.isArray(parsed.addresses) ||
-      !parsed.addresses.every((address) =>
-        Array.isArray(address) &&
-        address.length === 10 &&
-        typeof address[0] === "number" &&
-        (address[1] === null || typeof address[1] === "string") &&
-        (address[2] === null || typeof address[2] === "string") &&
-        (address[3] === null || typeof address[3] === "string") &&
-        (address[4] === null || typeof address[4] === "string") &&
-        (address[5] === null || typeof address[5] === "number") &&
-        (address[6] === null || typeof address[6] === "string") &&
-        (address[7] === null || typeof address[7] === "string") &&
-        (address[8] === null || typeof address[8] === "string") &&
-        (address[9] === null ||
-          address[9] === "succeeded" ||
-          address[9] === "failed" ||
-          address[9] === "aborted" ||
-          address[9] === "timed_out")) ||
-      typeof parsed.indexCoverage !== "object" ||
-      parsed.indexCoverage === null ||
-      typeof parsed.indexCoverage.complete !== "boolean" ||
-      typeof parsed.indexCoverage.vocabularyBytes !== "number" ||
-      !Array.isArray(parsed.indexCoverage.reasons) ||
-      !parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") ||
-      typeof parsed.mtime !== "number" ||
-      typeof parsed.size !== "number"
-    ) return null;
-    return parsed;
+    return validDigestRecord(parsed, stat.size) ? parsed : null;
   } catch {
     return null;
   }
@@ -630,9 +635,13 @@ const cleanupCacheDirectory = (
           : source && branches && kind === "digest"
             ? digestPathForSession(source, indexDir, branches)
             : null;
+        // The record is already parsed above: validate it in place instead of
+        // reading and parsing the same file a second time.
         const structurallyValid = kind === "shard"
-          ? readShardFile(cacheFile, cacheBytes) !== null
-          : kind === "digest" ? readDigestFile(cacheFile, cacheBytes) !== null : false;
+          ? validShardRecord(parsed as unknown as Shard, cacheBytes)
+          : kind === "digest"
+            ? validDigestRecord(parsed as unknown as DigestShard, cacheBytes)
+            : false;
         if (
           parsed.cacheVersion !== MEMORY_CACHE_VERSION ||
           source === null ||
