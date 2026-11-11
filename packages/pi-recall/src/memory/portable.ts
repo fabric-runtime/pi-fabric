@@ -74,6 +74,7 @@ export interface PortableMemorySource {
 export type MemorySourceErrorCode =
   | "source_not_found"
   | "source_unauthorized"
+  | "source_unavailable"
   | "invalid_source_response"
   | "session_not_found"
   | "aborted";

@@ -111,6 +111,14 @@ const assertAuthorized = async (
   }
 };
 
+/** Adapter rejections never surface raw: backend error text, paths, or
+ * credentials must not reach public memory results. Aborts (and failures
+ * that are already sanitized MemorySourceErrors) propagate unchanged. */
+const sanitizeAdapterFailure = (signal: AbortSignal | undefined, error: unknown): unknown =>
+  signal?.aborted || error instanceof MemorySourceError
+    ? error
+    : new MemorySourceError("source_unavailable", "Memory source call failed.");
+
 const coverageReasons = (coverage: MemorySourceCoverage | undefined): string[] => {
   if (!coverage || coverage.complete !== false) return [];
   const reason = typeof coverage.reason === "string" && REASON_PATTERN.test(coverage.reason)
@@ -146,7 +154,12 @@ const loadHostSnapshot = async (
 ): Promise<HostSnapshot | null> => {
   checkAbort(signal);
   await assertAuthorized(source, action, sessionKey, scope);
-  const response = await source.loadSession(sessionKey, signal === undefined ? {} : { signal });
+  let response: Awaited<ReturnType<PortableMemorySource["loadSession"]>>;
+  try {
+    response = await source.loadSession(sessionKey, signal === undefined ? {} : { signal });
+  } catch (error) {
+    throw sanitizeAdapterFailure(signal, error);
+  }
   checkAbort(signal);
   await assertAuthorized(source, action, sessionKey, scope);
   if (response === null || response === undefined) return null;
@@ -173,13 +186,27 @@ const loadHostSnapshot = async (
         record.type !== "session" && record.id === response.selectedLeafId))) {
     throw new MemorySourceError("invalid_source_response", "Memory source selected leaf is invalid.");
   }
+  // Adapter metadata is untrusted at this boundary: keep only fields of the
+  // expected runtime type, so a string updatedAt cannot reach the recency
+  // sort (NaN mtime) and junk cannot leak into public session listings.
+  const meta = response.metadata;
+  const metadata: MemorySourceSessionMetadata = {
+    ...(typeof meta?.sessionId === "string" && meta.sessionId ? { sessionId: meta.sessionId } : {}),
+    ...(typeof meta?.title === "string" && meta.title ? { title: meta.title } : {}),
+    ...(typeof meta?.cwd === "string" ? { cwd: meta.cwd } : {}),
+    ...(typeof meta?.updatedAt === "number" && Number.isFinite(meta.updatedAt)
+      ? { updatedAt: meta.updatedAt }
+      : {}),
+  };
   return {
     sourceId: source.id,
     sessionKey,
     displayKey: hostDisplayKey(source.id, sessionKey),
-    sessionId: response.sessionId ?? sessionKey,
+    sessionId: typeof response.sessionId === "string" && response.sessionId
+      ? response.sessionId
+      : sessionKey,
     revision,
-    metadata: { ...(response.metadata ?? {}) },
+    metadata,
     records,
     ...(response.selectedLeafId !== undefined ? { selectedLeafId: response.selectedLeafId } : {}),
     coverageReasons: coverageReasons(response.coverage),
@@ -196,9 +223,14 @@ export const listHostSnapshots = async (
   checkAbort(signal);
   await assertAuthorized(source, action, null, scope);
   const boundedLimit = Math.max(0, Math.floor(limit));
-  const listed = normalizeListResponse(
-    await source.listSessions(signal === undefined ? { limit: boundedLimit } : { limit: boundedLimit, signal }),
-  );
+  let listed: ReturnType<typeof normalizeListResponse>;
+  try {
+    listed = normalizeListResponse(
+      await source.listSessions(signal === undefined ? { limit: boundedLimit } : { limit: boundedLimit, signal }),
+    );
+  } catch (error) {
+    throw sanitizeAdapterFailure(signal, error);
+  }
   checkAbort(signal);
   const snapshots: HostSnapshot[] = [];
   const coverageReasons = new Set(listed.coverageReasons);
@@ -458,15 +490,18 @@ export const hostRecallPlan = async (
   context: MemoryProviderContext,
   signal?: AbortSignal,
 ): Promise<RecallSourcePlan> => {
-  const loaded = sessionKey !== null
+  // Callers echo display keys from listings and recall follow-ups; strip the
+  // prefix before the adapter sees it. Raw adapter keys pass through intact.
+  const resolvedKey = sessionKey !== null ? hostSessionKey(sourceId, sessionKey) : null;
+  const loaded = resolvedKey !== null
     ? await (async () => {
-        const snapshot = await loadHostSnapshot(source, sessionKey, "recall", signal, context.fabricScope);
+        const snapshot = await loadHostSnapshot(source, resolvedKey, "recall", signal, context.fabricScope);
         return snapshot
           ? { snapshots: [snapshot], coverageReasons: [] as string[] }
           : null;
       })()
     : await listHostSnapshots(source, context.config.maxSessions, "recall", signal, context.fabricScope);
-  if (!loaded) throw new MemorySourceError("session_not_found", `Session not found in source ${sourceId}: ${sessionKey}`);
+  if (!loaded) throw new MemorySourceError("session_not_found", `Session not found in source ${sourceId}: ${resolvedKey}`);
   const snapshots = loaded.snapshots;
   const refs = snapshots.map(hostRef);
   const byKey = new Map(snapshots.map((snapshot) => [snapshot.displayKey, snapshot]));
