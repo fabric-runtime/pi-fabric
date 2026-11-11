@@ -27,6 +27,8 @@ import {
 } from "../src/memory/request-limits.js";
 import { MemoryRequestCache } from "../src/memory/request-cache.js";
 import { recallFailure, type MemoryProviderContext } from "../src/memory/request-context.js";
+import { createConfiguredMemorySourceRegistry } from "../src/memory/fs-source.js";
+import { createMemorySourceRegistry, type PortableMemorySource } from "../src/memory/portable.js";
 import { AmbiguousSessionError } from "../src/memory/discovery.js";
 import { processMemoryRecall } from "../src/memory/recall-service.js";
 import { processMemoryExpand } from "../src/memory/expand-service.js";
@@ -75,6 +77,23 @@ const ENTRY_RANGE_PARAM = Type.Optional(
 // One cache per session, mirroring the engine's per-provider MemoryRequestCache.
 const cache = new MemoryRequestCache();
 
+// Registry behind the tools' source= parameter: configured fs sources are
+// seeded at load, and embedding hosts can register further portable sources
+// through registerMemorySource. Without it on the context, every
+// source-qualified call failed to resolve its source by construction.
+const memorySources = createMemorySourceRegistry();
+const configuredSources = createConfiguredMemorySourceRegistry(resolveMemoryConfig().sources ?? []);
+for (const id of configuredSources.ids()) {
+  const source = configuredSources.get(id);
+  if (source !== undefined) memorySources.register(source);
+}
+
+/** Register a portable memory source for this extension's source-qualified
+ *  memory_recall / memory_expand / memory_sessions calls. */
+export const registerMemorySource = (source: PortableMemorySource): void => {
+  memorySources.register(source);
+};
+
 interface SessionManagerLike {
   getSessionId?: () => string | undefined;
   getSessionFile?: () => string | undefined;
@@ -85,6 +104,7 @@ const buildContext = (sessionManager: SessionManagerLike | undefined): MemoryPro
     agentDir: resolveAgentDir(),
     cwd: process.cwd(),
     config: resolveMemoryConfig(),
+    sources: memorySources,
   };
   const sessionId = sessionManager?.getSessionId?.();
   const sessionFile = sessionManager?.getSessionFile?.();
