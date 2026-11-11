@@ -47,7 +47,9 @@ session JSONL is truth — stale or corrupt index state is refused and rebuilt,
 never silently served. Read the coverage header line: stale/incomplete counts
 or listed reasons mean an empty page is NOT a no-match proof — narrow the
 query, or browse `pi-recall sessions --scope global` by cwd/mtime and expand
-the picked session directly.
+the picked session directly. Refusals: `stale_continuation` (continuation
+pointer no longer matches the source — re-recall), `source_unavailable`
+(a configured fs source is missing/unreadable).
 
 ## Boundaries
 
