@@ -54,25 +54,38 @@ const parseFlags = (input: string[], usage: string): ParsedFlags => {
       if (next === undefined) throw new Error(`${argument} needs a value\n${usage}`);
       return next;
     };
-    const numberValue = (): number => {
-      const parsed = Number(value());
-      if (!Number.isInteger(parsed) || parsed < 0) {
-        throw new Error(`${argument} needs a non-negative integer\n${usage}`);
+    // A flag token is never a valid operand: consuming it (e.g. `--scope
+    // --all`) would silently drop the flag the user actually typed.
+    const operandValue = (): string => {
+      const next = value();
+      if (next.startsWith("--")) {
+        throw new Error(`${argument} does not accept a flag as its value: ${next}\n${usage}`);
+      }
+      return next;
+    };
+    const numberValue = (minimum: number): number => {
+      const raw = value();
+      const parsed = Number(raw);
+      // The empty string coerces to zero, so it is rejected explicitly.
+      if (raw === "" || !Number.isInteger(parsed) || parsed < minimum) {
+        throw new Error(
+          `${argument} needs ${minimum > 0 ? "a positive" : "a non-negative"} integer\n${usage}`,
+        );
       }
       return parsed;
     };
     switch (argument) {
       case "--scope":
-        args.scope = value();
+        args.scope = operandValue();
         break;
       case "--branches":
         args.branches = value();
         break;
       case "--limit":
-        args.pageSize = numberValue();
+        args.pageSize = numberValue(1);
         break;
       case "--offset":
-        args.offset = numberValue();
+        args.offset = numberValue(0);
         break;
       case "--phrase":
         args.queryMode = "phrase";
