@@ -87,12 +87,17 @@ export interface MemoryIdMatch {
   sessionFile: string;
   index: number;
   timestamp: number | null;
+  /** Session source hash captured at index time; forwarding it as
+   * expectedSourceHash lets expand refuse a session that changed since. */
+  sourceHash?: string;
 }
 
 /** Resolve an 8-hex memory entry id to (session, index) via the memory
  * index store: full indexes (*.jsonl.json, entries[].entryId) and compact
- * digests (*.digest.json, addresses[] tuples). Newest first; ambiguity is
- * surfaced, never guessed. */
+ * digests (*.digest.json, addresses[] tuples). All index files are scanned
+ * — stopping at the first hit would hide the same id in another session —
+ * and representations of the same entry (shard + digest of one session)
+ * are deduplicated. Newest first; ambiguity is surfaced, never guessed. */
 export const resolveMemoryId = (
   id: string,
   context: MemoryProviderContext,
@@ -117,10 +122,20 @@ export const resolveMemoryId = (
     return time(b) - time(a);
   });
   const matches: MemoryIdMatch[] = [];
+  const seen = new Set<string>();
+  const remember = (match: MemoryIdMatch): void => {
+    const dedupe = `${match.sessionFile}\0${match.index}`;
+    if (seen.has(dedupe)) return;
+    seen.add(dedupe);
+    matches.push(match);
+  };
   for (const name of byRecency) {
     let digest: {
       sessionId?: unknown;
+      /** Shard files name their session `sessionFile`; digests use `file`. */
       file?: unknown;
+      sessionFile?: unknown;
+      sourceHash?: unknown;
       addresses?: unknown;
       entries?: unknown;
     };
@@ -129,35 +144,42 @@ export const resolveMemoryId = (
     } catch {
       continue;
     }
+    const sourceHash = typeof digest.sourceHash === "string" && digest.sourceHash.length === 64
+      ? digest.sourceHash
+      : undefined;
+    const indexFile = typeof digest.file === "string" ? digest.file
+      : typeof digest.sessionFile === "string" ? digest.sessionFile : undefined;
     if (Array.isArray(digest.entries)) {
       for (const entry of digest.entries) {
         if (typeof entry !== "object" || entry === null) continue;
         const record = entry as Record<string, unknown>;
         if (record.entryId !== id) continue;
-        const file = typeof record.sessionFile === "string" ? record.sessionFile : digest.file;
+        const file = typeof record.sessionFile === "string" ? record.sessionFile : indexFile;
         if (typeof file !== "string" || !existsSync(file)) continue;
-        matches.push({
+        remember({
           sessionId: typeof record.sessionId === "string" ? record.sessionId
             : typeof digest.sessionId === "string" ? digest.sessionId : "",
           sessionFile: file,
           index: typeof record.index === "number" ? record.index : -1,
           timestamp: typeof record.timestamp === "number" ? record.timestamp : null,
+          // The shard-level hash covers the shard's own session file only.
+          ...(file === indexFile && sourceHash !== undefined ? { sourceHash } : {}),
         });
       }
     } else if (Array.isArray(digest.addresses)) {
       for (const address of digest.addresses) {
         if (!Array.isArray(address) || address.length < 2) continue;
         if (address[1] !== id) continue;
-        if (typeof digest.file !== "string" || !existsSync(digest.file)) continue;
-        matches.push({
+        if (indexFile === undefined || !existsSync(indexFile)) continue;
+        remember({
           sessionId: typeof digest.sessionId === "string" ? digest.sessionId : "",
-          sessionFile: digest.file,
+          sessionFile: indexFile,
           index: typeof address[0] === "number" ? address[0] : -1,
           timestamp: typeof address[5] === "number" ? address[5] : null,
+          ...(sourceHash !== undefined ? { sourceHash } : {}),
         });
       }
     }
-    if (matches.length > 0) break;
   }
   return matches;
 };
@@ -229,6 +251,8 @@ export const runExpandCall = async (
 ): Promise<{ ok: boolean; lines: string[] }> => {
   let sessionFile: string | undefined;
   let indices = call.idx;
+  let entryId: string | undefined;
+  let expectedSourceHash: string | undefined;
   if (call.id !== undefined) {
     const matches = resolveMemoryId(call.id, context);
     if (matches.length === 0) {
@@ -251,8 +275,15 @@ export const runExpandCall = async (
         ],
       };
     }
-    sessionFile = matches[0]!.sessionFile;
-    indices = [matches[0]!.index];
+    const match = matches[0]!;
+    sessionFile = match.sessionFile;
+    // The index only names the session; selecting by entry id (with the
+    // index-time source hash as the staleness guard) verifies that the id
+    // still identifies the same entry instead of trusting a cached index
+    // into a session that may have changed.
+    entryId = call.id;
+    expectedSourceHash = match.sourceHash;
+    indices = [];
   } else if (call.session !== undefined) {
     sessionFile = resolveSessionFile(call.session, context);
   } else if (context.sessionFile !== undefined) {
@@ -260,7 +291,7 @@ export const runExpandCall = async (
   } else {
     return { ok: false, lines: ["expand: no id=, no session=, and no live session"] };
   }
-  if (indices.length === 0) {
+  if (indices.length === 0 && entryId === undefined) {
     return { ok: false, lines: ["expand: idx= required (or id=, which carries its own)"] };
   }
   const [{ processMemoryExpand }, { MemoryRequestCache }] = await Promise.all([
@@ -270,8 +301,10 @@ export const runExpandCall = async (
   const response = (await processMemoryExpand(
     {
       session: sessionFile,
-      indices,
-      ...(call.offset !== undefined ? { offset: call.offset } : {}),
+      ...(entryId !== undefined
+        ? { entryIds: [entryId], ...(expectedSourceHash !== undefined ? { expectedSourceHash } : {}) }
+        : { indices }),
+      ...(call.offset !== undefined ? { entryOffset: call.offset } : {}),
       ...(call.textOffset !== undefined ? { textOffset: call.textOffset } : {}),
       ...(call.maxChars !== undefined ? { maxChars: call.maxChars } : {}),
       ...(call.branches !== undefined ? { branches: call.branches } : {}),
@@ -293,5 +326,20 @@ export const runExpandCall = async (
   }
   const lines = [header[0]!];
   for (const entry of entries) lines.push("", ...renderEntry(entry));
+  const next = response.next;
+  if (next !== null && next !== undefined) {
+    const args = next.args ?? {};
+    const entryOffset = typeof args.entryOffset === "number" ? args.entryOffset : 0;
+    const textOffset = typeof args.textOffset === "number" && args.textOffset > 0
+      ? args.textOffset
+      : undefined;
+    const selection = entryId !== undefined
+      ? `id=${entryId}`
+      : `session=${sessionFile} idx=${indices.join(",")}`;
+    lines.push(
+      `# (more entries — continue with: ${selection} offset=${entryOffset}` +
+        `${textOffset !== undefined ? ` textOffset=${textOffset}` : ""})`,
+    );
+  }
   return { ok: true, lines };
 };
