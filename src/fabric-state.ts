@@ -216,7 +216,7 @@ export class FabricState {
     this.prewalk.cancel();
     this.prewalkDrift.clear();
     this.activity.reset();
-    this.sessionApprovals.approvedRisks.clear();
+    this.sessionApprovals.clear();
     this.#widgetDismissedAt = 0;
     context.ui.setStatus("fabric-prewalk", undefined);
 
@@ -227,6 +227,7 @@ export class FabricState {
   }
 
   async initialize(context: ExtensionContext): Promise<void> {
+    this.sessionApprovals.clear();
     if (!this.#config || this.#cwd !== context.cwd) {
       await this.bootstrap(context);
     } else {

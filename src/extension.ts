@@ -796,6 +796,8 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     entropyCompilePending = undefined;
     pendingHandoffs.clear();
     directToolApproval.clear();
+    state.sessionApprovals.clear();
+    context.ui.setStatus("fabric-permissions", undefined);
     toolDisplay.clear();
     uninstallHaltOnEscape();
     uninstallShellHangKeys();
@@ -1420,6 +1422,7 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
     unsubscribeHostPolicy();
     unsubscribeProgramRun();
     unsubscribeActionPolicyRegistration();
+    state.sessionApprovals.clear();
     state.actionPolicyHooks.clear();
     unsubscribeQuestionRendererRegistration();
     state.questionRenderers.clear();

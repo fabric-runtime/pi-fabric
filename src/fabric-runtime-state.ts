@@ -546,7 +546,10 @@ export class FabricRuntimeState {
     this.#speculation?.reset();
     this.#speculation = undefined;
     this.activity.reset();
-    this.sessionApprovals.approvedRisks.clear();
+    // A supplied bootstrap config means FabricState owns the session lifecycle;
+    // first activation must not discard native-tool tickets raised before it.
+    if (bootstrapConfig) this.sessionApprovals.approvedRisks.clear();
+    else this.sessionApprovals.clear();
     this.#cwd = context.cwd;
     const projectTrusted = this.#managedHost ? false : context.isProjectTrusted();
     this.#managedHost?.seal();
@@ -1384,7 +1387,7 @@ export class FabricRuntimeState {
       (ref) => {
         const current = this.#config!;
         const mode = actionApprovalOverride(current.approvals.actions, ref) ??
-          current.approvals[ref.startsWith("mcp.") ? "network" : "read"];
+          current.approvals[ref.startsWith("mcp.") ? "network" : "read"] ?? current.approvals.default ?? "allow";
         if (mode !== "allow") return false;
         if (ref.startsWith("pi.") && !current.fullCodeMode && current.schema.mode !== "enforce") return false;
         return current.schema.mode !== "enforce" || schemaRefAllowedInEnforce(ref);

@@ -749,7 +749,8 @@ describe("Fabric configuration", () => {
       JSON.stringify({ approvals: { execute: "deny" } }),
     );
     const config = loadFabricConfig({ cwd, agentDir, projectTrusted: false });
-    expect(config.approvals.execute).toBe("allow");
+    expect(config.approvals.execute).toBeUndefined();
+    expect(config.approvals.default).toBe("allow");
   });
 
   it("saves partial overrides into the project fabric.json when trusted", () => {

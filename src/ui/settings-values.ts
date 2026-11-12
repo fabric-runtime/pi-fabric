@@ -247,6 +247,9 @@ export const coerceValue = (id: string, value: string, config: FabricConfig): un
 };
 
 export const buildPartial = (id: string, value: unknown): Record<string, unknown> => {
+  if (id === "approvals.resetOverrides") return value === "reset"
+    ? { approvals: { read: "inherit", write: "inherit", execute: "inherit", network: "inherit", agent: "inherit" } }
+    : {};
   if (id === "memory.extractive.mode") return { memory: { extractive: {
     enabled: value === EXTRACTIVE_LOCAL || value === EXTRACTIVE_CONSENT,
     maxEvaluationsPerTurn: value === EXTRACTIVE_CONSENT ? 1 : 0,
@@ -285,8 +288,11 @@ export const summaryFor = (id: string, config: FabricConfig): string => {
     }
     case "schema":
       return config.schema.mode;
-    case "approvals":
-      return config.approvals.execute;
+    case "approvals": {
+      const overrides = (["read", "write", "execute", "network", "agent"] as const)
+        .filter(risk => config.approvals[risk] !== undefined).length;
+      return `${config.approvals.default ?? "allow"}${overrides ? ` · ${overrides} overrides` : ""}`;
+    }
     case "decisions":
       return decisionProfileSummary(config.jev);
     case "mcp":

@@ -192,6 +192,7 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
         "kill",
         "repairs",
         "entropy",
+        "permissions",
         "decisions",
         "programs",
         "run",

@@ -255,6 +255,8 @@ export const buildSchemaSection = (
   });
 };
 
+const APPROVAL_RISKS = ["read", "write", "execute", "network", "agent"] as const;
+
 export const buildApprovalsSection = (
   { config, theme, options, persist }: Pick<SettingsSectionContext<"modelSource">, "config" | "theme" | "options" | "persist">,
 ): SettingItem => {
@@ -265,6 +267,25 @@ export const buildApprovalsSection = (
       "Approvals",
       "Approval policy for Fabric and model-requested native tool calls. Auto routes each call through a dedicated safety classifier and escalates uncertain actions to you.",
       () => [
+        setting("approvals.default", "Default policy", config.approvals.default ?? "allow", {
+          description: "Applies to every action category without an override. Choose auto to classify all inherited calls; existing overrides are preserved.",
+          values: APPROVAL_MODES,
+        }),
+        setting("approvals.overrides", "Category overrides", `${APPROVAL_RISKS.filter(risk => config.approvals[risk] !== undefined).length} overrides`, {
+          description: "Optional exceptions to the default policy. Choose inherit to follow the default.",
+          submenu: sectionSubmenu(theme, "Category overrides", "Inherit follows the default policy. Exact action and provider overrides still take precedence.", () => [
+            ...APPROVAL_RISKS.map(risk => setting(
+              `approvals.${risk}`, risk[0]!.toUpperCase() + risk.slice(1), config.approvals[risk] ?? "inherit", {
+                description: `Effective policy: ${config.approvals[risk] ?? config.approvals.default ?? "allow"}. Inherit uses the default policy.`,
+                values: ["inherit", ...APPROVAL_MODES],
+              },
+            )),
+            setting("approvals.resetOverrides", "Reset all to default", "keep", {
+              description: "Clear all five category overrides in this scope. Exact action and provider overrides are not changed.",
+              values: ["keep", "reset"],
+            }),
+          ], persist),
+        }),
         setting("approvals.model", "Auto model", config.approvals.model || INHERIT_VALUE, {
           description:
             "Pi or Jev model used as the auto-mode safety classifier. Inherit uses the active session model. Jev requires /login jev (TypeSafe), the existing openrouter credential (OpenRouter), the existing vercel-ai-gateway credential (Vercel AI Gateway), or /login subq (SubQ Snap) and the configured minimum safety probability (default 0.50); lower scores and errors require explicit approval. No executable classifier tools.",
@@ -291,26 +312,6 @@ export const buildApprovalsSection = (
               "Enter a probability from 0 to 1 (default 0.50). Higher values are more conservative. 0 allows every judgment whose secrets and destructive verdicts are clean; 1 requires a probability of 1. Errors and missing user text still require approval."),
           }),
         ] : []),
-        setting("approvals.read", "Read", config.approvals.read, {
-          description: "Approval policy for read operations. Read is normally safe to leave allowed.",
-          values: APPROVAL_MODES,
-        }),
-        setting("approvals.write", "Write", config.approvals.write, {
-          description: "Approval policy for write and edit operations. Auto classifies each call.",
-          values: APPROVAL_MODES,
-        }),
-        setting("approvals.execute", "Execute", config.approvals.execute, {
-          description: "Approval policy for shell execution. Auto classifies each command.",
-          values: APPROVAL_MODES,
-        }),
-        setting("approvals.network", "Network", config.approvals.network, {
-          description: "Approval policy for network operations. Auto classifies each destination and payload.",
-          values: APPROVAL_MODES,
-        }),
-        setting("approvals.agent", "Agent", config.approvals.agent, {
-          description: "Approval policy for agent and actor operations. Auto classifies each request.",
-          values: APPROVAL_MODES,
-        }),
       ],
       persist,
     ),

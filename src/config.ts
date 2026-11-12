@@ -103,11 +103,14 @@ interface FabricExecutorConfig {
 }
 
 export interface FabricApprovalConfig {
-  read: FabricApprovalMode;
-  write: FabricApprovalMode;
-  execute: FabricApprovalMode;
-  network: FabricApprovalMode;
-  agent: FabricApprovalMode;
+  /** Fallback for every risk class without an override; omitted means allow. */
+  default?: FabricApprovalMode;
+  /** Optional risk-class overrides. Missing values inherit the default. */
+  read?: FabricApprovalMode;
+  write?: FabricApprovalMode;
+  execute?: FabricApprovalMode;
+  network?: FabricApprovalMode;
+  agent?: FabricApprovalMode;
   model?: string;
   /** Exact `provider.action` or `provider.*` → allow | ask | deny; exact beats wildcard beats risk mode. */
   actions?: Record<string, FabricActionApprovalMode>;
@@ -532,11 +535,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     resultFormat: "auto",
   },
   approvals: {
-    read: "allow",
-    write: "allow",
-    execute: "allow",
-    network: "allow",
-    agent: "allow",
+    default: "allow",
   },
   mcp: {
     enabled: true,
@@ -1159,11 +1158,11 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
       ),
     },
     approvals: {
-      read: approvalMode(approvals.read, DEFAULT_FABRIC_CONFIG.approvals.read),
-      write: approvalMode(approvals.write, DEFAULT_FABRIC_CONFIG.approvals.write),
-      execute: approvalMode(approvals.execute, DEFAULT_FABRIC_CONFIG.approvals.execute),
-      network: approvalMode(approvals.network, DEFAULT_FABRIC_CONFIG.approvals.network),
-      agent: approvalMode(approvals.agent, DEFAULT_FABRIC_CONFIG.approvals.agent),
+      default: approvalMode(approvals.default, "allow"),
+      // `inherit` explicitly clears an override from a lower config layer.
+      ...Object.fromEntries((["read", "write", "execute", "network", "agent"] as const)
+        .filter((risk) => approvals[risk] !== undefined && approvals[risk] !== "inherit")
+        .map((risk) => [risk, approvalMode(approvals[risk], "allow")])),
       ...(approvalModel ? { model: approvalModel } : {}),
       ...(approvalActions ? { actions: approvalActions } : {}),
       ...(approvals.headless === "decision" ? { headless: "decision" as const } : {}),

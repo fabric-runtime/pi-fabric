@@ -57,6 +57,22 @@ const sessionLabel = (risk: FabricRisk): string =>
 
 export class FabricSessionApprovals {
   readonly approvedRisks = new Set<FabricRisk>();
+  #generation = 0;
+  #permissions: Promise<import("./permission-queue.js").FabricPermissionQueue> | undefined;
+
+  get generation(): number { return this.#generation; }
+
+  permissions(): Promise<import("./permission-queue.js").FabricPermissionQueue> {
+    return this.#permissions ??= import("./permission-queue.js").then(({ FabricPermissionQueue }) => new FabricPermissionQueue());
+  }
+
+  clear(): void {
+    this.#generation++;
+    this.approvedRisks.clear();
+    const previous = this.#permissions;
+    this.#permissions = undefined;
+    void previous?.then(queue => queue.clear(), () => {});
+  }
   #tail: Promise<void> = Promise.resolve();
 
   async serialize<T>(request: () => Promise<T>): Promise<T> {
@@ -123,7 +139,7 @@ export class ApprovalController {
     // This is an immutable host capability, not a model/configurable network grant.
     if (action.risk === "network" && this.brokeredNetwork?.(action.provider) === true) return "allow";
     // Exact ref beats provider wildcard beats the risk-class mode.
-    const mode = override ?? this.config[action.risk];
+    const mode = override ?? this.config[action.risk] ?? this.config.default ?? "allow";
     if (
       mode === "allow" ||
       (!this.brokeredNetwork && (
@@ -145,6 +161,7 @@ export class ApprovalController {
     signal?: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal);
+    const generation = this.sessionApprovals.generation;
     // Extension hooks run first. Their deny is absolute; their allow and hold
     // never lift a configured deny below.
     const hook = this.policyGate?.active
@@ -163,7 +180,30 @@ export class ApprovalController {
     if (policy === "deny-risk") {
       throw new FabricTraceSafeError(`${action.ref} is denied by the Fabric ${action.risk} policy`);
     }
+    const mode = actionApprovalOverride(this.config.actions, action.ref) ?? this.config[action.risk] ?? this.config.default ?? "allow";
+    const queue = this.context.hasUI && mode === "auto" ? await this.sessionApprovals.permissions() : undefined;
+    const assertCurrent = (): void => {
+      throwIfAborted(signal);
+      if (generation !== this.sessionApprovals.generation) throw new FabricTraceSafeError("Permission request cancelled: session changed");
+    };
+    assertCurrent();
+    const existing = queue?.take(action, args, this.context.cwd);
+    if (existing === "allowed") {
+      this.onAutoDecision?.({ action: action.ref, risk: action.risk, decision: "allow",
+        reason: "User approved this exact call once through /fabric permissions", at: Date.now() });
+      return;
+    }
+    if (existing) throw new FabricTraceSafeError(queue!.message(existing));
+    const escalate = async (reason: string): Promise<void> => {
+      assertCurrent();
+      if (!queue) return this.#requestApproval(action, reason, humanWait, signal);
+      const record = queue.block(action, args, this.context.cwd, reason);
+      this.context.ui.setStatus?.("fabric-permissions", `${queue.pendingCount} blocked · /fabric permissions`);
+      throw new FabricTraceSafeError(queue.message(record));
+    };
     if (hook?.decision === "hold") {
+      // Auto holds are also asynchronous; an explicit once grant settles the hold.
+      if (mode === "auto") return escalate(`Held by policy hook ${hook.hook}: ${hook.reason ?? "no reason given"}`);
       // Ask even when configuration or a session grant would allow the action.
       await runAbortable(signal, () => this.sessionApprovals.serialize(() => this.#requestApproval(
         action,
@@ -187,62 +227,43 @@ export class ApprovalController {
       });
       return;
     }
-    const mode = actionApprovalOverride(this.config.actions, action.ref) ?? this.config[action.risk];
-
-    await runAbortable(signal, () => this.sessionApprovals.serialize(async () => {
-      throwIfAborted(signal);
-      if (this.sessionApprovals.approvedRisks.has(action.risk)) return;
-      if (mode !== "auto") {
-        await this.#requestApproval(action, undefined, humanWait, signal);
-        return;
-      }
-
-      let decision: FabricAutoApprovalDecision;
-      try {
-        decision = await runAbortable(signal, () => this.classifier.classify(
-          action,
-          args,
-          this.context,
-          this.config.model,
-        ));
-      } catch (error) {
+    if (mode !== "auto") {
+      await runAbortable(signal, () => this.sessionApprovals.serialize(async () => {
         throwIfAborted(signal);
-        const message = error instanceof Error ? error.message : String(error);
-        this.onAutoDecision?.({
-          action: action.ref,
-          risk: action.risk,
-          decision: "escalate",
-          reason: "Classifier unavailable; explicit approval required",
-          error: message,
-          at: Date.now(),
-        });
-        await this.#requestApproval(
-          action,
-          `Auto mode could not determine safety: ${message}`,
-          humanWait,
-          signal,
-        );
-        return;
-      }
-      throwIfAborted(signal);
+        if (!this.sessionApprovals.approvedRisks.has(action.risk)) {
+          await this.#requestApproval(action, undefined, humanWait, signal);
+        }
+      }));
+      return;
+    }
+
+    // Auto classifiers run concurrently; only explicit ask policies serialize
+    // a human wait. Escalations are queued instead of opening a dialog.
+
+    let decision: FabricAutoApprovalDecision;
+    try {
+      decision = await runAbortable(signal, () => this.classifier.classify(
+        action, args, this.context, this.config.model,
+      ));
+    } catch (error) {
+      assertCurrent();
+      const message = error instanceof Error ? error.message : String(error);
       this.onAutoDecision?.({
-        action: action.ref,
-        risk: action.risk,
-        decision: decision.decision,
-        reason: decision.reason,
-        model: decision.model,
-        at: Date.now(),
-        ...(decision.verdicts ? { verdicts: decision.verdicts } : {}),
-        ...(decision.threshold !== undefined ? { threshold: decision.threshold } : {}),
-      }, decision);
-      if (decision.decision === "allow") return;
-      await this.#requestApproval(
-        action,
-        `Auto mode escalated (${decision.model}): ${decision.reason}`,
-        humanWait,
-        signal,
-      );
-    }));
+        action: action.ref, risk: action.risk, decision: "escalate",
+        reason: "Classifier unavailable; explicit approval required", error: message, at: Date.now(),
+      });
+      await escalate(`Auto mode could not determine safety: ${message}`);
+      return;
+    }
+    assertCurrent();
+    this.onAutoDecision?.({
+      action: action.ref, risk: action.risk, decision: decision.decision,
+      reason: decision.reason, model: decision.model, at: Date.now(),
+      ...(decision.verdicts ? { verdicts: decision.verdicts } : {}),
+      ...(decision.threshold !== undefined ? { threshold: decision.threshold } : {}),
+    }, decision);
+    if (decision.decision === "allow") return;
+    await escalate(`Auto mode escalated (${decision.model}): ${decision.reason}`);
   }
 
   async #requestApproval(

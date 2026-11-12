@@ -106,11 +106,7 @@ where absent values do not participate, and time spent inside a `humanWaitRefs` 
     "resultFormat": "auto"
   },
   "approvals": {
-    "read": "allow",
-    "write": "allow",
-    "execute": "allow",
-    "network": "allow",
-    "agent": "allow",
+    "default": "allow",
     "headless": "deny",
     "headlessTimeoutMs": 300000
   },
@@ -586,6 +582,27 @@ Actions inside Jev programs pass through the same hooks. Jev programs do not rai
 
 Keys are an exact ref (`provider.action`, including multi-segment refs such as `mcp.github.search`) or a provider wildcard (`provider.*`). Values are `allow`, `ask`, or `deny`. An exact key beats a wildcard, which beats the risk-class mode. Other wildcard forms, unknown values, and more than 256 entries are configuration errors; Fabric never drops them silently. Overrides apply to every approval path keyed by a ref: actions inside `fabric_exec`, top-level native tools (`pi.<tool>` for Pi built-ins, `extensions.<tool>` otherwise), and Jev program observation. `deny` is absolute: inherited child risk grants and **Allow for this session** cannot lift it. `allow` and `ask` replace the risk-class mode and otherwise keep its semantics, including session grants for `ask`. Speculative prefetch only considers refs whose effective mode is `allow`. Overrides do not bypass Schema enforce or other host gates.
 
+### Default approval policy
+
+Under `/fabric settings` → **Approvals**, set **Default policy** once to apply
+`allow`, `ask`, `auto`, or `deny` to all action categories. The default remains
+`allow` unless you change it. **Auto** classifies each call; it does not mean
+unconditional approval.
+
+**Category overrides** holds optional exceptions for read, write, execute,
+network, and agent actions. Each starts at `inherit`, following the default.
+Existing configured category policies are preserved. To move all five to the
+new default at once, choose **Category overrides → Reset all to default**.
+This does not remove exact-action or provider wildcard policies.
+
+In `fabric.json`, `approvals.default` sets the fallback. An omitted category
+inherits it; an explicit category mode overrides it. Set a category to
+`"inherit"` to clear an override, including one inherited from global settings.
+Project settings still override global settings, and untrusted projects cannot
+supply project policy. Precedence is exact action → provider wildcard → category
+→ default. Session grants and host/schema restrictions retain their existing
+semantics.
+
 ### Auto approval mode
 
 An `auto` policy sends each validated call and its prepared arguments to a separate Pi model or Jev classifier before invocation. Configure **Auto model** under `/fabric settings` → **Approvals**, or set the optional canonical `provider/model` key in `fabric.json`:
@@ -594,17 +611,18 @@ An `auto` policy sends each validated call and its prepared arguments to a separ
 {
   "approvals": {
     "model": "anthropic/claude-opus-4-6",
-    "write": "auto",
-    "execute": "auto",
-    "network": "auto",
-    "agent": "auto"
+    "default": "auto"
   }
 }
 ```
 
 Choose **Inherit** in the model picker to omit `approvals.model` and use the active Pi session model. Built-in and custom models dispatch through Pi's effective provider runtime, including providers with custom API identifiers. Older supported Pi versions fall back to their compatibility provider registry. Read access stays independently configurable, and most setups leave it at `allow`.
 
-The classifier receives the exact action, bounded prepared arguments, cwd, user-message text, and assistant tool calls. Fabric excludes assistant prose and tool outputs, so model-authored reasoning and retrieved hostile content cannot directly instruct the classifier. The classifier has no executable tools and must return a structured `allow` or `escalate` verdict. An `allow` verdict applies only to that call. `escalate`, malformed output, missing authentication, timeout, cancellation, or any classifier error falls back to the explicit **Allow once** / **Allow for this session** / **Deny** prompt. Headless runs fail closed when that prompt cannot be shown. Fabric attaches classifier token usage and cost to the resulting `fabric_exec` or native tool result, and execution traces record each nested verdict as `fabric.approval.auto`.
+The classifier receives the exact action, bounded prepared arguments, cwd, user-message text, and assistant tool calls. Fabric excludes assistant prose and tool outputs, so model-authored reasoning and retrieved hostile content cannot directly instruct the classifier. The classifier has no executable tools and must return a structured `allow` or `escalate` verdict. An `allow` verdict applies only to that call. `escalate`, malformed output, missing authentication, or classifier failure blocks the call without opening a dialog in interactive sessions. The tool returns a permission ID immediately; neither the agent nor `fabric_exec` waits for a person. Cancellation still aborts the call. Headless runs retain their explicit `approvals.headless` policy and otherwise fail closed.
+
+Use **`/fabric permissions`** to triage blocked calls. The editor-area overlay shows a compact queue; **Enter** opens the selected call's reason and scrollable argument preview. Only that review screen accepts **a** (allow once) or **d** (deny). **Esc** goes back or closes; **r** refreshes the list. There are no hover descriptions or automatic pop-up dialogs. Closing the queue sends the outcomes to the agent as a follow-up, without adding a prose notification card.
+
+Approval authorizes one retry of the exact original call, not the whole failed program and not a risk category. The registry, tool descriptor, full arguments, working directory, schema, and current policies are checked again; a changed call needs its own approval. The blocked call has not executed and no saved closure is replayed. Programs that want other calls to continue can catch the pending-permission error or use `Promise.allSettled`. Pending requests and unused approvals expire after 30 minutes and are cleared on session change or reload. Explicit `ask` policies keep their synchronous permission dialog; hard denies cannot be approved through this queue. Fabric attaches classifier token usage and cost to the resulting `fabric_exec` or native tool result, and execution traces record each nested verdict as `fabric.approval.auto`.
 
 `deny` stays deterministic and runs before the classifier. Schema enforcement, project trust, budgets, and other host gates remain authoritative. Auto mode is a model-based policy advisor and provides no stronger sandbox boundary. Its initial conservative policy escalates destructive or irreversible actions, shared/external/production changes, credential or sensitive-data exposure, safety bypasses, actions beyond explicit user intent, and actions whose safety is uncertain. Fabric adapts the policy architecture described in Claude Code's [permission modes](https://code.claude.com/docs/en/permission-modes), [auto-mode configuration](https://code.claude.com/docs/en/auto-mode-config), and Anthropic's [auto-mode engineering write-up](https://www.anthropic.com/engineering/claude-code-auto-mode), adapted to Pi's model registry and Fabric's existing per-risk policy gate.
 

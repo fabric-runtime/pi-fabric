@@ -597,6 +597,29 @@ describe("FabricSettingsComponent", () => {
     expect(lines).toContain("High");
   });
 
+  it("exposes one default policy and optional inherited category overrides", () => {
+    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+    const items = buildFabricSettingsItems(theme, config, () => {}, {
+      keepVisibleCandidates: [], modelSource: fakeModelSource,
+    });
+    const section = items.find(item => item.id === "approvals")!.submenu!("", () => {}) as SectionSubmenu;
+    expect(section.items.find(item => item.id === "approvals.default")).toMatchObject({
+      label: "Default policy", currentValue: "allow", values: ["allow", "ask", "auto", "deny"],
+    });
+    expect(section.items.some(item => item.id === "approvals.write")).toBe(false);
+    const overrides = section.items.find(item => item.id === "approvals.overrides")!.submenu!("", () => {}) as SectionSubmenu;
+    for (const risk of ["read", "write", "execute", "network", "agent"]) {
+      expect(overrides.items.find(item => item.id === `approvals.${risk}`)).toMatchObject({
+        currentValue: "inherit", values: ["inherit", "allow", "ask", "auto", "deny"],
+      });
+    }
+    expect(buildPartial("approvals.default", coerceValue("approvals.default", "auto", config)))
+      .toEqual({ approvals: { default: "auto" } });
+    expect(buildPartial("approvals.resetOverrides", "reset")).toEqual({ approvals: {
+      read: "inherit", write: "inherit", execute: "inherit", network: "inherit", agent: "inherit",
+    } });
+  });
+
   it("offers auto policies and a dedicated classifier model picker", () => {
     const applied: Array<{ id: string; value: unknown }> = [];
     const config = structuredClone(DEFAULT_FABRIC_CONFIG);
@@ -610,7 +633,9 @@ describe("FabricSettingsComponent", () => {
     const approvals = items.find((item) => item.id === "approvals")!;
     const section = approvals.submenu!("", () => {}) as any;
     const list = section.settingsList as any;
-    const write = list.items.find((item: { id: string }) => item.id === "approvals.write");
+    const overrides = list.items.find((item: { id: string }) => item.id === "approvals.overrides")
+      .submenu("", () => {}) as SectionSubmenu;
+    const write = overrides.items.find((item) => item.id === "approvals.write")!;
     expect(write.currentValue).toBe("auto");
     expect(write.values).toContain("auto");
     expect(section.render(100).join("\n")).toContain("Auto model ›");
@@ -893,7 +918,7 @@ describe("FabricSettingsComponent", () => {
     } finally { vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true }); }
   });
 
-  it("opens the settings screen as a centered overlay", async () => {
+  it("opens the settings screen as an editor-area overlay", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-settings-overlay-"));
     const cwd = path.join(root, "project");
     const agentDir = path.join(root, "agent");
@@ -924,7 +949,7 @@ describe("FabricSettingsComponent", () => {
         expect.any(Function),
         expect.objectContaining({
           overlay: true,
-          overlayOptions: expect.objectContaining({ anchor: "center", width: "94%", maxHeight: "90%" }),
+          overlayOptions: expect.objectContaining({ anchor: "bottom-center", width: "100%", maxHeight: "90%", margin: { top: 1, bottom: 1 } }),
         }),
       );
     } finally { vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true }); }

@@ -81,6 +81,7 @@ const lazyEntryPoints = [
   "src/core/prompt-guidance.ts",
   // Clipboard bytes enter the initial user message, on first pasted input only.
   "src/core/pasted-images.ts",
+  "src/core/permission-queue.ts",
   "src/decisions/command.ts",
   "src/decisions/events.ts",
   "src/programs/host.ts",
@@ -137,6 +138,7 @@ const lazyEntryPoints = [
   // Word-diff matcher; core tool rendering loads it at the first diff.
   "src/ui/word-diff/line-emphasis.ts",
   "src/ui/settings.ts",
+  "src/ui/permissions.ts",
   "src/worker/event-projection.ts",
   "src/worker/model-control.ts",
   "src/worker/options.ts",

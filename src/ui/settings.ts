@@ -224,14 +224,14 @@ export async function openFabricSettings(
         return component;
       },
       {
-        // Use the same image-safe overlay lifecycle as dashboard and chat.
+        // Keep the image-safe panel down by the editor, not over the
+        // middle of the transcript. Let the host clamp it on small terminals.
         overlay: true,
         overlayOptions: {
-          width: "94%",
-          minWidth: 40,
+          width: "100%",
           maxHeight: "90%",
-          anchor: "center",
-          margin: 1,
+          anchor: "bottom-center",
+          margin: { top: 1, bottom: 1 },
         },
       },
     );

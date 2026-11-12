@@ -216,11 +216,12 @@ export async function runFabricCommand(
 ): Promise<void> {
   const { state, fabricUi, capturedTools, applyFabricMode, suspendToolCapture } = deps;
   const { restoreBorrowedInPlaceMain, setActiveCompiledSurface, truncateMiddle } = host;
-  await state.ensure(context);
   const [command = "dashboard", ...argumentsList] = argumentsText
     .trim()
     .split(/\s+/)
     .filter(Boolean);
+  // Triage must not activate the runtime: native-tool requests can predate it.
+  if (command !== "permissions") await state.ensure(context);
   if (command === "reload") {
     fabricUi.stop();
     suspendToolCapture();
@@ -362,6 +363,22 @@ export async function runFabricCommand(
   }
   if (command === "focus") {
     fabricUi.focusWidget(context);
+    return;
+  }
+  if (command === "permissions") {
+    const { openFabricPermissions } = await import("../ui/permissions.js");
+    const generation = state.sessionApprovals.generation;
+    const queue = await state.sessionApprovals.permissions();
+    const decisions = await openFabricPermissions(context, queue);
+    if (state.sessionApprovals.generation !== generation || !decisions.length) return;
+    pi.sendMessage({
+      customType: "fabric-permission-results",
+      display: false,
+      content: decisions.map(record => record.status === "allowed"
+        ? `User approved ${record.id} (${record.ref}) once. The blocked call has not run. Retry only the original call with identical arguments; all current policy checks still apply.`
+        : `User denied ${record.id} (${record.ref}). Do not retry or work around this denied action.`).join("\n"),
+      details: { permissions: decisions.map(({ id, ref, status }) => ({ id, ref, status })) },
+    }, { triggerTurn: true, deliverAs: "followUp" });
     return;
   }
   if (command === "decisions") {
@@ -989,7 +1006,7 @@ export async function runFabricCommand(
   }
   if (command !== "status") {
     context.ui.notify(
-      "Usage: /fabric [status|dashboard|background|chat [id-or-name]|focus|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]]",
+      "Usage: /fabric [status|dashboard|background|chat [id-or-name]|focus|prewalk [task]|prewalk --off|--disable|--enable|reload|providers|agents|actors|global|import <name> [as <new>]|export <id> [--overwrite]|messages <id>|clear-messages <id>|events <id> [event...]|log <id>|export-log <id>|attach <id>|stop <id>|remove <id>|kill <id>|repairs|entropy|permissions|decisions [id]|programs [promote|retire <ref>]|run <ref> [json]]",
       "warning",
     );
     return;

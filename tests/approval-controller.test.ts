@@ -128,7 +128,7 @@ describe("ApprovalController", () => {
     );
   });
 
-  it("escalates an unsafe auto decision to the approval wizard", async () => {
+  it("queues an unsafe auto decision without opening or waiting for a wizard", async () => {
     const classifier = {
       classify: vi.fn(async () => ({
         decision: "escalate" as const,
@@ -153,13 +153,11 @@ describe("ApprovalController", () => {
       classifier,
     );
 
-    await controller.approve(action, { path: "production" });
-
-    expect(custom).toHaveBeenCalledOnce();
-    expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("Auto mode escalated"),
-      "warning",
-    );
+    await expect(controller.approve(action, { path: "production" })).rejects.toThrow("pending");
+    expect(custom).not.toHaveBeenCalled();
+    expect((await controller.sessionApprovals.permissions()).list()[0]).toMatchObject({
+      ref: "demo.write", status: "pending", reason: expect.stringContaining("Auto mode escalated"),
+    });
   });
 
   it("fails closed to explicit approval when the classifier is unavailable", async () => {
@@ -174,8 +172,8 @@ describe("ApprovalController", () => {
       classifier,
     );
 
-    await expect(controller.approve(action)).rejects.toThrow("User denied");
-    expect(custom).toHaveBeenCalledOnce();
+    await expect(controller.approve(action)).rejects.toThrow("pending");
+    expect(custom).not.toHaveBeenCalled();
   });
 
   it("fails closed and notifies when the user denies or dismisses", async () => {
