@@ -6,6 +6,7 @@
  *
  *   pi-recall recall [flags] <query terms…>
  *   pi-recall expand  <8-hex-id> | session=<path|sid> idx=<n[,…]> [key=value…]
+ *   pi-recall outline session=<path|sid> [role=…] [--json]
  *   pi-recall sessions [flags]
  *
  * Reads the agent tree (~/.pi/agent by default, PI_CODING_AGENT_DIR honored)
@@ -15,6 +16,7 @@
 import { buildCliContext } from "../src/cli/context.js";
 import { renderRecall, runRecall } from "../src/cli/recall.js";
 import { parseExpandArgv, runExpandCall } from "../src/cli/expand.js";
+import { parseOutlineArgv, runOutlineCall } from "../src/cli/outline.js";
 import { runSessions } from "../src/cli/sessions.js";
 
 const USAGE = [
@@ -22,6 +24,7 @@ const USAGE = [
   "commands:",
   "  recall <terms…>       ranked search over session memory",
   "  expand <id|key=val…>  full entry text (id=8hex, or session=… idx=…)",
+  "  outline session=…     ordered entry skeleton (role=… filters; --json)",
   "  sessions              list known sessions in scope",
   "flags (recall/sessions):",
   "  --scope <scope>       session | project | global (recall default: global,",
@@ -32,7 +35,8 @@ const USAGE = [
   "recall only:",
   "  --phrase | --regex    query mode (default: literal terms)",
   "  --all                 require every term in one hot entry",
-  "expand keys: id= session= idx= offset= textOffset= maxChars= branches=",
+  "expand keys: id= session= idx= offset= textOffset= maxChars= branches= role=",
+  "outline keys: session= role= branches=            flag: --json",
 ].join("\n");
 
 interface ParsedFlags {
@@ -77,6 +81,9 @@ const parseFlags = (input: string[], usage: string): ParsedFlags => {
     switch (argument) {
       case "--scope":
         args.scope = operandValue();
+        break;
+      case "--json":
+        args.json = true;
         break;
       case "--branches":
         args.branches = value();
@@ -131,6 +138,15 @@ try {
       : input;
     const call = parseExpandArgv(normalized);
     const result = await runExpandCall(call, buildCliContext());
+    for (const line of result.lines) console.log(line);
+    process.exit(result.ok ? 0 : 1);
+  }
+  if (command === "outline") {
+    const { args, positional } = parseFlags(process.argv.slice(3), USAGE);
+    const json = args.json === true;
+    delete args.json;
+    const call = parseOutlineArgv(positional);
+    const result = await runOutlineCall(call, buildCliContext(), json);
     for (const line of result.lines) console.log(line);
     process.exit(result.ok ? 0 : 1);
   }

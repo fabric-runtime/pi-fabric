@@ -14,6 +14,7 @@ const EXPAND_ARGV_HELP = [
   "  textOffset=<n>       text offset inside entry (continuation)",
   "  maxChars=<n>         total text budget",
   "  branches=<b>         active | all",
+  "  role=<r>             exact normalized entry role filter",
 ].join("\n");
 
 export interface ExpandCall {
@@ -24,6 +25,7 @@ export interface ExpandCall {
   textOffset?: number;
   maxChars?: number;
   branches?: string;
+  role?: string;
 }
 
 const integerArg = (key: string, value: string): number => {
@@ -68,6 +70,9 @@ export const parseExpandArgv = (lines: string[]): ExpandCall => {
         break;
       case "branches":
         call.branches = value;
+        break;
+      case "role":
+        call.role = value;
         break;
       default:
         throw new Error(`unknown expand argument: ${key}\n${EXPAND_ARGV_HELP}`);
@@ -184,7 +189,9 @@ export const resolveMemoryId = (
   return matches;
 };
 
-const resolveSessionFile = (session: string, context: MemoryProviderContext): string => {
+/** Shared session resolution for the CLI: exact file path wins, otherwise
+ *  the agent sessions tree is searched for `*_<sid>.jsonl`. */
+export const resolveSessionFile = (session: string, context: MemoryProviderContext): string => {
   if (existsSync(session)) return session;
   const sessionsRoot = join(context.agentDir, "sessions");
   let found: string | undefined;
@@ -308,6 +315,7 @@ export const runExpandCall = async (
       ...(call.textOffset !== undefined ? { textOffset: call.textOffset } : {}),
       ...(call.maxChars !== undefined ? { maxChars: call.maxChars } : {}),
       ...(call.branches !== undefined ? { branches: call.branches } : {}),
+      ...(call.role !== undefined ? { role: call.role } : {}),
     },
     context,
     new MemoryRequestCache(),
@@ -337,7 +345,9 @@ export const runExpandCall = async (
       ? `id=${entryId}`
       : `session=${sessionFile} idx=${indices.join(",")}`;
     lines.push(
-      `# (more entries — continue with: ${selection} offset=${entryOffset}` +
+      `# (more entries — continue with: ${selection}${
+        call.role !== undefined ? ` role=${call.role}` : ""
+      } offset=${entryOffset}` +
         `${textOffset !== undefined ? ` textOffset=${textOffset}` : ""})`,
     );
   }

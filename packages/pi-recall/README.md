@@ -14,8 +14,12 @@ planned; the code is ours.
 
 - **recall** — ranked BM25 search over every session timeline on the machine,
   hot shards in memory, cold sessions as structural digests.
+- **outline** — the ordered entry skeleton for one session: index, type, role,
+  tool, one-line preview, and rendered size per entry (`memory_outline` tool,
+  `pi-recall outline` CLI).
 - **expand** — the sanctioned digest→full-entry read: exact entries by index,
-  entry id, or operation address, with bounded lossless chunking.
+  entry id, or operation address, with bounded lossless chunking and an exact
+  role filter that rides the continuation.
 - **sessions** — scope-bounded session listing with tier/lineage metadata.
 - **sources** — portable source registry; `fs` adapters walk any directory of
   session JSONL (multi-machine archives through rsync mounts).
@@ -33,6 +37,9 @@ while both surfaces coexist.
     pi-recall recall --scope project --all foo bar
     pi-recall expand <8-hex-id>                 # full entry from a recall hit
     pi-recall expand session=<path|sid> idx=3,4 maxChars=20000
+    pi-recall expand session=<path|sid> idx=0,1,2 role=user
+    pi-recall outline session=<path|sid>        # skeleton table (--json for pipes)
+    pi-recall outline session=<path|sid> role=user --json
     pi-recall sessions --scope global
 
 Run with bun from the repo: `bun run bin/pi-recall recall 'query'`.
@@ -43,8 +50,8 @@ index **writes** at an isolated tree; never at a live index you don't own).
 ## pi extension
 
 `pi.extensions: ["./extensions/memory.ts"]` registers tools
-`memory_recall` / `memory_expand` / `memory_sessions` via `registerTool`
-with exposure `direct`: the trio is declared to the model in every session
+`memory_recall` / `memory_expand` / `memory_outline` / `memory_sessions` via `registerTool`
+with exposure `direct`: the quartet is declared to the model in every session
 by default and stays callable from codemode scripts. (Earlier releases used
 `deferred` — callable only through `ctx.executeTool` — because the then-active
 prose contour reached the tools through a shell bridge; that contour is

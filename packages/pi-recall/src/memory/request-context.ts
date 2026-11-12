@@ -30,6 +30,14 @@ export const parseBranches = (value: unknown, action: string): MemoryBranches =>
   throw new Error(`${action} branches must be "active" or "all"`);
 };
 
+export const parseRoleFilter = (value: unknown, action: string): string | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${action} role must be a non-empty normalized role string`);
+  }
+  return value;
+};
+
 export const resolveIndexOptions = (
   config: FabricMemoryConfig,
   agentDir: string,

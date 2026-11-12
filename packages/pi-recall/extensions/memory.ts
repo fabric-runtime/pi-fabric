@@ -24,6 +24,7 @@ import {
   EXPAND_MAX_CONTEXT,
   EXPAND_MAX_ENTRIES,
   EXPAND_MAX_EXACT_SELECTORS,
+  OUTLINE_MAX_ENTRIES,
 } from "../src/memory/request-limits.js";
 import { MemoryRequestCache } from "../src/memory/request-cache.js";
 import { recallFailure, type MemoryProviderContext } from "../src/memory/request-context.js";
@@ -32,6 +33,7 @@ import { createMemorySourceRegistry, type PortableMemorySource } from "../src/me
 import { AmbiguousSessionError } from "../src/memory/discovery.js";
 import { processMemoryRecall } from "../src/memory/recall-service.js";
 import { processMemoryExpand } from "../src/memory/expand-service.js";
+import { processMemoryOutline } from "../src/memory/outline-service.js";
 import { processMemorySessions } from "../src/memory/sessions-service.js";
 import { normalizeMemoryArgs } from "../src/providers/memory-provider.js";
 
@@ -120,7 +122,7 @@ const invocationUpdate = (onUpdate: ToolUpdate) => (message: string): void => {
 };
 
 /** AmbiguousSessionError → structured failure, identical to the provider. */
-const dispatchFailure = (action: "recall" | "expand" | "sessions", error: unknown): unknown => {
+const dispatchFailure = (action: "recall" | "expand" | "outline" | "sessions", error: unknown): unknown => {
   if (error instanceof AmbiguousSessionError) {
     const detail = {
       code: error.code,
@@ -130,6 +132,7 @@ const dispatchFailure = (action: "recall" | "expand" | "sessions", error: unknow
     };
     if (action === "recall") return recallFailure(detail);
     if (action === "expand") return { entries: [], next: null, error: detail };
+    if (action === "outline") return { entries: [], error: detail };
     return { error: detail };
   }
   throw error;
@@ -228,6 +231,12 @@ export default function (pi: ExtensionAPI): void {
       ),
       ...HASH_PARAMS,
       branches: BRANCHES_PARAM,
+      role: Type.Optional(
+        Type.String({
+          description:
+            "Exact normalized entry role to filter by: the closed set the session normalizer can produce. Filters the resolved selection before chunking and rides the continuation.",
+        }),
+      ),
       indices: Type.Optional(Type.Array(Type.Number({ minimum: 0 }), { maxItems: EXPAND_MAX_EXACT_SELECTORS })),
       entryIds: Type.Optional(Type.Array(Type.String({ maxLength: 512 }), { maxItems: EXPAND_MAX_EXACT_SELECTORS })),
       operationAddresses: Type.Optional(Type.Array(Type.String({ maxLength: 512 }), { maxItems: EXPAND_MAX_EXACT_SELECTORS })),
@@ -259,6 +268,58 @@ export default function (pi: ExtensionAPI): void {
         return {
           content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
           details: { action: "expand", failed: true },
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_outline",
+    exposure: "direct",
+    label: "Memory outline",
+    description:
+      "Ordered entry skeleton for one session: per entry — index, type, role, tool, a bounded one-line preview, and the rendered size. Pick indices from it for memory_expand full text.",
+    parameters: Type.Object({
+      source: SOURCE_PARAM,
+      session: Type.Optional(
+        Type.String({ description: "Exact session file path, unambiguous id, or source session key. Defaults to the live session." }),
+      ),
+      ...HASH_PARAMS,
+      branches: BRANCHES_PARAM,
+      role: Type.Optional(
+        Type.String({
+          description:
+            "Exact normalized entry role to filter by: the closed set the session normalizer can produce.",
+        }),
+      ),
+      maxEntries: Type.Optional(
+        Type.Number({
+          minimum: 1,
+          maximum: OUTLINE_MAX_ENTRIES,
+          description: "Maximum skeleton rows returned; total and truncated report the unfiltered size.",
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const sessionManager = ctx?.sessionManager as SessionManagerLike | undefined;
+      const context = buildContext(sessionManager);
+      let args = normalizeMemoryArgs("outline", params as Record<string, unknown>);
+      if (args.session === undefined) {
+        // Engine parity: prepareArguments injected the live session for expand.
+        const live = sessionManager?.getSessionFile?.();
+        if (live !== undefined) args = { ...args, session: live };
+      }
+      try {
+        const response = await processMemoryOutline(args, context, cache, signal);
+        return {
+          content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+          details: { action: "outline" },
+        };
+      } catch (error) {
+        const response = dispatchFailure("outline", error);
+        return {
+          content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+          details: { action: "outline", failed: true },
         };
       }
     },
