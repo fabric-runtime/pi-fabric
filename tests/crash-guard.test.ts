@@ -53,13 +53,24 @@ describe("Fabric control aborts", () => {
   });
 
   it("owns failures raised from its package and nothing else", () => {
-    const roots = new Set([root.replace(/\/$/, "")]);
+    const roots = new Set([root.replaceAll("\\", "/").replace(/\/+$/, "")]);
     const fromFabric = new Error("fabric bug");
     fromFabric.stack = `Error: fabric bug\n    at run (${root}dist/chunks/chunk-ABC.js:1:1)`;
     const foreign = new Error("host bug");
     foreign.stack = "Error: host bug\n    at run (/usr/lib/node_modules/@earendil-works/pi-coding-agent/dist/x.js:1:1)";
     expect(fabricOwnsFailure(fromFabric, roots)).toBe(true);
     expect(fabricOwnsFailure(foreign, roots)).toBe(false);
+  });
+
+  it("normalizes registered Windows package roots before comparing stack frames", () => {
+    const packageRoot = String.raw`C:\workspace\pi-fabric`;
+    installFabricCrashGuard(packageRoot);
+    const failure = new Error("fabric bug");
+    failure.stack = `Error: fabric bug\n    at run (${packageRoot}\\dist\\index.js:1:1)`;
+    expect(fabricOwnsFailure(failure)).toBe(true);
+    const foreign = new Error("host bug");
+    foreign.stack = String.raw`Error: host bug at C:\workspace\host\dist\index.js:1:1`;
+    expect(fabricOwnsFailure(foreign)).toBe(false);
   });
 });
 

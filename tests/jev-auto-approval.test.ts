@@ -307,15 +307,20 @@ describe("Jev approval enforcement", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("escalates uncertainty to a real explicit approval dialog without widening permission", async () => {
+  it("queues uncertainty for explicit one-use approval without widening permission", async () => {
     fetcher.mockImplementation(async () => Response.json(response(0.49)));
     const select = vi.fn(async () => "Allow once");
     const ctx = Object.assign(context(), { hasUI: true, mode: "rpc", ui: { select, notify: vi.fn() } }) as unknown as ExtensionContext;
     const session = new FabricSessionApprovals();
     const controller = new ApprovalController(config().approvals, ctx, session);
-    await controller.approve(action);
-    await controller.approve(action);
-    expect(select).toHaveBeenCalledTimes(2);
+    await expect(controller.approve(action)).rejects.toThrow("pending");
+    const queue = await session.permissions();
+    expect(queue.list()).toHaveLength(1);
+    queue.decide(queue.list()[0]!.id, "allowed");
+    await expect(controller.approve(action)).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledOnce();
+    await expect(controller.approve(action)).rejects.toThrow("pending");
+    expect(select).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(session.approvedRisks.size).toBe(0);
   });
