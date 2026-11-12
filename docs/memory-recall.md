@@ -507,8 +507,12 @@ normalized entry with `index`, `type`, `role`, `tool`, a whitespace-collapsed
 single-line `preview` (at most 120 characters, never splitting a surrogate
 pair), and `size`, the entry-text length a later `memory.expand` returns for
 that index. No scores, no ranking, no continuation. `maxEntries` caps the rows
-(default 200); `total` and `truncated` report the full skeleton size, and
-`entryCount` always counts the resolved session before any filter.
+(default 200); `total` counts the entries that match `role` — or all entries
+when no role is set — and `truncated` is true only when matching entries
+exceed the returned rows. `entryCount` always counts the resolved session
+before any filter. When the session's index coverage is incomplete (a host
+source that retained only part of the session), the response carries
+`coverage: { complete: false, reasons }` instead of posing as complete.
 
 An optional `role` argument filters the skeleton by exact normalized role, and
 `memory.expand` accepts the same `role` argument: it filters the resolved
@@ -518,7 +522,11 @@ match returns a plain empty view with `next: null`.
 ```ts
 const map = await memory.outline({ session });
 const userRows = map.entries.filter((row) => row.role === "user");
-const first = await memory.expand({ session, indices: [userRows[0]?.index ?? 0] });
+// Expand a matching row only after checking it exists — an outline with no
+// user row (or an empty session) has no index 0 to read.
+const first = userRows.length > 0
+  ? await memory.expand({ session, indices: [userRows[0]!.index] })
+  : null;
 ```
 
 ## Expansion and guest-local computation

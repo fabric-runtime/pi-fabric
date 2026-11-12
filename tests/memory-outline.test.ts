@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FabricMemoryConfig } from "../src/config.js";
 import { encodeCwdDir } from "../src/memory/discovery.js";
+import { createMemorySourceRegistry } from "../src/memory.js";
 import { MemoryProvider } from "../src/providers/memory-provider.js";
 import type { FabricInvocationContext } from "../src/protocol.js";
 import {
@@ -199,6 +200,115 @@ describe("memory.outline skeleton", () => {
       invocation("/work"),
     ) as OutlineResponse;
     expect(missing.error?.code).toBe("session_not_found");
+  });
+});
+
+describe("outline coverage, role inputs, and row bounds", () => {
+  it("surfaces incomplete host-source coverage instead of posing as complete", async () => {
+    const { agentDir, file } = mixedSession("coverage");
+    const records = fs.readFileSync(file, "utf8").trimEnd().split("\n").map(
+      (line) => JSON.parse(line) as Record<string, unknown>,
+    );
+    const registry = createMemorySourceRegistry();
+    registry.register({
+      interfaceVersion: 1,
+      id: "partial",
+      async listSessions() {
+        return [{ sessionKey: "partial-session", revision: "rev-1" }];
+      },
+      async loadSession() {
+        return {
+          sessionKey: "partial-session",
+          revision: "rev-1",
+          records,
+          coverage: { complete: false, reason: "records_capped" },
+        };
+      },
+    });
+    const outlined = new MemoryProvider({
+      agentDir,
+      cwd: "/work",
+      config: config(temp(`idx-coverage-${++providerIndex}`)),
+      sources: registry,
+    });
+    const args = { source: "partial", session: "partial-session" };
+    const first = await outlined.invoke("outline", args, invocation("/work")) as OutlineResponse & {
+      coverage?: { complete: boolean; reasons: string[] };
+    };
+    expect(first.error).toBeUndefined();
+    expect(first.entries).toHaveLength(4);
+    expect(first.truncated).toBe(false);
+    // The adapter capped record loading: the response says so instead of
+    // presenting a partial session as complete.
+    expect(first.coverage).toEqual({ complete: false, reasons: ["source_coverage:records_capped"] });
+
+    // expand remembers the snapshot; the outline cache hit must report the
+    // same coverage status as the cache miss.
+    await outlined.invoke("expand", { ...args, indices: [0] }, invocation("/work"));
+    const second = await outlined.invoke("outline", args, invocation("/work")) as typeof first;
+    expect(second).toEqual(first);
+  });
+
+  it("keeps complete sessions free of a coverage field", async () => {
+    const { agentDir, file } = mixedSession("complete");
+    const response = await provider(agentDir).invoke("outline", { session: file }, invocation("/work")) as OutlineResponse;
+    expect("coverage" in response).toBe(false);
+  });
+
+  it("shows and filters roles outside the documented common set", async () => {
+    const { agentDir, file } = mixedSession("developer-role");
+    // Rewrite entry 0 to a "developer" role message: the normalizer keeps any
+    // nonempty message role, so the filter must select what the skeleton shows.
+    const lines = fs.readFileSync(file, "utf8").trimEnd().split("\n");
+    lines[1] = JSON.stringify({
+      type: "message",
+      id: "o-user",
+      parentId: null,
+      timestamp: timestamp(0),
+      message: { role: "developer", content: "outline the harbor plan first\nsecond line here" },
+    });
+    fs.writeFileSync(file, `${lines.join("\n")}\n`, "utf8");
+
+    const shown = await provider(agentDir).invoke("outline", { session: file }, invocation("/work")) as OutlineResponse;
+    expect(shown.entries[0]!.role).toBe("developer");
+    const filtered = await provider(agentDir).invoke(
+      "outline",
+      { session: file, role: "developer" },
+      invocation("/work"),
+    ) as OutlineResponse;
+    expect(filtered.entries.map((row) => row.index)).toEqual([0]);
+    expect(filtered.total).toBe(1);
+
+    // The role inputs stay free strings: no closed enum may reject a row the
+    // skeleton can show.
+    const ctx = invocation("/work");
+    for (const action of ["recall", "expand", "outline"] as const) {
+      const schema = (await provider(agentDir).describe(action, ctx))?.inputSchema as {
+        properties: { role?: { enum?: unknown } };
+      };
+      expect(schema.properties.role).toBeDefined();
+      expect(schema.properties.role!.enum).toBeUndefined();
+    }
+  });
+
+  it("bounds a very long tool name like expansion bounds returned metadata", async () => {
+    const { agentDir, file } = mixedSession("tool-bound");
+    const lines = fs.readFileSync(file, "utf8").trimEnd().split("\n");
+    lines[3] = JSON.stringify({
+      type: "message",
+      id: "o-call",
+      parentId: "o-assist",
+      timestamp: timestamp(2),
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "t".repeat(600), arguments: { path: "/harbor/plan.md" } }],
+      },
+    });
+    fs.writeFileSync(file, `${lines.join("\n")}\n`, "utf8");
+    const response = await provider(agentDir).invoke("outline", { session: file }, invocation("/work")) as OutlineResponse;
+    const tool = response.entries[2]!.tool!;
+    expect(tool).toHaveLength(512);
+    expect(tool.endsWith("…")).toBe(true);
   });
 });
 
