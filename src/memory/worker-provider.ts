@@ -46,7 +46,7 @@ export class WorkerMemoryProvider extends MemoryProvider {
     if (this.closed) throw new Error("Memory provider is closed");
     // Authorized host adapters contain callbacks and must stay in their owning host.
     if ((typeof args.source === "string" && args.source.length > 0) ||
-        !["recall", "expand", "sessions"].includes(action)) {
+        !["recall", "expand", "outline", "sessions"].includes(action)) {
       return super.invoke(action, args, invocation);
     }
     if (this.pending.length + (this.active ? 1 : 0) >= MAX_PENDING_REQUESTS) {
@@ -76,10 +76,11 @@ export class WorkerMemoryProvider extends MemoryProvider {
   private snapshot(request: Request): LiveSessionBranch | undefined {
     const context = this.workerContext;
     if (request.args.branches === "all" || !context.sessionFile || !context.getLiveBranch) return undefined;
-    const selector = request.action === "expand" ? request.args.session : request.args.scope;
+    const sessionLike = request.action === "expand" || request.action === "outline";
+    const selector = sessionLike ? request.args.session : request.args.scope;
     const target = typeof selector === "string" && selector.trim().startsWith("session:")
       ? selector.trim().slice("session:".length).trim()
-      : request.action === "expand" && typeof selector === "string" ? selector.trim() : undefined;
+      : sessionLike && typeof selector === "string" ? selector.trim() : undefined;
     if (target !== undefined && target !== context.sessionId &&
         target !== path.basename(context.sessionFile, ".jsonl") &&
         path.resolve(target) !== path.resolve(context.sessionFile)) return undefined;

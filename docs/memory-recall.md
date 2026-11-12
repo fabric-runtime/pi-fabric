@@ -498,6 +498,29 @@ An optional inclusive `entryRange` can bound explicit single-session recall.
 Both endpoints must be valid normalized indices. Out-of-range or negative
 addresses return `index_out_of_bounds`; Fabric never clamps them.
 
+## Session outline
+
+`memory.outline` maps one resolved session before reading it. It resolves the
+session exactly like `memory.expand` — same `source`, `branches`, and pointer
+arguments — and returns a deterministic skeleton: one bounded row per
+normalized entry with `index`, `type`, `role`, `tool`, a whitespace-collapsed
+single-line `preview` (at most 120 characters, never splitting a surrogate
+pair), and `size`, the entry-text length a later `memory.expand` returns for
+that index. No scores, no ranking, no continuation. `maxEntries` caps the rows
+(default 200); `total` and `truncated` report the full skeleton size, and
+`entryCount` always counts the resolved session before any filter.
+
+An optional `role` argument filters the skeleton by exact normalized role, and
+`memory.expand` accepts the same `role` argument: it filters the resolved
+selection before chunking and rides the continuation in `next.args`. An empty
+match returns a plain empty view with `next: null`.
+
+```ts
+const map = await memory.outline({ session });
+const userRows = map.entries.filter((row) => row.role === "user");
+const first = await memory.expand({ session, indices: [userRows[0]?.index ?? 0] });
+```
+
 ## Expansion and guest-local computation
 
 `memory.expand` re-reads full, untruncated normalized records. It accepts

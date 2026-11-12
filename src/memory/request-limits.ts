@@ -4,4 +4,6 @@ export const EXPAND_DEFAULT_MAX_ENTRIES = 10;
 export const EXPAND_MAX_ENTRIES = 20;
 export const EXPAND_MAX_CONTEXT = 100;
 export const EXPAND_MAX_EXACT_SELECTORS = 100;
+export const OUTLINE_MAX_ENTRIES = 200;
+export const OUTLINE_PREVIEW_CHARS = 120;
 export const SESSIONS_MAX = 500;

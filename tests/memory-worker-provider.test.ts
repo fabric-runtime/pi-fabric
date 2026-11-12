@@ -41,6 +41,14 @@ describe("file memory worker ownership", () => {
     expect(context.update).toHaveBeenCalledTimes(13);
   });
 
+  it("routes outline through the worker like expand", async () => {
+    const memory = provider();
+    // The fixture worker echoes {threadId, marker}; an in-process fallback
+    // would return a real outline response instead.
+    expect(await memory.invoke("outline", { marker: "outline" }, invocation()))
+      .toMatchObject({ marker: "outline" });
+  });
+
   it("terminates an active synchronous job on abort, keeps the host responsive, and restarts for queued work", async () => {
     const memory = provider();
     const controller = new AbortController();
