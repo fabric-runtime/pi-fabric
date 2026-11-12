@@ -287,7 +287,7 @@ describe("outline coverage, role inputs, and row bounds", () => {
         properties: { role?: { enum?: unknown } };
       };
       expect(schema.properties.role).toBeDefined();
-      expect(schema.properties.role.enum).toBeUndefined();
+      expect(schema.properties.role!.enum).toBeUndefined();
     }
   });
 
