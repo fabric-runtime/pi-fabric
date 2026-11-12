@@ -1,0 +1,183 @@
+#!/usr/bin/env bun
+/**
+ * pi-recall — standalone CLI over the extracted pi-fabric memory module
+ * (pi-transcript-recall). Same ergonomics as the fork's standalone tiers
+ * (`ai recall` / `ai show`): plain shell, ranked text out, exit codes 0/1/2.
+ *
+ *   pi-recall recall [flags] <query terms…>
+ *   pi-recall expand  <8-hex-id> | session=<path|sid> idx=<n[,…]> [key=value…]
+ *   pi-recall outline session=<path|sid> [role=…] [--json]
+ *   pi-recall sessions [flags]
+ *
+ * Reads the agent tree (~/.pi/agent by default, PI_CODING_AGENT_DIR honored)
+ * and the memory index (${agentDir}/fabric/memory-index, PI_RECALL_INDEX_DIR
+ * honored — point that at a temp dir to isolate index writes).
+ */
+import { buildCliContext } from "../src/cli/context.js";
+import { renderRecall, runRecall } from "../src/cli/recall.js";
+import { parseExpandArgv, runExpandCall } from "../src/cli/expand.js";
+import { parseOutlineArgv, runOutlineCall } from "../src/cli/outline.js";
+import { runSessions } from "../src/cli/sessions.js";
+
+const USAGE = [
+  "usage: pi-recall <command> [flags]",
+  "commands:",
+  "  recall <terms…>       ranked search over session memory",
+  "  expand <id|key=val…>  full entry text (id=8hex, or session=… idx=…)",
+  "  outline session=…     ordered entry skeleton (role=… filters; --json)",
+  "  sessions              list known sessions in scope",
+  "flags (recall/sessions):",
+  "  --scope <scope>       session | project | global (recall default: global,",
+  "                        sessions default: session)",
+  "  --branches <b>        active | all",
+  "  --limit <n>           page size (recall) / cap (sessions)",
+  "  --offset <n>          ranked-hit offset (recall)",
+  "recall only:",
+  "  --phrase | --regex    query mode (default: literal terms)",
+  "  --all                 require every term in one hot entry",
+  "expand keys: id= session= idx= offset= textOffset= maxChars= branches= role=",
+  "outline keys: session= role= branches=   flags: --branches <b> --json",
+].join("\n");
+
+interface ParsedFlags {
+  args: Record<string, unknown>;
+  positional: string[];
+}
+
+const parseFlags = (input: string[], usage: string): ParsedFlags => {
+  const args: Record<string, unknown> = {};
+  const positional: string[] = [];
+  for (let index = 0; index < input.length; index++) {
+    const argument = input[index]!;
+    if (argument === "--") {
+      positional.push(...input.slice(index + 1));
+      break;
+    }
+    const value = (): string => {
+      const next = input[++index];
+      if (next === undefined) throw new Error(`${argument} needs a value\n${usage}`);
+      return next;
+    };
+    // A flag token is never a valid operand: consuming it (e.g. `--scope
+    // --all`) would silently drop the flag the user actually typed.
+    const operandValue = (): string => {
+      const next = value();
+      if (next.startsWith("--")) {
+        throw new Error(`${argument} does not accept a flag as its value: ${next}\n${usage}`);
+      }
+      return next;
+    };
+    const numberValue = (minimum: number): number => {
+      const raw = value();
+      const parsed = Number(raw);
+      // The empty string coerces to zero, so it is rejected explicitly.
+      if (raw === "" || !Number.isInteger(parsed) || parsed < minimum) {
+        throw new Error(
+          `${argument} needs ${minimum > 0 ? "a positive" : "a non-negative"} integer\n${usage}`,
+        );
+      }
+      return parsed;
+    };
+    switch (argument) {
+      case "--scope":
+        args.scope = operandValue();
+        break;
+      case "--json":
+        args.json = true;
+        break;
+      case "--branches":
+        args.branches = value();
+        break;
+      case "--limit":
+        args.pageSize = numberValue(1);
+        break;
+      case "--offset":
+        args.offset = numberValue(0);
+        break;
+      case "--phrase":
+        args.queryMode = "phrase";
+        break;
+      case "--regex":
+        args.queryMode = "regex";
+        break;
+      case "--all":
+        args.queryMatch = "all";
+        break;
+      case "-h":
+      case "--help":
+        console.log(usage);
+        process.exit(0);
+      default:
+        if (argument.startsWith("--")) throw new Error(`unknown flag: ${argument}\n${usage}`);
+        positional.push(argument);
+    }
+  }
+  return { args, positional };
+};
+
+const command = process.argv[2];
+try {
+  if (command === "recall") {
+    const { args, positional } = parseFlags(process.argv.slice(3), USAGE);
+    args.query = positional.join(" ");
+    if (args.query === "") {
+      console.error(USAGE);
+      process.exit(2);
+    }
+    if (args.scope === undefined) args.scope = "global";
+    const response = await runRecall(args, buildCliContext());
+    const rendered = renderRecall(response);
+    for (const line of rendered.lines) console.log(line);
+    process.exit(rendered.ok ? 0 : 1);
+  }
+  if (command === "expand") {
+    const input = process.argv.slice(3).filter((argument) => argument !== "");
+    // Bare 8-hex positional → id=<hex>; everything else is key=value lines.
+    const normalized = input.length === 1 && /^[0-9a-f]{8}$/i.test(input[0]!)
+      ? [`id=${input[0]}`]
+      : input;
+    const call = parseExpandArgv(normalized);
+    const result = await runExpandCall(call, buildCliContext());
+    for (const line of result.lines) console.log(line);
+    process.exit(result.ok ? 0 : 1);
+  }
+  if (command === "outline") {
+    const { args, positional } = parseFlags(process.argv.slice(3), USAGE);
+    const json = args.json === true;
+    delete args.json;
+    const call = parseOutlineArgv(positional);
+    // Flags the outline call supports are forwarded; anything else parseFlags
+    // accepted (e.g. --limit) is rejected loudly — a silently dropped flag
+    // would outline a different view than the user asked for.
+    if (typeof args.branches === "string") call.branches = args.branches;
+    delete args.branches;
+    // Name rejected flags the way the user typed them, not by internal key.
+    const flagSpellings: Record<string, string> = {
+      scope: "scope",
+      pageSize: "limit",
+      offset: "offset",
+      queryMode: "phrase",
+      queryMatch: "all",
+    };
+    const unsupported = Object.keys(args).map((key) => flagSpellings[key] ?? key);
+    if (unsupported.length > 0) {
+      throw new Error(`outline does not support --${unsupported.join(", --")}\n${USAGE}`);
+    }
+    const result = await runOutlineCall(call, buildCliContext(), json);
+    for (const line of result.lines) console.log(line);
+    process.exit(result.ok ? 0 : 1);
+  }
+  if (command === "sessions") {
+    const { args } = parseFlags(process.argv.slice(3), USAGE);
+    if (typeof args.pageSize === "number") args.limit = args.pageSize;
+    delete args.pageSize;
+    const result = await runSessions(args, buildCliContext());
+    for (const line of result.lines) console.log(line);
+    process.exit(result.ok ? 0 : 1);
+  }
+  console.error(command === undefined ? USAGE : `unknown command: ${command}\n${USAGE}`);
+  process.exit(2);
+} catch (error) {
+  console.error(`pi-recall: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}

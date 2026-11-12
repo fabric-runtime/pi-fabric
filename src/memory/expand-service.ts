@@ -21,6 +21,7 @@ import {
 } from "./request-limits.js";
 import {
   parseBranches,
+  parseRoleFilter,
   addressError,
   stalePointerError,
   type MemoryProviderContext,
@@ -49,6 +50,7 @@ export async function processMemoryExpand(
     ? args.expectedLineageFingerprint
     : undefined;
   const branches = parseBranches(args.branches, "memory.expand");
+  const role = parseRoleFilter(args.role, "memory.expand");
   const rawIndices = args.indices;
   if (rawIndices !== undefined && !Array.isArray(rawIndices)) {
     throw new Error("memory.expand indices must be an array");
@@ -221,6 +223,7 @@ export async function processMemoryExpand(
       lineageFingerprint: finalLineage.fingerprint,
       observation: finalObservation,
       entries: normalized,
+      indexCoverage: normalizedFull.indexCoverage,
       selections: new Map(),
       touchedAt: Date.now(),
     };
@@ -326,7 +329,23 @@ export async function processMemoryExpand(
     );
   }
 
-  const selected = resolved.entries;
+  const selected = role === undefined
+    ? resolved.entries
+    : resolved.entries.filter((entry) => entry.role === role);
+  if (selected.length === 0) {
+    // The role filter matched nothing inside the resolved selection: an
+    // empty view has no text page for the expansion kernel to verify.
+    cache.forgetExpansionSnapshot(snapshot);
+    return {
+      session: ref.file,
+      sourceHash: snapshot.sourceHash,
+      branches,
+      lineageFingerprint: snapshot.lineageFingerprint,
+      entryCount,
+      entries: [],
+      next: null,
+    };
+  }
   const canonicalSelection = resolved.canonical;
   const anchorIndex = resolved.anchorIndex;
   const finalState = snapshot;
@@ -443,6 +462,7 @@ export async function processMemoryExpand(
           expectedLineageFingerprint: finalLineage.fingerprint,
           branches,
           ...canonicalSelection,
+          ...(role !== undefined ? { role } : {}),
           entryOffset: cursor.position,
           ...(cursor.textOffset > 0 ? { textOffset: cursor.textOffset } : {}),
           maxChars,

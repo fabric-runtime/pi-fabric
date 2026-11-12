@@ -5,7 +5,12 @@ import {
   type MemoryRecallCallArgs,
 } from "./context.js";
 import type { MemoryBranches } from "./lineage.js";
-import type { ExpandSessionSelection, ExpandedSessionEntry, NormalizedEntry } from "./normalize.js";
+import type {
+  ExpandSessionSelection,
+  ExpandedSessionEntry,
+  NormalizationCoverage,
+  NormalizedEntry,
+} from "./normalize.js";
 import type { MemoryCoverage } from "./index.js";
 import type { SearchResult } from "./search.js";
 import {
@@ -38,6 +43,8 @@ export interface ExpansionSnapshot {
   lineageFingerprint: string;
   observation: SourceObservation;
   entries: readonly NormalizedEntry[];
+  /** Normalizer coverage of these entries; outline surfaces incompleteness. */
+  indexCoverage?: NormalizationCoverage;
   selections: Map<string, ResolvedExpansionSelection>;
   touchedAt: number;
 }

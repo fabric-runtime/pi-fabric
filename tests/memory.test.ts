@@ -901,7 +901,7 @@ describe("MemoryProvider", () => {
   it("lists and describes its actions", async () => {
     const ctx = invocationContext(cwd);
     const list = await provider().list({}, ctx);
-    expect(list.map((d) => d.name).sort()).toEqual(["expand", "recall", "sessions"]);
+    expect(list.map((d) => d.name).sort()).toEqual(["expand", "outline", "recall", "sessions"]);
     const described = await provider().describe("recall", ctx);
     expect(described?.risk).toBe("read");
   });
