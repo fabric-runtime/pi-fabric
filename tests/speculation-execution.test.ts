@@ -37,7 +37,7 @@ const fixture = (kernel: Kernel = "quickjs", provider = "mcp") => {
   // Native CPython exercises only this controlled pure program, as in the existing
   // Python integration tests. Production requires schema-enforced OS isolation.
   const speculation = new RuntimeStateSpeculation(registry, () => config.speculation, () => undefined,
-    () => config.approvals[provider === "mcp" ? "network" : "read"] === "allow", python ? "python" : "typescript");
+    () => (config.approvals[provider === "mcp" ? "network" : "read"] ?? config.approvals.default ?? "allow") === "allow", python ? "python" : "typescript");
   speculation.tap!.setScannerFactory(() => python ? new PythonLiteralCallScanner() : new LiteralCallScanner());
   cleanups.push(async () => { speculation.reset(); await registry.close(); });
   const code = `return await ${ref}({})`;
