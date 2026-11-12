@@ -39,11 +39,19 @@ const outlinePreview = (text: string): string => {
   return `${collapsed.slice(0, end)}…`;
 };
 
+// Tool names carry expansion's returned-metadata bound (expand-service bounds
+// echoed metadata at 512 chars); one row must not blow the 120-char discipline.
+const OUTLINE_TOOL_CHARS = 512;
+const outlineTool = (tool: string): string =>
+  tool.length <= OUTLINE_TOOL_CHARS
+    ? tool
+    : `${tool.slice(0, OUTLINE_TOOL_CHARS - 1)}…`;
+
 const outlineRow = (entry: NormalizedEntry): MemoryOutlineRow => ({
   index: entry.index,
   type: entry.type,
   ...(entry.role !== null ? { role: entry.role } : {}),
-  ...(entry.toolName !== null ? { tool: entry.toolName } : {}),
+  ...(entry.toolName !== null ? { tool: outlineTool(entry.toolName) } : {}),
   preview: outlinePreview(entry.text),
   size: entry.text.length,
 });
@@ -193,6 +201,7 @@ export async function processMemoryOutline(
       lineageFingerprint: finalLineage.fingerprint,
       observation: finalObservation,
       entries: normalized,
+      indexCoverage: normalizedFull.indexCoverage,
       selections: new Map(),
       touchedAt: Date.now(),
     };
@@ -201,6 +210,7 @@ export async function processMemoryOutline(
   const all = snapshot.entries;
   const filtered = role === undefined ? all : all.filter((entry) => entry.role === role);
   const rows = filtered.slice(0, maxEntries).map(outlineRow);
+  const coverage = snapshot.indexCoverage;
   const response = {
     session: ref.file,
     sourceHash: snapshot.sourceHash,
@@ -209,6 +219,12 @@ export async function processMemoryOutline(
     entryCount: all.length,
     total: filtered.length,
     truncated: filtered.length > rows.length,
+    // Partial host-source coverage must never pose as a complete session: an
+    // incomplete normalizer coverage surfaces here (same complete/reasons
+    // shape the index reports), surviving the snapshot cache on both paths.
+    ...(coverage !== undefined && !coverage.complete
+      ? { coverage: { complete: false, reasons: [...coverage.reasons] } }
+      : {}),
     entries: rows,
   };
 

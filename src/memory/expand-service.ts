@@ -223,6 +223,7 @@ export async function processMemoryExpand(
       lineageFingerprint: finalLineage.fingerprint,
       observation: finalObservation,
       entries: normalized,
+      indexCoverage: normalizedFull.indexCoverage,
       selections: new Map(),
       touchedAt: Date.now(),
     };

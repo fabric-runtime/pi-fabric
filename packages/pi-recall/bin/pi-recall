@@ -36,7 +36,7 @@ const USAGE = [
   "  --phrase | --regex    query mode (default: literal terms)",
   "  --all                 require every term in one hot entry",
   "expand keys: id= session= idx= offset= textOffset= maxChars= branches= role=",
-  "outline keys: session= role= branches=            flag: --json",
+  "outline keys: session= role= branches=   flags: --branches <b> --json",
 ].join("\n");
 
 interface ParsedFlags {
@@ -146,6 +146,23 @@ try {
     const json = args.json === true;
     delete args.json;
     const call = parseOutlineArgv(positional);
+    // Flags the outline call supports are forwarded; anything else parseFlags
+    // accepted (e.g. --limit) is rejected loudly — a silently dropped flag
+    // would outline a different view than the user asked for.
+    if (typeof args.branches === "string") call.branches = args.branches;
+    delete args.branches;
+    // Name rejected flags the way the user typed them, not by internal key.
+    const flagSpellings: Record<string, string> = {
+      scope: "scope",
+      pageSize: "limit",
+      offset: "offset",
+      queryMode: "phrase",
+      queryMatch: "all",
+    };
+    const unsupported = Object.keys(args).map((key) => flagSpellings[key] ?? key);
+    if (unsupported.length > 0) {
+      throw new Error(`outline does not support --${unsupported.join(", --")}\n${USAGE}`);
+    }
     const result = await runOutlineCall(call, buildCliContext(), json);
     for (const line of result.lines) console.log(line);
     process.exit(result.ok ? 0 : 1);

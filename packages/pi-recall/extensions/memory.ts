@@ -234,7 +234,7 @@ export default function (pi: ExtensionAPI): void {
       role: Type.Optional(
         Type.String({
           description:
-            "Exact normalized entry role to filter by: the closed set the session normalizer can produce. Filters the resolved selection before chunking and rides the continuation.",
+            "Exact normalized entry role to filter by (e.g. user, assistant, toolResult). The normalizer keeps any nonempty message role, so other values are accepted. Filters the resolved selection before chunking and rides the continuation.",
         }),
       ),
       indices: Type.Optional(Type.Array(Type.Number({ minimum: 0 }), { maxItems: EXPAND_MAX_EXACT_SELECTORS })),
@@ -289,14 +289,15 @@ export default function (pi: ExtensionAPI): void {
       role: Type.Optional(
         Type.String({
           description:
-            "Exact normalized entry role to filter by: the closed set the session normalizer can produce.",
+            "Exact normalized entry role; filters the skeleton. Any nonempty role the normalizer keeps is accepted (e.g. user, assistant, toolResult, developer).",
         }),
       ),
       maxEntries: Type.Optional(
         Type.Number({
           minimum: 1,
           maximum: OUTLINE_MAX_ENTRIES,
-          description: "Maximum skeleton rows returned; total and truncated report the unfiltered size.",
+          description:
+            "Maximum skeleton rows returned; total and truncated describe the role-filtered rows before this cap, entryCount the unfiltered session.",
         }),
       ),
     }),

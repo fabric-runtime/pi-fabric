@@ -190,27 +190,31 @@ export const resolveMemoryId = (
 };
 
 /** Shared session resolution for the CLI: exact file path wins, otherwise
- *  the agent sessions tree is searched for `*_<sid>.jsonl`. */
+ *  the agent sessions tree is searched for `*_<sid>.jsonl`. Ambiguity-aware —
+ *  matching the engine's resolveSessionTarget, several directories may hold
+ *  the same sid, and picking the first match would outline/expand an
+ *  arbitrary session silently. */
 export const resolveSessionFile = (session: string, context: MemoryProviderContext): string => {
   if (existsSync(session)) return session;
   const sessionsRoot = join(context.agentDir, "sessions");
-  let found: string | undefined;
+  const matches: string[] = [];
   try {
     for (const dir of readdirSync(sessionsRoot, { withFileTypes: true })) {
       if (!dir.isDirectory()) continue;
       for (const name of readdirSync(join(sessionsRoot, dir.name))) {
-        if (name.endsWith(`_${session}.jsonl`)) {
-          found = join(sessionsRoot, dir.name, name);
-          break;
-        }
+        if (name.endsWith(`_${session}.jsonl`)) matches.push(join(sessionsRoot, dir.name, name));
       }
-      if (found !== undefined) break;
     }
   } catch {
     /* fall through */
   }
-  if (found === undefined) throw new Error(`expand: no session file matches ${session}`);
-  return found;
+  if (matches.length === 0) throw new Error(`expand: no session file matches ${session}`);
+  if (matches.length > 1) {
+    throw new Error(
+      `session id ${JSON.stringify(session)} is ambiguous — ${matches.length} session files match; name one exactly:\n${matches.map((file) => `  ${file}`).join("\n")}`,
+    );
+  }
+  return matches[0]!;
 };
 
 const isoTimestamp = (milliseconds: number | null | undefined): string => {

@@ -84,7 +84,11 @@ export const renderOutline = (response: OutlineResponse): string[] => {
     );
   }
   if (response.truncated) {
-    lines.push(`# (truncated — raise maxEntries to see all ${response.total})`);
+    // maxEntries is a hard engine cap (parseOutlineArgv rejects it; the service
+    // clamps at 200), so recovery is narrowing or per-entry reads, not a raise.
+    lines.push(
+      `# (truncated at ${entries.length} of ${response.total} rows — narrow with role=<r>, or read entries with: pi-recall expand session=<file> idx=<n>)`,
+    );
   }
   return lines;
 };

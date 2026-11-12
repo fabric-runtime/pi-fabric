@@ -242,6 +242,20 @@ const outlineOutputSchema: Record<string, unknown> = {
       description: "Skeleton rows after the role filter; equals entries.length unless truncated.",
     },
     truncated: { type: "boolean" },
+    coverage: {
+      type: "object",
+      description:
+        "Present only when the resolved session's index coverage is incomplete: entries and total may describe a partial session.",
+      properties: {
+        complete: { type: "boolean" },
+        reasons: {
+          type: "array",
+          items: { type: "string" },
+          description: "Stable machine-readable incompleteness codes; empty when complete is true.",
+        },
+      },
+      required: ["complete", "reasons"],
+    },
     entries: {
       type: "array",
       items: {
@@ -310,23 +324,6 @@ const SOURCE_ARG_SCHEMA = {
     "Registered portable memory source id. When set, the call resolves against that source only — filesystem scopes are never consulted and there is no filesystem fallback.",
 } as const;
 
-// The closed set of normalized roles the session normalizer produces.
-const MEMORY_ROLE_VALUES = [
-  "assistant",
-  "bashExecution",
-  "branchCustomMessage",
-  "branchSummary",
-  "branchUser",
-  "compaction",
-  "compactionSummary",
-  "custom",
-  "fabricOperation",
-  "fabricPhase",
-  "fabricRun",
-  "toolResult",
-  "user",
-];
-
 export const memoryActionDescriptors: FabricActionDescriptor[] = [
   {
     name: "recall",
@@ -382,9 +379,8 @@ export const memoryActionDescriptors: FabricActionDescriptor[] = [
         },
         role: {
           type: "string",
-          enum: MEMORY_ROLE_VALUES,
           description:
-            "Exact normalized entry role to filter by: the closed set the session normalizer can produce.",
+            "Exact normalized entry role to filter by (e.g. user, assistant, toolResult). The normalizer keeps any nonempty message role, so other values are accepted.",
         },
         tool: { type: "string" },
         ref: {
@@ -451,9 +447,8 @@ export const memoryActionDescriptors: FabricActionDescriptor[] = [
         },
         role: {
           type: "string",
-          enum: MEMORY_ROLE_VALUES,
           description:
-            "Exact normalized entry role; filters the resolved selection before chunking and rides the continuation.",
+            "Exact normalized entry role (e.g. user, assistant, toolResult); filters the resolved selection before chunking and rides the continuation. Any nonempty role the normalizer keeps is accepted.",
         },
         indices: { type: "array", maxItems: EXPAND_MAX_EXACT_SELECTORS, items: { type: "number", minimum: 0 } },
         entryIds: { type: "array", maxItems: EXPAND_MAX_EXACT_SELECTORS, items: { type: "string", maxLength: 512 } },
@@ -537,15 +532,16 @@ export const memoryActionDescriptors: FabricActionDescriptor[] = [
         },
         role: {
           type: "string",
-          enum: MEMORY_ROLE_VALUES,
-          description: "Exact normalized entry role; filters the skeleton.",
+          description:
+            "Exact normalized entry role; filters the skeleton. Any nonempty role the normalizer keeps is accepted (e.g. user, assistant, toolResult, developer).",
         },
         maxEntries: {
           type: "number",
           minimum: 1,
           maximum: OUTLINE_MAX_ENTRIES,
           default: OUTLINE_MAX_ENTRIES,
-          description: "Maximum skeleton rows returned; total and truncated report the unfiltered size.",
+          description:
+            "Maximum skeleton rows returned; total and truncated describe the role-filtered rows before this cap, entryCount the unfiltered session.",
         },
       },
       required: ["session"],

@@ -80,6 +80,15 @@ describe("outline argv parsing", () => {
     expect(() => parseOutlineArgv(["session="])).toThrow(/outline session= is empty/);
     expect(() => parseOutlineArgv([`session=${sessionFile}`, "idx=1"])).toThrow(/unknown outline argument: idx/);
   });
+
+  test("a truncated table hints at supported recovery, not a maxEntries raise", () => {
+    const lines = renderOutline({ session: sessionFile, total: 400, truncated: true, entries: [] });
+    const hint = lines.at(-1)!;
+    expect(hint).toContain("truncated");
+    expect(hint).toContain("role=");
+    expect(hint).toContain("expand");
+    expect(hint).not.toContain("maxEntries");
+  });
 });
 
 describe("outline rendering and engine wiring", () => {
@@ -162,6 +171,38 @@ describe("bin/pi-recall outline", () => {
     const result = runBin("outline", "role=user");
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("outline needs session=");
+  });
+
+  test("--branches is forwarded to the outline call (json reports the mode)", () => {
+    const forwarded = runBin("outline", `session=${sessionFile}`, "--branches", "all", "--json");
+    expect(forwarded.code).toBe(0);
+    expect(JSON.parse(forwarded.stdout)).toMatchObject({ branches: "all" });
+
+    const defaultMode = runBin("outline", `session=${sessionFile}`, "--json");
+    expect(defaultMode.code).toBe(0);
+    expect(JSON.parse(defaultMode.stdout)).toMatchObject({ branches: "active" });
+  });
+
+  test("flags the outline call does not support are rejected loudly", () => {
+    const result = runBin("outline", `session=${sessionFile}`, "--limit", "5");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("outline does not support --limit");
+  });
+
+  test("an ambiguous session id is reported with its candidates, not outlined silently", () => {
+    const sid = "00000000-0000-0000-0000-0000000000dd";
+    const twinDir = path.join(agentDir, "sessions", "--tmp-recall-twin--");
+    mkdirSync(twinDir, { recursive: true });
+    writeFileSync(path.join(twinDir, `2026-11-11T01-00-00-000Z_${sid}.jsonl`), "{}");
+    try {
+      const result = runBin("outline", `session=${sid}`);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("ambiguous");
+      expect(result.stderr).toContain("--tmp-recall-proj--");
+      expect(result.stderr).toContain("--tmp-recall-twin--");
+    } finally {
+      rmSync(twinDir, { recursive: true, force: true });
+    }
   });
 });
 
