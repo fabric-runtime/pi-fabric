@@ -154,6 +154,31 @@ const nativeMcpServersValue = (value: unknown): string[] => {
   return [...new Set(value.map((name: string) => name.trim()))];
 };
 
+const MAX_LAUNCH_WRAPPER_ENTRIES = 32;
+
+/**
+ * Parse `agents.launchWrapper`. Absent stays absent; any other invalid value
+ * is a hard config error, because a dropped sandbox setting would run every
+ * child unsandboxed. The first entry is the wrapper executable: an absolute
+ * path without "=", so `env NAME=value <wrapper>` cannot read it as a variable.
+ */
+export const launchWrapperValue = (value: unknown): string[] | undefined => {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) || value.length === 0 || value.length > MAX_LAUNCH_WRAPPER_ENTRIES ||
+    value.some((entry) => typeof entry !== "string" || entry.length === 0 || entry.includes("\0"))
+  ) {
+    throw new Error(
+      `Invalid agents.launchWrapper: expected an array of 1-${MAX_LAUNCH_WRAPPER_ENTRIES} non-empty strings`,
+    );
+  }
+  const [executable] = value as string[];
+  if (!path.isAbsolute(executable!) || executable!.includes("=")) {
+    throw new Error("Invalid agents.launchWrapper: the first entry must be an absolute path to the wrapper executable, without \"=\"");
+  }
+  return [...(value as string[])];
+};
+
 export interface FabricMcpConfig {
   enabled: boolean;
   /** Opt-in exact server names owned by Pi, never mcporter fallback targets. */
@@ -251,6 +276,8 @@ export interface FabricAgentConfig {
   childQuestionTimeoutMs?: number;
   /** Tools a routed Pi child gets for asking questions; absent means ["ask"], [] grants none. */
   childQuestionTools?: string[];
+  /** Argv prefix every Fabric worker process launch runs under, such as an OS sandbox command. */
+  launchWrapper?: string[];
 }
 
 export interface FabricToolCaptureConfig {
@@ -1032,6 +1059,7 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
   const vedaModel = stringValue(veda.model);
   const vedaPersona = stringValue(veda.persona);
   const agentThinking = thinkingValue(agents.thinking, DEFAULT_FABRIC_CONFIG.agents.thinking);
+  const launchWrapper = launchWrapperValue(agents.launchWrapper);
   const configuredComponents: FabricComponentEntry[] = Array.isArray(input.components)
     ? input.components.flatMap((raw) => {
         const componentEntry = objectValue(raw);
@@ -1346,6 +1374,7 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
           return name && name !== "fabric_exec" && !/^[+-]/.test(name) && !name.includes("*") ? [name] : [];
         }))],
       } : {}),
+      ...(launchWrapper ? { launchWrapper } : {}),
     },
     jev: normalizeJevConfig(input.jev),
     components: configuredComponents.map((entry) => structuredClone(entry)),
@@ -1902,6 +1931,7 @@ export const saveFabricConfig = (
   nativeMcpServersValue(objectValue(merged.mcp).nativeServers);
   approvalActionOverridesValue(objectValue(merged.approvals).actions);
   foregroundConfigValue(merged.foreground);
+  launchWrapperValue(objectValue(merged.agents).launchWrapper);
   // Never stamp down: preserve version markers written by newer builds.
   merged.configVersion = Math.max(
     typeof merged.configVersion === "number" ? merged.configVersion : 0,

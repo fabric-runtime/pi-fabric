@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import type { AgentTransportAdapter, AgentTransportHandle, AgentTransportLaunch } from "../types.js";
 import { EXTERNAL_TRANSPORT_LIVENESS_POLL_INTERVAL_MS } from "../constants.js";
-import { scriptSpawnArgs } from "./process-utils.js";
+import { environmentLaunchArgv, launchWrapped } from "./process-utils.js";
 import { herdrCoreSocketRequest, HerdrCoreRpcError } from "./herdr-core-socket.js";
 
 const missing = (error: unknown): boolean => error instanceof HerdrCoreRpcError && error.kind === "not_found";
@@ -32,33 +32,17 @@ export class HerdrCoreTransport implements AgentTransportAdapter {
     } catch { return false; }
   }
 
-  async launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+  launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+    return launchWrapped(this.kind, request, () => this.#launch(request));
+  }
+
+  async #launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
     const caller = this.environment.HC_TERMINAL_ID;
     if (!caller) throw new Error("Herdr Core transport requires HC_TERMINAL_ID");
-    const argv = await scriptSpawnArgs(request.workerPath, request.workerArguments);
     // The core has its own PATH and templates. Resolve a bare runtime on the host
-    // so argv[0] cannot accidentally select a template or a different executable.
-    if (!path.isAbsolute(argv[0]!)) {
-      const names = process.platform === "win32" && !path.extname(argv[0]!)
-        ? [argv[0]!, ...(this.environment.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").map((ext) => argv[0]! + ext)]
-        : [argv[0]!];
-      let resolved: string | undefined;
-      for (const directory of (this.environment.PATH ?? "").split(path.delimiter).filter(Boolean)) {
-        for (const name of names) {
-          const candidate = path.resolve(directory.replace(/^"|"$/g, ""), name);
-          try {
-            if ((await fs.stat(candidate)).isFile()) {
-              await fs.access(candidate, process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK);
-              resolved = candidate;
-              break;
-            }
-          } catch { /* Try the next PATH entry. */ }
-        }
-        if (resolved) break;
-      }
-      if (!resolved) throw new Error("Herdr Core could not resolve an absolute worker runtime");
-      argv[0] = resolved;
-    }
+    // so it cannot accidentally select a template or a different executable;
+    // a launch wrapper's own first entry is already absolute.
+    const argv = await environmentLaunchArgv(request, (runtime) => this.#absoluteRuntime(runtime));
     const prefix = request.name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 7) || "agent";
     const child = terminal(await this.#request("terminal.run", {
       argv, cwd: request.cwd, name: `${prefix}-${randomUUID().replaceAll("-", "").slice(0, 24)}`,
@@ -85,6 +69,25 @@ export class HerdrCoreTransport implements AgentTransportAdapter {
         catch (error) { if (!missing(error)) throw error; }
       },
     };
+  }
+
+  async #absoluteRuntime(runtime: string): Promise<string> {
+    if (path.isAbsolute(runtime)) return runtime;
+    const names = process.platform === "win32" && !path.extname(runtime)
+      ? [runtime, ...(this.environment.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").map((ext) => runtime + ext)]
+      : [runtime];
+    for (const directory of (this.environment.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+      for (const name of names) {
+        const candidate = path.resolve(directory.replace(/^"|"$/g, ""), name);
+        try {
+          if ((await fs.stat(candidate)).isFile()) {
+            await fs.access(candidate, process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK);
+            return candidate;
+          }
+        } catch { /* Try the next PATH entry. */ }
+      }
+    }
+    throw new Error("Herdr Core could not resolve an absolute worker runtime");
   }
 
   #request(method: string, params: Record<string, unknown>): Promise<unknown> {

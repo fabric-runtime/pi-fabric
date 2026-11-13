@@ -13,6 +13,7 @@ import type { FabricThinking, FabricThinkingBounds } from "../thinking.js";
 import type { FabricParticipantResidency } from "../topology/types.js";
 import type { InheritedSessionPin } from "./session-pins.js";
 import type { AgentWorktreeResult } from "./worktree-manager.js";
+import type { FabricWritePolicy } from "./write-guard.js";
 
 /** Fabric run transports plus adapter-owned ("hosted") runs. */
 export type AgentRunTransport = FabricAgentTransport | "hosted";
@@ -355,12 +356,25 @@ export interface AgentRunCarryOver {
   usage: AgentUsage;
 }
 
+/** `agents.launchWrapper` for one launch, with the run facts the wrapper receives. */
+export interface AgentLaunchWrapper {
+  /** Argv prefix; the transport runs `[...argv, runtime, workerPath, ...workerArguments]`. */
+  argv: string[];
+  /** The run directory holding the status, lifecycle, log and steer files. */
+  runDirectory: string;
+  /** Effective write policy; present only for a confined run. */
+  writePolicy?: FabricWritePolicy;
+  /** Recursion depth of the child being launched (the root is 0). */
+  depth: number;
+}
+
 export interface AgentTransportLaunch {
   id: string;
   name: string;
   cwd: string;
   workerPath: string;
   workerArguments: string[];
+  launchWrapper?: AgentLaunchWrapper;
 }
 
 export interface AgentTransportHandle {

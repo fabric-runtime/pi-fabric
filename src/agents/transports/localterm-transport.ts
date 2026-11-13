@@ -7,8 +7,9 @@ import { EXTERNAL_TRANSPORT_LIVENESS_POLL_INTERVAL_MS } from "../constants.js";
 import {
   commandAvailable,
   executeFile,
+  launchCommand,
+  launchWrapped,
   processIsAlive,
-  workerCommand,
 } from "./process-utils.js";
 
 interface LocaltermSession {
@@ -29,8 +30,12 @@ export class LocaltermTransport implements AgentTransportAdapter {
     }
   }
 
-  async launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
-    const command = `${await workerCommand(request.workerPath, request.workerArguments)}; exit $?`;
+  launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+    return launchWrapped(this.kind, request, () => this.#launch(request));
+  }
+
+  async #launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+    const command = `${await launchCommand(request)}; exit $?`;
     const { stdout } = await executeFile("localterm", [
       "session",
       "new",
