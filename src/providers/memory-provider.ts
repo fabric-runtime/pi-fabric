@@ -18,11 +18,13 @@ import {
   EXPAND_MAX_ENTRIES,
   EXPAND_MAX_CONTEXT,
   EXPAND_MAX_EXACT_SELECTORS,
+  OUTLINE_MAX_ENTRIES,
 } from "../memory/request-limits.js";
 import { recallFailure, type MemoryProviderContext } from "../memory/request-context.js";
 import { MemoryRequestCache } from "../memory/request-cache.js";
 import { processMemoryRecall } from "../memory/recall-service.js";
 import { processMemoryExpand } from "../memory/expand-service.js";
+import { processMemoryOutline } from "../memory/outline-service.js";
 import { processMemorySessions } from "../memory/sessions-service.js";
 import { actionArgNormalizer, type ArgNormalizationSpec } from "./arg-normalization.js";
 
@@ -223,6 +225,63 @@ const expandOutputSchema: Record<string, unknown> = {
   required: ["entries"],
 };
 
+const outlineOutputSchema: Record<string, unknown> = {
+  type: "object",
+  description: "Ordered entry skeleton: one bounded row per entry — the map before expand.",
+  properties: {
+    session: { type: "string" },
+    sourceHash: { type: "string" },
+    branches: { type: "string", enum: ["active", "all"] },
+    lineageFingerprint: { type: "string" },
+    entryCount: {
+      type: "number",
+      description: "Entries in the resolved session, before any role filter.",
+    },
+    total: {
+      type: "number",
+      description: "Skeleton rows after the role filter; equals entries.length unless truncated.",
+    },
+    truncated: { type: "boolean" },
+    coverage: {
+      type: "object",
+      description:
+        "Present only when the resolved session's index coverage is incomplete: entries and total may describe a partial session.",
+      properties: {
+        complete: { type: "boolean" },
+        reasons: {
+          type: "array",
+          items: { type: "string" },
+          description: "Stable machine-readable incompleteness codes; empty when complete is true.",
+        },
+      },
+      required: ["complete", "reasons"],
+    },
+    entries: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "number" },
+          type: { type: "string" },
+          role: { type: "string" },
+          tool: { type: "string" },
+          preview: {
+            type: "string",
+            description: "First line of the entry text, whitespace-collapsed, bounded to 120 characters.",
+          },
+          size: {
+            type: "number",
+            description: "Rendered entry-text length; the size memory.expand returns for this index.",
+          },
+        },
+        required: ["index", "type", "preview", "size"],
+      },
+    },
+    error: errorOutputSchema,
+  },
+  required: ["entries"],
+};
+
 const sessionsOutputSchema: Record<string, unknown> = {
   type: "object",
   properties: {
@@ -320,23 +379,8 @@ export const memoryActionDescriptors: FabricActionDescriptor[] = [
         },
         role: {
           type: "string",
-          enum: [
-            "assistant",
-            "bashExecution",
-            "branchCustomMessage",
-            "branchSummary",
-            "branchUser",
-            "compaction",
-            "compactionSummary",
-            "custom",
-            "fabricOperation",
-            "fabricPhase",
-            "fabricRun",
-            "toolResult",
-            "user",
-          ],
           description:
-            "Exact normalized entry role to filter by: the closed set the session normalizer can produce.",
+            "Exact normalized entry role to filter by (e.g. user, assistant, toolResult). The normalizer keeps any nonempty message role, so other values are accepted.",
         },
         tool: { type: "string" },
         ref: {
@@ -401,6 +445,11 @@ export const memoryActionDescriptors: FabricActionDescriptor[] = [
           enum: ["active", "all"],
           description: "Expand on the active parent-linked path (default) or across every branch.",
         },
+        role: {
+          type: "string",
+          description:
+            "Exact normalized entry role (e.g. user, assistant, toolResult); filters the resolved selection before chunking and rides the continuation. Any nonempty role the normalizer keeps is accepted.",
+        },
         indices: { type: "array", maxItems: EXPAND_MAX_EXACT_SELECTORS, items: { type: "number", minimum: 0 } },
         entryIds: { type: "array", maxItems: EXPAND_MAX_EXACT_SELECTORS, items: { type: "string", maxLength: 512 } },
         operationAddresses: { type: "array", maxItems: EXPAND_MAX_EXACT_SELECTORS, items: { type: "string", maxLength: 512 } },
@@ -456,6 +505,49 @@ export const memoryActionDescriptors: FabricActionDescriptor[] = [
       additionalProperties: false,
     },
     outputSchema: expandOutputSchema,
+    risk: "read",
+    namespace: "memory",
+  },
+  {
+    name: "outline",
+    description:
+      "Ordered entry skeleton for one resolved session: per entry — index, type, role, tool, a bounded one-line preview, and the rendered size. The map before expand reads the territory.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source: SOURCE_ARG_SCHEMA,
+        session: { type: "string", description: "Exact session file path, unambiguous id, or source session key." },
+        expectedSourceHash: {
+          type: "string",
+          description: "SHA-256 from a prior pointer; stale sources are refused.",
+        },
+        expectedLineageFingerprint: {
+          type: "string",
+          description: "Active-lineage fingerprint from a prior pointer; changed leaves are refused.",
+        },
+        branches: {
+          type: "string",
+          enum: ["active", "all"],
+          description: "Outline the active parent-linked path (default) or every branch.",
+        },
+        role: {
+          type: "string",
+          description:
+            "Exact normalized entry role; filters the skeleton. Any nonempty role the normalizer keeps is accepted (e.g. user, assistant, toolResult, developer).",
+        },
+        maxEntries: {
+          type: "number",
+          minimum: 1,
+          maximum: OUTLINE_MAX_ENTRIES,
+          default: OUTLINE_MAX_ENTRIES,
+          description:
+            "Maximum skeleton rows returned; total and truncated describe the role-filtered rows before this cap, entryCount the unfiltered session.",
+        },
+      },
+      required: ["session"],
+      additionalProperties: false,
+    },
+    outputSchema: outlineOutputSchema,
     risk: "read",
     namespace: "memory",
   },
@@ -520,6 +612,7 @@ export type { MemoryProviderContext } from "../memory/request-context.js";
 export const memoryActionSchemas: {
   recall: { inputSchema: object; outputSchema: object };
   expand: { inputSchema: object; outputSchema: object };
+  outline: { inputSchema: object; outputSchema: object };
   sessions: { inputSchema: object; outputSchema: object };
 } = Object.fromEntries(
   descriptors.map((descriptor) => [
@@ -529,6 +622,7 @@ export const memoryActionSchemas: {
 ) as {
   recall: { inputSchema: object; outputSchema: object };
   expand: { inputSchema: object; outputSchema: object };
+  outline: { inputSchema: object; outputSchema: object };
   sessions: { inputSchema: object; outputSchema: object };
 };
 
@@ -581,6 +675,8 @@ export class MemoryProvider implements FabricProvider {
           return await processMemoryRecall(args, invocationContext, context, this.cache);
         case "expand":
           return await processMemoryExpand(args, context, this.cache, invocationContext.signal);
+        case "outline":
+          return await processMemoryOutline(args, context, this.cache, invocationContext.signal);
         case "sessions":
           return await processMemorySessions(args, context, invocationContext.signal);
         default:
@@ -596,6 +692,7 @@ export class MemoryProvider implements FabricProvider {
         };
         if (actionName === "recall") return recallFailure(detail);
         if (actionName === "expand") return { entries: [], next: null, error: detail };
+        if (actionName === "outline") return { entries: [], error: detail };
         return { error: detail };
       }
       throw error;
