@@ -598,6 +598,30 @@ The child Pi process enforces the policy. The worker passes it as `PI_FABRIC_WRI
 
 Confinement is inherited and only narrows. A confined agent's own children inherit its policy when they request none; an explicit request must keep `readOnly`, cannot switch to `shell: "unconfined"`, and must name roots inside the caller's roots. Claude and Veda runners fail before launch under any policy because Fabric cannot enforce it there. A confined agent cannot start durable agents or actors, since the shared resident host does not inherit its confinement.
 
+### Launch wrapper
+
+Set `agents.launchWrapper` in [configuration](configuration.md#agents) to an argv prefix, and every Fabric worker process starts under it, for example an OS sandbox such as `nono` or `bwrap`. Fabric runs `[...launchWrapper, runtime, worker, ...workerArguments]` in the child's cwd on every transport (`process`, `tmux`, `screen`, `localterm`, `herdr`, `herdr-core`). Only the process is confined: the child keeps its runner, skills, model inheritance, exact model match and seeds, which a custom runner would lose.
+
+```json
+{ "agents": { "launchWrapper": ["/usr/local/bin/fabric-sandbox", "--"] } }
+```
+
+The wrapper receives these environment variables, so it can choose grants without parsing worker arguments:
+
+| Variable | Contents |
+| --- | --- |
+| `PI_FABRIC_LAUNCH_RUN_ID` | The run id. |
+| `PI_FABRIC_LAUNCH_CWD` | The child's cwd, including a generated worktree. |
+| `PI_FABRIC_LAUNCH_RUN_DIRECTORY` | The run directory, which holds the status, lifecycle, log and steer files the worker writes. |
+| `PI_FABRIC_LAUNCH_WRITE_POLICY` | JSON `{ readOnly, writableRoots, shell }`, the effective [write policy](#write-confinement). Present only for a confined run. |
+| `PI_FABRIC_LAUNCH_DEPTH` | Recursion depth of the child (the root is 0). |
+
+The terminal transports set them through `/usr/bin/env`, with each value passed as one argument, so on Windows only the `process` transport supports a wrapper.
+
+The wrapper composes with write confinement: the policy still applies inside the child, and the wrapper can mirror it at the OS level from `PI_FABRIC_LAUNCH_WRITE_POLICY`. A child that starts its own children re-runs the wrapper for each, because it reads the same configuration. A wrapper should detect that it already runs inside its sandbox and exec the rest of its argv directly.
+
+A wrapper that is not an executable file, or that exits before the worker writes a record, fails the run with an error that names the wrapper, after the usual bounded startup retries. The `process` transport also reports the wrapper's exit code and stderr. Durable residency (`residency: "durable"` agents and actors) is refused while the setting is on, because the shared resident host would run outside the wrapper. The refusal follows the live configuration, so a `/fabric reload` that adds the setting refuses the next durable spawn or actor without a restart.
+
 ### Scope narrowing
 
 In a session with a host-issued [principal and scope](providers.md#principal-and-scope), every child inherits that scope. `agents.run()` and `agents.spawn()` accept `scope: { grants: [{ resource, actions }] }` to narrow it: each grant must be covered by one parent grant, or the launch fails before admission. The principal always stays the parent's. An unscoped session refuses `scope`. Durable spawns and actors keep the scope: the session sends it to the resident host with the request, so the durable child launches with the same scope it would get locally.
