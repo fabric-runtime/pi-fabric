@@ -35,6 +35,8 @@ const USAGE = [
   "recall only:",
   "  --phrase | --regex    query mode (default: literal terms)",
   "  --all                 require every term in one hot entry",
+  "  --source <id>         source-qualified recall over a configured fabric.json",
+  "                        fs source (memory.sources)",
   "expand keys: id= session= idx= offset= textOffset= maxChars= branches= role=",
   "             expectedSourceHash= expectedLineageFingerprint=",
   "outline keys: session= role= branches=   flags: --branches <b> --json",
@@ -104,6 +106,15 @@ const parseFlags = (input: string[], usage: string): ParsedFlags => {
       case "--all":
         args.queryMatch = "all";
         break;
+      case "--source": {
+        // Match the argv path's rejection (recall.ts: `recall source= is empty`):
+        // an empty operand would drop out at the service and silently answer
+        // from the filesystem scopes — wrong corpus with a green exit.
+        const source = operandValue();
+        if (source === "") throw new Error("recall source= is empty");
+        args.source = source;
+        break;
+      }
       case "-h":
       case "--help":
         console.log(usage);
@@ -125,7 +136,10 @@ try {
       console.error(USAGE);
       process.exit(2);
     }
-    if (args.scope === undefined) args.scope = "global";
+    // Global default only for filesystem-scope recall; a source-qualified
+    // call must omit scope (the service derives scope from the selected
+    // source) or name that source/session explicitly.
+    if (args.source === undefined && args.scope === undefined) args.scope = "global";
     const response = await runRecall(args, buildCliContext());
     const rendered = renderRecall(response);
     for (const line of rendered.lines) console.log(line);

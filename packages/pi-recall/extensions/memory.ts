@@ -79,12 +79,20 @@ const ENTRY_RANGE_PARAM = Type.Optional(
 // One cache per session, mirroring the engine's per-provider MemoryRequestCache.
 const cache = new MemoryRequestCache();
 
+// Read-only fabric.json layer locations (agent-dir plan first, project
+// .pi/fabric.json second — resolveFabricConfig ordering). One shared object
+// keeps the added load cost to a single stat+read per file; no eager imports
+// beyond the node:fs builtins the config module already carries.
+const memoryConfigFiles = { agentDir: resolveAgentDir(), cwd: process.cwd() };
+
 // Registry behind the tools' source= parameter: configured fs sources are
 // seeded at load, and embedding hosts can register further portable sources
 // through registerMemorySource. Without it on the context, every
 // source-qualified call failed to resolve its source by construction.
 const memorySources = createMemorySourceRegistry();
-const configuredSources = createConfiguredMemorySourceRegistry(resolveMemoryConfig().sources ?? []);
+const configuredSources = createConfiguredMemorySourceRegistry(
+  resolveMemoryConfig({}, memoryConfigFiles).sources ?? [],
+);
 for (const id of configuredSources.ids()) {
   const source = configuredSources.get(id);
   if (source !== undefined) memorySources.register(source);
@@ -103,9 +111,9 @@ interface SessionManagerLike {
 
 const buildContext = (sessionManager: SessionManagerLike | undefined): MemoryProviderContext => {
   const context: MemoryProviderContext = {
-    agentDir: resolveAgentDir(),
-    cwd: process.cwd(),
-    config: resolveMemoryConfig(),
+    agentDir: memoryConfigFiles.agentDir,
+    cwd: memoryConfigFiles.cwd,
+    config: resolveMemoryConfig({}, memoryConfigFiles),
     sources: memorySources,
   };
   const sessionId = sessionManager?.getSessionId?.();

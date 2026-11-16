@@ -51,6 +51,42 @@ Agent tree: `~/.pi/agent` (`PI_CODING_AGENT_DIR` honored). Index location:
 `${agentDir}/fabric/memory-index` (`PI_RECALL_INDEX_DIR` honored — point
 index **writes** at an isolated tree; never at a live index you don't own).
 
+## Configuration (fabric.json memory section)
+
+The memory config resolves read-only from the `memory` section of
+`fabric.json`, mirroring the engine's `resolveFabricConfig` ordering (later
+wins):
+
+1. built-in defaults;
+2. `memory` section of `${agentDir}/fabric.json`;
+3. `memory` section of `${cwd}/.pi/fabric.json`, deep-merged field-wise on top;
+4. `PI_RECALL_INDEX_DIR` (write-path override, unchanged);
+5. explicit overrides passed programmatically (tests / embedding hosts).
+
+A missing or unparseable file at either location is skipped silently and only
+the `memory` section is ever consulted — the layer never writes, migrates, or
+validates the rest of the file, and unknown keys inside `memory` are ignored.
+Wrong-typed scalars stay at their defaults (integer budgets clamp to the
+engine's bounds). One exception is strict, ported from the engine: a present
+`memory.sources` array with a malformed entry is a hard error
+(`Invalid memory.sources[i]: …` for a bad id charset, a kind other than
+`"fs"`, a non-absolute `root`, or a duplicate id) — a silently dropped source
+would otherwise surface only as a confusing `source_not_found` at call time.
+
+    {
+      "memory": {
+        "sources": [
+          { "id": "laptop", "kind": "fs", "root": "/mnt/archive/sessions" }
+        ],
+        "maxSessions": 42
+      }
+    }
+
+Configured sources are seeded into the CLI context and the pi extension at
+load; source-qualified recall works without any env var:
+
+    pi-recall recall --source laptop 'shell contour'
+
 ## pi extension
 
 `pi.extensions: ["./extensions/memory.ts"]` registers tools
