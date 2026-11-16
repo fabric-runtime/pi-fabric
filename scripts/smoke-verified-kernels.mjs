@@ -19,7 +19,7 @@ import { speculationAdmission, speculationCheck, speculationAccounting } from ".
 await assert.rejects(import("pi-fabric/verified/cell-provider"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 await assert.rejects(import("pi-fabric/verified/goal-provider"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 const root = new URL("../", import.meta.url);
-const stems = ["policy", "compaction", "resources", "lifecycle", "storage", "provider", "authority", "grants", "speculation", "budget", "execution", "prompt-guidance"];
+const stems = ["policy", "compaction", "context", "resources", "lifecycle", "storage", "provider", "authority", "grants", "speculation", "budget", "execution", "prompt-guidance"];
 for (const file of [...stems.flatMap((stem) => [`${stem}.js`, `${stem}.d.ts`]), "manifest.json"]) {
   assert.equal(readFileSync(new URL(`src/verified/generated/${file}`, root), "utf8"), readFileSync(new URL(`dist/verified/generated/${file}`, root), "utf8"));
 }

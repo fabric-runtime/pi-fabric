@@ -4,7 +4,8 @@ import { project } from "../src/compaction/projections.js";
 import { renderSummaryWithMetadata, SUMMARY_SECTIONS } from "../src/compaction/render.js";
 
 const options = { firstEntryId: "first", lastEntryId: "last", lastTimestamp: "time" };
-const historyKeys = ["goal", "files", "activity", "outstanding", "earlierTurns", "status", "transcript"] as const;
+// Earlier user messages are a protected block now; the operational sections share what remains.
+const historyKeys = ["files", "activity", "outstanding", "earlierTurns", "status", "transcript"] as const;
 
 const history = (saturated = false) => {
   const sections = project([]);
@@ -14,17 +15,19 @@ const history = (saturated = false) => {
       : key === "activity" || key === "status" ? 16 : 20;
     sections[key] = Array.from({ length: count }, (_, i) => `${key}-${i}: ${saturated ? "界🦊".repeat(30) : "x".repeat(75)} [entry ${key}-${i}]`);
   }
+  // At most 64 earlier user messages reach the renderer (MAX_EARLIER_USERS).
+  sections.goal = Array.from({ length: saturated ? 64 : 4 }, (_, i) => `User [entry u${i}]:\nGOAL_${i} ${saturated ? "界🦊".repeat(30) : "x".repeat(75)}`);
   return sections;
 };
 
-const historyText = (summary: string) => summary.slice(summary.indexOf("[Historical requests]"));
+const historyText = (summary: string) => summary.slice(summary.indexOf("[Files And Changes]"));
 
 describe("demand-based compaction rendering", () => {
   it.each([0, 200, 3954])("preserves historical detail when dialogue uses %i bytes", (size) => {
     const sections = history();
     if (size) sections.dialogue = ["d".repeat(size)];
     const result = renderSummaryWithMetadata(sections, { ...options, requestLines: ["Keep the agreed boundary."] });
-    for (const key of historyKeys) {
+    for (const key of [...historyKeys, "goal"] as const) {
       for (const line of sections[key]) expect(result.summary).toContain(line);
     }
     expect(result.summary).not.toContain("omitted");
@@ -34,7 +37,7 @@ describe("demand-based compaction rendering", () => {
   });
 
   it("only reduces historical blocks when actual protected content causes pressure", () => {
-    const sections = history(true);
+    const sections = { ...history(true), goal: history().goal };
     const without = renderSummaryWithMetadata(sections, options);
     sections.dialogue = ["d".repeat(3000)];
     const small = renderSummaryWithMetadata(sections, options);
@@ -58,6 +61,8 @@ describe("demand-based compaction rendering", () => {
     const result = renderSummaryWithMetadata(sections, renderOptions);
     for (let i = 0; i < 3; i++) expect(result.summary).toContain(`EXCHANGE_${i}`);
     for (let i = 0; i < 6; i++) expect(result.summary).toContain(`PIN_${i}`);
+    // Every earlier user message keeps its address and opening words under maximum pressure.
+    for (let i = 0; i < 64; i++) expect(result.summary).toContain(`User [entry u${i}]:\nGOAL_${i}`);
     for (const { header } of SUMMARY_SECTIONS) expect(result.summary).toContain(`${header}\n`);
     expect(result.summary).toContain(sections.status[0]);
     expect(result.summary).toContain(summaryKind === "branch" ? "[branch summarized time; structural source entries first → last]" : "[compacted time; cumulative source entries first → last]");

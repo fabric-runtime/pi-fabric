@@ -2,9 +2,11 @@ import { clipUtf8, sampleAddressed } from "./bounds.js";
 import { firstLine, type CompactionEvent, type ToolCallEvent } from "./normalize.js";
 import { dialogueExcerpts, recentDialogue } from "./dialogue.js";
 import {
+  earlierUserItem,
   MAX_EARLIER_TURNS,
   MAX_FILES_PER_KIND,
   MAX_UNRESOLVED,
+  type ProjectionOptions,
 } from "./projections.js";
 
 type ProbeClass = "content" | "address";
@@ -110,7 +112,7 @@ const score = (probes: Probe[], failures: ProbeFailure[]): number =>
 // Generate reconstruction questions from ground-truth events only. cutIndex is
 // the exclusive array boundary (and therefore matches the 1-based index of the
 // final included normalized event). No projection or rendered section is read.
-export const generateProbes = (events: CompactionEvent[], cutIndex: number): Probe[] => {
+export const generateProbes = (events: CompactionEvent[], cutIndex: number, options: ProjectionOptions = {}): Probe[] => {
   const source = eventWindow(events, cutIndex);
   const probes: Probe[] = [];
   const users = source.filter(
@@ -135,8 +137,8 @@ export const generateProbes = (events: CompactionEvent[], cutIndex: number): Pro
     probes.push({
       id: "historical-goal",
       class: "content",
-      question: "What original request remains historical evidence?",
-      answer: truncate(firstLine(firstUser.text), 120),
+      question: "What original request remains verbatim?",
+      answer: earlierUserItem(firstUser),
     });
   }
 
@@ -181,12 +183,26 @@ export const generateProbes = (events: CompactionEvent[], cutIndex: number): Pro
   for (const event of source) {
     if (event.kind === "toolCall") calls.set(event.toolCallId, event);
   }
-  const sampledErrors = sampleAddressed(unresolvedErrors(source), MAX_UNRESOLVED);
-  for (const event of sampledErrors.values) {
+  // Mirrors the failure ledger independently: open failures after the previous
+  // compaction are itemized newest first, aged ones fill the remaining room, and
+  // the rest keep an address range. Tool results are addressed by their call entry.
+  const addressOf = (event: Extract<CompactionEvent, { kind: "toolResult" | "bash" }>): string =>
+    event.kind === "toolResult" ? (calls.get(event.toolCallId)?.entryId ?? event.entryId) : event.entryId;
+  const fresh = options.freshEntryIds;
+  const open = unresolvedErrors(source);
+  const freshOpen = open.filter((event) => fresh === undefined || fresh.has(addressOf(event)));
+  const agedOpen = open.filter((event) => fresh !== undefined && !fresh.has(addressOf(event)));
+  const freshItemized = freshOpen.slice(-MAX_UNRESOLVED);
+  const olderFresh = freshOpen.slice(0, Math.max(0, freshOpen.length - MAX_UNRESOLVED));
+  const agedRoom = olderFresh.length > 0 ? 0 : MAX_UNRESOLVED - freshItemized.length;
+  const agedItemized = agedRoom > 0 ? agedOpen.slice(-agedRoom) : [];
+  const agedLeft = agedOpen.slice(0, agedOpen.length - agedItemized.length);
+  for (const event of [...agedItemized, ...freshItemized]) {
     if (event.kind === "toolResult") {
       const call = event.toolCallId ? calls.get(event.toolCallId) : undefined;
       const path = call ? pathOf(call.args) : undefined;
-      const signature = truncate(firstLine(event.text), MAX_ERROR_SIGNATURE);
+      const error = event.toolName === "fabric_exec" ? event.error : event.text;
+      const signature = error ? truncate(firstLine(error), MAX_ERROR_SIGNATURE) : "failed";
       probes.push({
         id: `unresolved-error:${event.index}`,
         class: "content",
@@ -204,12 +220,13 @@ export const generateProbes = (events: CompactionEvent[], cutIndex: number): Pro
       });
     }
   }
-  if (sampledErrors.omitted > 0) {
+  for (const [kind, group] of [["older", olderFresh], ["aged", agedLeft]] as const) {
+    if (group.length === 0) continue;
     probes.push({
-      id: `unresolved-error-omission:${sampledErrors.omittedFirstEntryId}`,
+      id: `unresolved-error-${kind}:${addressOf(group[0]!)}`,
       class: "address",
-      question: `Which source range addresses ${sampledErrors.omitted} omitted open errors?`,
-      answer: `source entries ${sampledErrors.omittedFirstEntryId} → ${sampledErrors.omittedLastEntryId}`,
+      question: `Which source range addresses ${group.length} ${kind} open errors?`,
+      answer: `source entries ${addressOf(group[0]!)} → ${addressOf(group.at(-1)!)}`,
     });
   }
 
@@ -305,8 +322,13 @@ export const checkProbes = (summaryText: string, probes: Probe[]): ProbeCheck =>
   return { passed, failed };
 };
 
-export const qaReport = (events: CompactionEvent[], cutIndex: number, summaryText: string): QaReport => {
-  const probes = generateProbes(events, cutIndex);
+export const qaReport = (
+  events: CompactionEvent[],
+  cutIndex: number,
+  summaryText: string,
+  options: ProjectionOptions = {},
+): QaReport => {
+  const probes = generateProbes(events, cutIndex, options);
   const { failed } = checkProbes(summaryText, probes);
   const content = probes.filter((probe) => probe.class === "content");
   const address = probes.filter((probe) => probe.class === "address");

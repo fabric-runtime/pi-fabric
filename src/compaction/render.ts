@@ -1,11 +1,14 @@
 import { boundedExcerpt, clipUtf8, MAX_SUMMARY_BYTES, utf8Bytes } from "./bounds.js";
 import type { Sections } from "./projections.js";
+import { allocateSummaryBytes } from "../verified/context.js";
 
 // These are per-block ceilings, not reservations. Historical blocks share
 // the space left by actual protected content inside the global ceiling.
+// The user's words lead, oldest first: earlier messages, then recent exchanges.
+// Both are protected blocks that take bytes before any operational section.
 export const SUMMARY_SECTIONS: { key: keyof Sections; header: string; maxBytes: number }[] = [
+  { key: "goal", header: "[Earlier user messages]", maxBytes: 8192 },
   { key: "dialogue", header: "[Recent user directions and discussion]", maxBytes: 12288 },
-  { key: "goal", header: "[Historical requests]", maxBytes: 4096 },
   { key: "files", header: "[Files And Changes]", maxBytes: 4608 },
   { key: "activity", header: "[Fabric Activity]", maxBytes: 2048 },
   { key: "outstanding", header: "[Outstanding Context]", maxBytes: 4608 },
@@ -14,6 +17,8 @@ export const SUMMARY_SECTIONS: { key: keyof Sections; header: string; maxBytes: 
 ];
 
 export const CARRY_FORWARD_HEADER = "[Carry Forward]";
+export const USER_ACTIVITY_HEADER = "[User activity]";
+const USER_ACTIVITY_MAX_BYTES = 512;
 
 const REQUEST_MAX_BYTES = 3072;
 const CARRY_MAX_BYTES = 3072;
@@ -30,6 +35,8 @@ export interface RenderOptions {
   /** Persistent carry-forward focus; rendered in every summary until cleared. */
   carryLines?: string[];
   summaryKind?: "compaction" | "branch";
+  /** How long the agent has worked since the latest user message; see userActivityLine. */
+  userActivity?: string;
 }
 
 const POINTER_LINE =
@@ -135,13 +142,22 @@ export const renderSummaryWithMetadata = (sections: Sections, options: RenderOpt
       carryOmittedBytes = rendered.omittedBytes;
     }
   };
+  if (options.userActivity) {
+    blocks.push(clipUtf8(`${USER_ACTIVITY_HEADER}\n${options.userActivity}`, USER_ACTIVITY_MAX_BYTES));
+  }
   for (const { key, header, maxBytes } of SUMMARY_SECTIONS) {
     const lines = sections[key];
-    if (key === "dialogue") {
+    if (key === "goal") {
       if (lines.length > 0) {
         const rendered = protectedBlock(header, lines, maxBytes);
         blocks.push(rendered.text);
-        dialogueOmittedBytes = rendered.omittedBytes;
+        dialogueOmittedBytes += rendered.omittedBytes;
+      }
+    } else if (key === "dialogue") {
+      if (lines.length > 0) {
+        const rendered = protectedBlock(header, lines, maxBytes);
+        blocks.push(rendered.text);
+        dialogueOmittedBytes += rendered.omittedBytes;
       }
       request();
     } else if (lines.length > 0) {
@@ -163,8 +179,12 @@ export const renderSummaryWithMetadata = (sections: Sections, options: RenderOpt
   const footerBlock = boundedBlock("---", [footer, POINTER_LINE], FOOTER_MAX_BYTES);
   // Count every separator plus the final newline before allocating history.
   const framingBytes = utf8Bytes(footerBlock) + 2 * (blocks.length + history.length) + 1;
+  // The verified allocation gives the user's protected blocks their bytes first;
+  // operational history receives only what remains.
   const protectedBytes = blocks.reduce((sum, block) => sum + utf8Bytes(block), 0);
-  blocks.push(...boundedHistory(history, MAX_SUMMARY_BYTES - framingBytes - protectedBytes), footerBlock);
+  const historyDemand = history.reduce((sum, block) => sum + utf8Bytes(boundedBlock(block.header, block.lines, block.maxBytes)), 0);
+  const allocation = allocateSummaryBytes(Math.max(0, MAX_SUMMARY_BYTES - framingBytes), protectedBytes, historyDemand);
+  blocks.push(...boundedHistory(history, allocation.operationBytes), footerBlock);
 
   const summary = `${blocks.join("\n\n")}\n`;
   return {

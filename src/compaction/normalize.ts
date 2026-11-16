@@ -60,6 +60,8 @@ interface ToolResultEvent extends EventBase {
   toolName: string;
   isError: boolean;
   text: string;
+  /** A failed `fabric_exec`'s typed `details.error`, when it has one. */
+  error?: string;
 }
 
 interface BashEvent extends EventBase {
@@ -184,6 +186,19 @@ const isTypedCustomContent = (content: unknown): boolean => {
     if (candidate.type === "text") return typeof candidate.text === "string";
     return candidate.type === "image";
   });
+};
+
+/**
+ * A visible top-level custom message whose typed `details.source` is exactly
+ * `"user"` carries the user's own words, delivered by an input extension (a
+ * steering queue, for example). It counts as a user message; any other custom
+ * message is background context, however it is worded.
+ */
+export const isUserSourcedCustomMessage = (entry: SessionEntry): boolean => {
+  if (!isPiCustomMessageEntry(entry) || entry.display !== true) return false;
+  const details = (entry as { details?: unknown }).details;
+  return details !== null && typeof details === "object" && !Array.isArray(details)
+    && (details as Record<string, unknown>).source === "user";
 };
 
 export const isPiCustomMessageEntry = (
@@ -344,6 +359,10 @@ export const normalizeEntries = (entries: SessionEntry[]): CompactionEvent[] => 
     if (entry.type === "custom_message") {
       try {
         if (!isPiCustomMessageEntry(entry)) continue;
+        if (isUserSourcedCustomMessage(entry)) {
+          push({ kind: "user", entryId: entry.id, sourceEntryId: entry.id, text: textOfContent(entry.content) });
+          continue;
+        }
         const details = customDetails(entry.details);
         push({
           kind: "customMessage",
@@ -415,7 +434,13 @@ export const normalizeEntries = (entries: SessionEntry[]): CompactionEvent[] => 
           ...(isError && text ? { error: text } : {}),
         });
       } else {
-        push({ kind: "toolResult", entryId, sourceEntryId: entryId, toolCallId, toolName, isError, text });
+        const typedError = toolName === "fabric_exec" && isError
+          ? (toolResult.details as { error?: unknown } | undefined)?.error
+          : undefined;
+        push({
+          kind: "toolResult", entryId, sourceEntryId: entryId, toolCallId, toolName, isError, text,
+          ...(typeof typedError === "string" && typedError ? { error: typedError } : {}),
+        });
       }
       if (toolName === "fabric_exec") {
         const nested = readFabricProjectionTrace(toolResult.details);

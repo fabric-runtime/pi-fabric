@@ -26,8 +26,9 @@ import {
   type ProjectionOmittedCounts,
   type Sections,
 } from "./projections.js";
-import { CARRY_FORWARD_HEADER, renderSummaryWithMetadata, SUMMARY_SECTIONS } from "./render.js";
+import { CARRY_FORWARD_HEADER, renderSummaryWithMetadata, SUMMARY_SECTIONS, USER_ACTIVITY_HEADER } from "./render.js";
 import { carryRequestLines, latestCarryItems } from "./carry.js";
+import { userActivity, userActivityLine } from "./user-activity.js";
 
 type CompactionEngine = "pi" | "fabric";
 
@@ -777,7 +778,13 @@ export const compileFabricSummary = (
         entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant")))
         .filter((event) => event.kind === "user" || event.kind === "assistantText")
     : [];
-  const projected = projectWithMetadata(source.events, retainedDialogue);
+  // Failures before the previous marker were itemized by that summary already.
+  const previousMarker = findLastCompaction(branchEntries)?.index;
+  const freshEntryIds = previousMarker === undefined
+    ? undefined
+    : new Set(branchEntries.slice(previousMarker + 1).map((entry) => entry.id));
+  const projected = projectWithMetadata(source.events, retainedDialogue, freshEntryIds ? { freshEntryIds } : {});
+  const activity = userActivity(branchEntries);
   const sections: Sections = projected.sections;
   runEnrichers(enrichers, source.events, sections);
 
@@ -788,6 +795,7 @@ export const compileFabricSummary = (
     lastTimestamp: source.timestamp,
     requestLines: instructions.requestLines,
     ...(carryLines.length > 0 ? { carryLines } : {}),
+    ...(activity ? { userActivity: userActivityLine(activity) } : {}),
   });
   const { summary } = rendered;
   const projectedTokensAfter = cut.budget
@@ -819,7 +827,10 @@ export const compileFabricSummary = (
     ...(instructions.requestLines.length > 0 ? ["[Compaction Request]"] : []),
     ...(carryLines.length > 0 ? [CARRY_FORWARD_HEADER] : []),
   ];
-  sectionHeaders.splice(sections.dialogue.length > 0 ? 1 : 0, 0, ...protectedHeaders);
+  // Protected request blocks render right after the user's own words.
+  const userBlocks = (sections.goal.length > 0 ? 1 : 0) + (sections.dialogue.length > 0 ? 1 : 0);
+  sectionHeaders.splice(userBlocks, 0, ...protectedHeaders);
+  if (activity) sectionHeaders.unshift(USER_ACTIVITY_HEADER);
 
   const details: FabricCompactionDetailsV2 = {
     compactor: "fabric",

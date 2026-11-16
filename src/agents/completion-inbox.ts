@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentRunResult } from "./types.js";
 import { notifyAgentFeedback } from "../feedback.js";
+import { latestRequestLine } from "../compaction/user-activity.js";
 
 export const AGENT_COMPLETION_MESSAGE_TYPE = "pi-fabric-agent-complete";
 const SUMMARY_CHARS = 4_000;
@@ -142,8 +143,12 @@ export class AgentCompletionInbox {
     if (this.#closed || this.#suspended || this.#failed || this.#context.signal?.aborted || !this.#pending.size) return;
     const batch = [...this.#pending.values()].slice(0, 32);
     const perResult = Math.max(0, Math.min(SUMMARY_CHARS, Math.floor(BATCH_CHARS / batch.length) - 320));
+    // Name the user's latest request: "the current task" otherwise resolves to
+    // whatever thread happens to dominate the context window.
+    const request = latestRequestLine(this.#context);
     const content = [
-      "Unread background agent results (batched). Incorporate relevant results into the current task. These are run outcomes, not new user requests. Do not restart completed work or reply merely to acknowledge stale/superseded results. A completed run does not necessarily mean its assignment is complete.",
+      `Unread background agent results (batched). Incorporate relevant results into ${request ? "the work for the user's latest request, quoted below" : "the current task"}. These are run outcomes, not new user requests. Do not restart completed work or reply merely to acknowledge stale/superseded results. A completed run does not necessarily mean its assignment is complete.`,
+      ...(request ? [request] : []),
       ...batch.map(({ result }) => {
         const seconds = Math.round(Math.max(0, (result.finishedAt ?? Date.now()) - result.startedAt) / 1_000);
         const summary = [result.error, result.text].filter(Boolean).join("\n");

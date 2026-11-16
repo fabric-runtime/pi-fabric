@@ -1,4 +1,5 @@
-import { clipUtf8, omissionLine, sampleAddressed, sampleAddressedFrom } from "./bounds.js";
+import { boundedExcerpt, clipUtf8, omissionLine, sampleAddressed, sampleAddressedFrom } from "./bounds.js";
+import { foldFailureLedger } from "../verified/context.js";
 import { projectDialogue, recentDialogue } from "./dialogue.js";
 import {
   firstLine,
@@ -39,12 +40,13 @@ const MAX_FABRIC_RUN_DESCRIPTION = 180;
 const MAX_FABRIC_RUN_TRANSCRIPT_NAME = 60;
 const MAX_FABRIC_RUN_EARLIER_NAME = 48;
 const MAX_FABRIC_RUN_STATUS_NAME = 96;
-const MAX_LATER_GOALS = 24;
+// Every earlier user message renders verbatim while it fits; the count bound
+// only matters for sessions with many messages, which then keep earliest and latest.
+export const MAX_EARLIER_USERS = 64;
+export const MAX_USER_MESSAGE_BYTES = 2048;
 export const MAX_FILES_PER_KIND = 24;
-const MAX_OUTSTANDING = 32;
 const MAX_ACTIVITY = 48;
 export const MAX_UNRESOLVED = 24;
-const MAX_RESOLVED = MAX_OUTSTANDING - MAX_UNRESOLVED;
 export const MAX_EARLIER_TURNS = 32;
 const TRANSCRIPT_WINDOW = 40;
 
@@ -91,6 +93,12 @@ const customMessageLine = (
   const visibility = event.display ? "visible" : "hidden";
   return `custom ${quoted(event.customType, 80)} (${visibility}): ${quoted(event.text, maxText)}${customDetailsSuffix(event.details)}`;
 };
+
+// Fabric's own per-run setup calls. A successful one says nothing about the work,
+// so it never takes a line in activity, turn or transcript views. Failures stay.
+const ROUTINE_REFS: ReadonlySet<string> = new Set(["native.load", "fabric.discovery.compatibility"]);
+export const isRoutineOperation = (event: CompactionEvent): boolean =>
+  event.kind === "fabricOperation" && event.outcome === "succeeded" && ROUTINE_REFS.has(event.ref);
 
 const pathOf = (args: Record<string, unknown>): string | undefined => {
   const value = args.path ?? args.file ?? args.dir;
@@ -139,6 +147,9 @@ const collectOperations = (events: CompactionEvent[]): StructuralOperation[] => 
     if (event.kind === "toolResult" && event.toolName !== "bash") {
       const call = event.toolCallId ? calls.get(event.toolCallId) : undefined;
       if (!call) continue;
+      // A failed fabric_exec's result text is program output, often success
+      // lines from earlier calls. Only its typed `details.error` names the failure.
+      const error = event.toolName === "fabric_exec" ? event.error : event.text;
       operations.push({
         index: event.index,
         entryId: call.entryId,
@@ -147,7 +158,7 @@ const collectOperations = (events: CompactionEvent[]): StructuralOperation[] => 
         ref: call.name,
         args: call.args,
         outcome: event.isError ? "failed" : "succeeded",
-        ...(event.isError && event.text ? { error: event.text } : {}),
+        ...(event.isError && error ? { error } : {}),
         nested: false,
       });
       continue;
@@ -207,27 +218,30 @@ const commonRoot = (paths: string[]): string => {
 const stripRoot = (root: string, path: string): string =>
   root ? path.replace(root, "") : path;
 
-// Earlier requests are historical evidence, not an inferred active mandate.
+/** One earlier user message as the summary renders it: verbatim up to a byte bound. */
+export const earlierUserItem = (user: { entryId: string; text: string }): string =>
+  `User [entry ${user.entryId}]:\n${boundedExcerpt(user.text.trim(), MAX_USER_MESSAGE_BYTES).text}`;
+
+// Earlier user messages are the user's own words, kept verbatim and in order.
+// They are evidence of what was asked, not an inferred active mandate.
 const projectGoal = (events: CompactionEvent[], protectedUsers: ReadonlySet<string>): ProjectedSection => {
   const lines: string[] = [];
   function* historicalUsers(): Generator<Extract<CompactionEvent, { kind: "user" }>> {
     for (const event of events) {
-      if (event.kind === "user" && !protectedUsers.has(event.entryId)) yield event;
+      if (event.kind === "user" && !protectedUsers.has(event.entryId) && event.text.trim()) yield event;
     }
   }
-  const sampled = sampleAddressedFrom(historicalUsers(), MAX_LATER_GOALS);
+  const sampled = sampleAddressedFrom(historicalUsers(), MAX_EARLIER_USERS);
   for (let index = 0; index < sampled.values.length; index++) {
     if (sampled.omitted > 0 && index === sampled.splitIndex) {
       lines.push(omissionLine(
         sampled.omitted,
         sampled.omittedFirstEntryId,
         sampled.omittedLastEntryId,
-        "user scope changes",
+        "user messages",
       ));
     }
-    const user = sampled.values[index]!;
-    const line = truncate(firstLine(user.text), MAX_USER_ONELINER);
-    if (line) lines.push(`- ${line} [entry ${user.entryId}]`);
+    lines.push(earlierUserItem(sampled.values[index]!));
   }
   return { lines, omitted: sampled.omitted };
 };
@@ -336,6 +350,7 @@ const projectActivity = (events: CompactionEvent[]): ProjectedSection => {
     } else if (event.kind === "fabricPhase") {
       items.push({ entryId: event.address, line: `- Phase: ${truncate(event.phase, MAX_LINE)}` });
     } else if (event.kind === "fabricOperation") {
+      if (isRoutineOperation(event)) continue;
       if (FILE_TOOLS.has(event.tool)
         && (event.ref === event.tool || event.ref === `pi.${event.tool}`)) continue;
       const bash = event.tool === "bash"
@@ -374,12 +389,28 @@ interface ErrorItem {
   entryId: string;
   description: string;
   resolved: boolean;
+  fresh: boolean;
 }
+
+export interface ProjectionOptions {
+  /**
+   * Entries after the previous compaction marker. Failures outside it were
+   * already itemized by an earlier summary and now collapse to a count with
+   * an address range. Undefined treats every entry as fresh.
+   */
+  freshEntryIds?: ReadonlySet<string>;
+}
+
+const rangeLine = (count: number, items: readonly ErrorItem[], noun: string): string =>
+  omissionLine(count, items[0]?.entryId, items.at(-1)?.entryId, noun);
 
 // [Outstanding Context] is keyed only by typed operation identity. A later
 // success resolves a failure only when action+path, action+command, or the
-// generic ref+arguments identity is exactly equal.
-const projectOutstandingWithMetadata = (events: CompactionEvent[]): ProjectedSection => {
+// generic ref+arguments identity is exactly equal. The verified failure ledger
+// accounts for every failure once: open failures from the newest window are
+// itemized newest first; failures an earlier summary already itemized fill
+// only the room fresh ones leave; the rest and resolved ones become counts.
+const projectOutstandingWithMetadata = (events: CompactionEvent[], options: ProjectionOptions = {}): ProjectedSection => {
   const operations = collectOperations(events);
   const keyOf = (operation: StructuralOperation): string => {
     const path = isFileOperation(operation) ? pathOf(operation.args) : undefined;
@@ -390,9 +421,12 @@ const projectOutstandingWithMetadata = (events: CompactionEvent[]): ProjectedSec
     if (command !== undefined) return `bash\0${operation.tool}\0${command}`;
     return `generic\0${operation.ref}\0${JSON.stringify(operation.args)}`;
   };
-  const successes = operations
-    .filter((operation) => operation.outcome === "succeeded")
-    .map((operation) => ({ index: operation.index, key: keyOf(operation) }));
+  // Latest success index per identity: a failure resolves when one follows it.
+  const lastSuccess = new Map<string, number>();
+  for (const operation of operations) {
+    if (operation.outcome === "succeeded") lastSuccess.set(keyOf(operation), operation.index);
+  }
+  const fresh = options.freshEntryIds;
   const items: ErrorItem[] = [];
 
   for (const operation of operations) {
@@ -407,43 +441,44 @@ const projectOutstandingWithMetadata = (events: CompactionEvent[]): ProjectedSec
         ? `${operation.ref}: ${truncate(firstLine(command), MAX_LINE)}`
         : operation.ref;
     const error = operation.error ? `: ${truncate(firstLine(operation.error), MAX_LINE)}` : `: ${operation.outcome}`;
-    const key = keyOf(operation);
-    const resolved = successes.some((success) => success.index > operation.index && success.key === key);
     items.push({
       index: operation.index,
       entryId: operation.address,
       description: `${subject}${error}`,
-      resolved,
+      resolved: (lastSuccess.get(keyOf(operation)) ?? -1) > operation.index,
+      fresh: fresh === undefined || fresh.has(operation.entryId),
     });
   }
 
   if (items.length === 0) return { lines: [], omitted: 0 };
-  const unresolved = items.filter((i) => !i.resolved).sort((a, b) => a.index - b.index);
-  const resolved = items.filter((i) => i.resolved).sort((a, b) => a.index - b.index);
-  const sampledUnresolved = sampleAddressed(unresolved, MAX_UNRESOLVED);
-  const sampledResolved = sampleAddressed(resolved, MAX_RESOLVED);
+  const newestFirst = [...items].sort((a, b) => b.index - a.index);
+  const rank = (item: ErrorItem): number => (item.resolved ? 2 : item.fresh ? 0 : 1);
+  const ordered = [...newestFirst].sort((a, b) => rank(a) - rank(b));
+  const ledger = foldFailureLedger(ordered, MAX_UNRESOLVED);
+  const itemized: ErrorItem[] = [];
+  const openOlder: ErrorItem[] = [];
+  const aged: ErrorItem[] = [];
+  const resolved: ErrorItem[] = [];
+  ordered.forEach((item, position) => {
+    if (ledger.itemized[position]) itemized.push(item);
+    else if (item.resolved) resolved.push(item);
+    else if (item.fresh) openOlder.push(item);
+    else aged.push(item);
+  });
+  for (const list of [itemized, openOlder, aged, resolved]) list.sort((a, b) => a.index - b.index);
+
   const lines: string[] = [];
-  const append = (sampled: ReturnType<typeof sampleAddressed<ErrorItem>>, noun: string): void => {
-    for (let index = 0; index < sampled.values.length; index++) {
-      if (sampled.omitted > 0 && index === sampled.splitIndex) {
-        lines.push(omissionLine(
-          sampled.omitted,
-          sampled.omittedFirstEntryId,
-          sampled.omittedLastEntryId,
-          noun,
-        ));
-      }
-      const item = sampled.values[index]!;
-      lines.push(`- ${item.description}${item.resolved ? " [RESOLVED]" : ""} [entry ${item.entryId}]`);
-    }
-  };
-  append(sampledUnresolved, "open error records");
-  append(sampledResolved, "resolved error records");
-  return { lines, omitted: sampledUnresolved.omitted + sampledResolved.omitted };
+  if (openOlder.length > 0) lines.push(rangeLine(openOlder.length, openOlder, "older open error records"));
+  for (const item of itemized) lines.push(`- ${item.description} [entry ${item.entryId}]`);
+  if (aged.length > 0) {
+    lines.push(rangeLine(aged.length, aged, "open error records already itemized by an earlier compaction"));
+  }
+  if (resolved.length > 0) lines.push(rangeLine(resolved.length, resolved, "error records later resolved by an exact retry"));
+  return { lines, omitted: ledger.total - itemized.length };
 };
 
-export const projectOutstanding = (events: CompactionEvent[]): string[] =>
-  projectOutstandingWithMetadata(events).lines;
+export const projectOutstanding = (events: CompactionEvent[], options?: ProjectionOptions): string[] =>
+  projectOutstandingWithMetadata(events, options).lines;
 
 interface EarlierTurnAddress {
   entryId: string;
@@ -484,7 +519,7 @@ const projectEarlierTurns = (events: CompactionEvent[]): ProjectedSection => {
         lastRun = undefined;
         continue;
       }
-      if (!currentContext) continue;
+      if (!currentContext || isRoutineOperation(event)) continue;
       if (event.kind === "fabricRun") lastRun = event;
       const name = event.kind === "toolCall"
         ? (event.name === "fabric_exec" ? undefined : event.name)
@@ -521,15 +556,20 @@ const projectEarlierTurns = (events: CompactionEvent[]): ProjectedSection => {
 // the last summarized user request, the last file-modifying tool call, and the
 // last assistant line. Only non-empty fields are emitted.
 const projectStatus = (events: CompactionEvent[]): string[] => {
-  const lastContext = [...events].reverse().find(
-    (event): event is Extract<CompactionEvent, { kind: "user" | "customMessage" }> =>
-      event.kind === "user" || event.kind === "customMessage",
+  // The latest user message stays the request even when background deliveries
+  // arrive after it; a later delivery is reported separately as context.
+  const lastUser = [...events].reverse().find(
+    (event): event is Extract<CompactionEvent, { kind: "user" }> => event.kind === "user",
+  );
+  const lastCustom = [...events].reverse().find(
+    (event): event is Extract<CompactionEvent, { kind: "customMessage" }> => event.kind === "customMessage",
   );
   const lines: string[] = [];
-  if (lastContext?.kind === "user") {
-    lines.push(`Last request: ${truncate(firstLine(lastContext.text), MAX_STATUS_LINE)}`);
-  } else if (lastContext) {
-    lines.push(`Last context: ${customMessageLine(lastContext, MAX_STATUS_LINE)}`);
+  if (lastUser) {
+    lines.push(`Last request: ${truncate(firstLine(lastUser.text), MAX_STATUS_LINE)} [entry ${lastUser.entryId}]`);
+  }
+  if (lastCustom && (!lastUser || lastCustom.index > lastUser.index)) {
+    lines.push(`Later context: ${customMessageLine(lastCustom, MAX_STATUS_LINE)}`);
   }
   let lastModify: { tool: string; args: Record<string, unknown> } | undefined;
   for (const operation of collectOperations(events)) {
@@ -582,6 +622,7 @@ const projectTranscript = (events: CompactionEvent[]): ProjectedSection => {
       .map((event) => event.toolCallId),
   );
   const transcriptEvents = events.filter((event) => {
+    if (isRoutineOperation(event)) return false;
     if (event.kind === "toolCall") {
       return event.name !== "fabric_exec" || !completedFabricCalls.has(event.toolCallId);
     }
@@ -630,13 +671,17 @@ const projectTranscript = (events: CompactionEvent[]): ProjectedSection => {
   return { lines, omitted };
 };
 
-export const projectWithMetadata = (events: CompactionEvent[], retainedDialogue: CompactionEvent[] = []): ProjectionResult => {
+export const projectWithMetadata = (
+  events: CompactionEvent[],
+  retainedDialogue: CompactionEvent[] = [],
+  options: ProjectionOptions = {},
+): ProjectionResult => {
   const exchanges = recentDialogue(events, retainedDialogue);
   const dialogue = projectDialogue(exchanges);
   const goal = projectGoal(events, new Set(exchanges.map(({ user }) => user.entryId)));
   const files = projectFiles(events);
   const activity = projectActivity(events);
-  const outstanding = projectOutstandingWithMetadata(events);
+  const outstanding = projectOutstandingWithMetadata(events, options);
   const earlierTurns = projectEarlierTurns(events);
   const transcript = projectTranscript(events);
   return {

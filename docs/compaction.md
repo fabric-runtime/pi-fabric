@@ -85,14 +85,14 @@ rendered under `[Carry Forward]`.
 
 1. **The session log is ground truth.** The summary is a bounded continuation view with stable entry-id and file addresses.
 2. **Live cut and cumulative truth are separate.** The cut comes from the window made live by the last compaction. Fabric rebuilds the summary from every typed, content-bearing entry on the supplied active branch prefix before the new kept boundary, after applying branch-relative `context_edit` omissions and content replacements. Abandoned recovery attempts remain addressable in raw history but never reappear in later summaries. System prompt/tool checkpoints are replayed by Pi, not selected as continuity content.
-3. **Rendered summaries are never semantic input.** `compaction` entries, branch-summary prose, custom summary prose, and unknown roles produce no normalized events. A valid Fabric branch-summary details envelope may contribute its typed facts. Its `summary` string never contributes. Top-level Pi `custom_message` entries work differently: Pi puts them in model context, so Fabric preserves their typed `customType`, text content, visibility, and bounded JSON details. `custom` state entries that bear no context remain excluded.
+3. **Rendered summaries are never semantic input.** `compaction` entries, branch-summary prose, custom summary prose, and unknown roles produce no normalized events. A valid Fabric branch-summary details envelope may contribute its typed facts. Its `summary` string never contributes. Top-level Pi `custom_message` entries work differently: Pi puts them in model context, so Fabric preserves their typed `customType`, text content, visibility, and bounded JSON details. A visible custom message whose typed `details.source` is exactly `"user"` carries the user's own words from an input extension, such as a steering queue, and counts as a user message. `custom` state entries that bear no context remain excluded.
 4. **Structure drives projection.** The core uses entry/message types, roles, content-part types, custom-message fields, tool names, typed `fabric_exec` display fields, JSON arguments, call ids, `isError`, aggregate trace outcomes, exit codes, entry ids, ordering, valid Fabric execution traces, and valid Fabric branch-summary facts. It applies no semantic regex over prose, code, shell commands, or tool output. Whitespace normalization, bounded truncation, exact identity comparisons, and path segmentation stay mechanical.
 5. **Serialization is deterministic and bounded.** Identical branch entries and instructions produce byte-identical output. The rendered result is at most 32 KiB in UTF-8.
 6. **The nominal model window is the safety boundary.** Fabric never treats it as a target to fill. Fabric calibrates Pi's structural token estimate against `preparation.tokensBefore`, retains the largest closure-safe suffix within Pi's bounded `keepRecentTokens` continuity budget, and treats the configured occupancy ratio, Pi response reserve, estimator-error margin, and pre-compaction size as hard ceilings. Undocumented provider headroom never enters the budget.
 
 These invariants prevent compounding summary-chain drift, not all semantic
 forgetting. Pi replaces the previous rendered summary on each compaction.
-Fabric re-derives recent dialogue, historical requests, cumulative successful
+Fabric re-derives recent dialogue, earlier user messages, cumulative successful
 file addresses, and error state from raw branch history every time. The
 protected dialogue window is bounded continuity, not permanent decision memory.
 
@@ -101,7 +101,7 @@ protected dialogue window is bounded continuity, not permanent decision memory.
 Fabric compaction is **source-lossless and addressably lossless**. The model's bounded continuation view does not stay byte-for-byte lossless:
 
 - Compaction appends a marker. It never deletes or rewrites raw session JSONL. The active parent-linked session branch remains ground truth.
-- The model receives a bounded deterministic projection plus the recent raw continuity tail. Fabric preserves role-labelled recent dialogue, historical requests, declared Fabric run intent paired with aggregate outcomes, file operations, failures, status, and stable addresses through mechanical rules. Arbitrary old prose, tool-output bodies, and thinking may fall out of the inline view.
+- The model receives a bounded deterministic projection plus the recent raw continuity tail. Fabric preserves the user's messages verbatim, role-labelled recent dialogue, declared Fabric run intent paired with aggregate outcomes, file operations, failures, status, and stable addresses through mechanical rules. Arbitrary old prose, tool-output bodies, and thinking may fall out of the inline view.
 - Every sampled omission records a count and source entry-id range. `memory.expand` can re-read exact untruncated source by stable entry ID or operation address with source-hash and lineage checks.
 - The memory index remains derived and disposable. Compaction works without successful indexing, and it never treats an incomplete index as ground truth. Exact expansion reads session JSONL.
 
@@ -187,33 +187,66 @@ escapes the cut and the outer call/result pair remains closure-safe. A failed
 requested handoff compaction rejects the handoff and prevents the
 uncompacted fork from launching. Without destination metadata, the bounded fallback applies.
 
+## Context salience
+
+A summary is what the model reads in place of the work it no longer sees, so
+its byte budget follows the user's words, not the volume of activity. A long
+autonomous stretch produces thousands of tool events and only a few user
+messages. A summary sized by activity lets the user's objective shrink to one
+sampled line while the agent's own latest plan reads as the current task.
+Three verified kernels in `proofs/context.ts` hold the rendering to the user's
+words:
+
+- **Allocation.** The user's protected blocks take bytes before any
+  operational section (`summaryAllocation`). Operational history receives only
+  what remains.
+- **Staleness.** `[User activity]` names the latest user message and counts,
+  since it, the earlier compaction markers and background deliveries on the
+  branch (`userStaleness`). Only a user message resets the count. A background
+  delivery never does, whatever its wording.
+- **Failure ledger.** `[Outstanding Context]` accounts for every failure once
+  (`failureLedger`). Open failures after the previous compaction marker are
+  itemized first, newest first. Failures that an earlier summary already
+  itemized fill only the room the fresh ones leave. Everything else, including
+  failures that a later exact retry resolved, becomes a count with a source
+  entry range. A quiet session therefore keeps its one real open error, while a
+  long autonomous run stops repeating hundreds of stale ones.
+
+Background deliveries also name their anchor. Agent-completion and
+background-shell messages quote the user's latest request with its entry ID
+and timestamp, so "the current task" never resolves to whichever thread fills
+the context window.
+
 ## Bounded sections
 
-Fabric leads with protected recent dialogue, then explicit compaction requests
-and historical requests. Each of the last three eligible summarized or
+Fabric leads with `[User activity]`, then every earlier user message verbatim,
+then protected recent dialogue and explicit compaction requests. Each of the last three eligible summarized or
 cross-boundary user exchanges gets up to 3968 bytes including role/address
 headings. User text gets at least half the available text budget when needed;
 short replies leave room for the preceding assistant response. Complete
 multiline text survives whenever the exchange fits. Assistant replies are
-labelled **Historical assistant response (not a verified outcome)**: they may
-contain proposals, explanations, or old progress reports, not necessarily
-current state or accepted instructions. New eligible exchanges can age an
+labelled **Assistant response (a proposal, not a verified outcome or user
+instruction)**: they may contain proposals, explanations, or old progress
+reports, not necessarily current state or accepted instructions. New eligible exchanges can age an
 exchange out; fully raw exchanges and more tool events alone cannot. There is
 no reset keyword detector or task ledger.
 
-Historical requests, files, operation-state, and earlier-turn collections still
-use deterministic earliest-plus-latest sampling. Sampled omissions record a
-count and source entry-id range. Protected excerpts instead report omitted
-UTF-8 bytes alongside their entry addresses. Historical requests are evidence
-of earlier instructions, not a reconstructed active mandate.
+Earlier user messages render verbatim, each bounded to 2048 bytes, while the
+block fits. Only a session with more than 64 earlier user messages keeps the
+earliest and latest. Files, activity, and earlier-turn collections use
+deterministic earliest-plus-latest sampling. Sampled omissions record a count
+and source entry-id range. Protected excerpts instead report omitted UTF-8
+bytes alongside their entry addresses. Earlier user messages are evidence of
+what the user asked, not a reconstructed active mandate.
 
 Rendered block ceilings include their headers. Historical blocks may receive
 less under shared-budget pressure:
 
 | Block | UTF-8 ceiling |
 | --- | ---: |
+| `[User activity]` | 512 bytes |
+| `[Earlier user messages]` | 8192 bytes |
 | `[Recent user directions and discussion]` | 12288 bytes |
-| `[Historical requests]` | 4096 bytes |
 | `[Compaction Request]` | 3072 bytes |
 | `[Files And Changes]` | 4608 bytes |
 | `[Fabric Activity]` | 2048 bytes |
@@ -223,32 +256,35 @@ less under shared-budget pressure:
 | collapsed transcript | 5120 bytes |
 | footer | 1536 bytes |
 
-These ceilings are not simultaneous reservations. Fabric renders protected
-dialogue and explicit requests first, then subtracts their actual UTF-8 size,
-the footer, separators, and final newline from the unchanged 32 KiB ceiling.
+These ceilings are not simultaneous reservations. Fabric renders the user
+activity line, earlier user messages, protected dialogue, and explicit
+requests first. The verified `summaryAllocation` then gives operational
+history what remains of the unchanged 32 KiB ceiling after their actual UTF-8
+size, the footer, separators, and final newline.
 Historical blocks keep their former ceilings whenever their capped content
 fits the remaining space. Only under pressure are they reduced proportionally
 to demand, reserving headers/omission markers or complete single-line blocks; sampling
 slack passes to later blocks. Small or absent dialogue therefore does not
 unconditionally shrink operational history. The raw-tail budget is unchanged,
 and a final UTF-8 guard remains in place. Projection limits stay finite: three
-eligible recent exchanges, 24 historical requests, 24 file addresses per
-operation kind, 32 operation-state records, 48 Fabric activity records, 32
+eligible recent exchanges, 64 earlier user messages, 24 file addresses per
+operation kind, 24 itemized open failures, 48 Fabric activity records, 32
 earlier turns, and 40 transcript events. Omitted source
 remains executable-addressable through entry-id ranges and the footer recall
 pointer.
 
 ## Sections
 
+- **User activity**: the latest user message's entry ID and timestamp, then the time, earlier compaction markers, and background deliveries since it. Elapsed time ends at the last supplied entry, so output stays deterministic. The block appears only when the branch has a user message.
+- **Earlier user messages**: every summarized user message outside the recent exchanges, verbatim and in order, including the original objective. The internal `goal` key remains for v2 compatibility.
 - **Recent user directions and discussion**: complete bounded user/preceding-assistant exchanges, with roles and entry IDs. This is source evidence, not an inferred current-goal declaration.
-- **Historical requests**: sampled older user requests, including the original objective once it leaves the recent window. The internal `goal` omission key remains for v2 compatibility.
 - **Compaction Request**: canonicalized, bounded custom instructions. See below.
 - **Carry Forward**: the persistent `compact.carry` list from the latest carry entry on the branch, in every summary until cleared. Protected like the request block and bounded to 3 KiB.
 - **Files And Changes**: successful typed file-tool addresses grouped as Created, Written, Modified, or Read. `edit` counts as Modified. `write` counts as Written unless a typed result explicitly proves creation.
-- **Fabric Activity**: completed named `fabric_exec` runs as bounded `name → outcome` records that place an em dash between the name and the optional description, followed in source order by phases and significant non-file nested operations, including bash, agents, workflow, mesh, state, MCP, and extension refs. Named runs expose the exact assistant call entry ID while sourced raw, and their typed fact address after branch rehydration. Nested phases and operations expose stable `entryId/subordinal` addresses. The name and outcome are mandatory for a rendered run. The optional description decays first under tighter views.
-- **Outstanding Context**: typed tool/bash failures and later exact structural resolutions. File failures require the same action and path, bash failures the same command, and generic failures the same ref and arguments. Fabric quotes explicit error text with bounds and never parses or classifies it. Trace failures use only `operation.outcome` and `operation.error`.
+- **Fabric Activity**: completed named `fabric_exec` runs as bounded `name → outcome` records that place an em dash between the name and the optional description, followed in source order by phases and significant non-file nested operations, including bash, agents, workflow, mesh, state, MCP, and extension refs. Named runs expose the exact assistant call entry ID while sourced raw, and their typed fact address after branch rehydration. Nested phases and operations expose stable `entryId/subordinal` addresses. Successful `native.load` and `fabric.discovery.compatibility` calls are Fabric's own per-run setup and never take a line here, in Earlier Turns, or in the transcript. Their failures still appear. The name and outcome are mandatory for a rendered run. The optional description decays first under tighter views.
+- **Outstanding Context**: typed tool/bash failures, accounted by the verified failure ledger. File failures resolve only through a later success with the same action and path, bash failures with the same command, and generic failures with the same ref and arguments. Up to 24 open failures are itemized: those after the previous compaction marker first, newest first, then failures an earlier summary already itemized while room remains. The rest and the resolved failures each collapse into one count with a source entry range. Fabric quotes explicit error text with bounds and never parses or classifies it. Trace failures use only `operation.outcome` and `operation.error`. A failed outer `fabric_exec` quotes only its typed `details.error`, never its program output, which often holds success lines from earlier calls.
 - **Earlier Turns**: sampled user/custom context one-liners, tool-name counts, and the latest named Fabric run plus outcome for each summarized turn.
-- **Current Status**: the latest summarized user/custom context, modification address, named Fabric run plus outcome, and assistant line.
+- **Current Status**: the latest summarized user message with its entry ID, a later background custom message when one arrived after it, the modification address, named Fabric run plus outcome, and assistant line. A background delivery never replaces the latest request.
 - **Transcript**: the latest 40 typed events, including quoted and bounded custom-message content and bounded structural details, plus an omission range when applicable. A completed named `fabric_exec` replaces its generic outer call/result pair with `name → outcome`. The description stays in the richer Activity tier.
 - **Footer**: deterministic source timestamp, cumulative source range, and session-log recall guidance.
 

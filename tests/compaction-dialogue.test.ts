@@ -57,7 +57,14 @@ const proposal = [
   "Planning estimate: 2,000–6,000 handwritten runtime lines, excluding tests and generated/parser assets.",
 ].join("\n");
 const reset = "Makes sense. Stash everything and start completely from scratch. No experiment folder this time.\n\n> Replace ast-grep but retain Tree-sitter\n\nWe will focus on this.";
-const protectedText = (summary: string) => summary.split("[Recent user directions and discussion]\n\n")[1]?.split("\n\n[Historical requests]")[0] ?? "";
+const OPERATIONAL = ["[Compaction Request]", "[Carry Forward]", "[Files And Changes]", "[Fabric Activity]", "[Outstanding Context]", "[Earlier Turns]", "[Current Status]", "---"];
+const dialogueBlock = (summary: string): string => {
+  const start = summary.indexOf("[Recent user directions and discussion]");
+  if (start < 0) return "";
+  const ends = OPERATIONAL.map((header) => summary.indexOf(`\n\n${header}`, start)).filter((index) => index >= 0);
+  return summary.slice(start, ends.length ? Math.min(...ends) : undefined);
+};
+const protectedText = (summary: string) => dialogueBlock(summary).split("[Recent user directions and discussion]\n\n")[1] ?? "";
 
 const incident = (toolCount = 0) => {
   const f = fixture();
@@ -77,15 +84,16 @@ describe("protected compaction dialogue", () => {
     const f = incident(1000);
     const result = f.compile();
     const recent = protectedText(result.summary);
-    expect(result.summary.startsWith("[Recent user directions and discussion]")).toBe(true);
+    expect(result.summary.startsWith("[User activity]\nLatest user message: entry ")).toBe(true);
+    expect(result.summary.indexOf("[Earlier user messages]")).toBeLessThan(result.summary.indexOf("[Recent user directions and discussion]"));
     expect(recent).toContain(reset);
     expect(recent).toContain(proposal);
     expect(recent).toContain(`User instruction [entry ${f.selected.id}]`);
-    expect(recent).toContain(`Historical assistant response (not a verified outcome) [entry ${f.proposed.id}]`);
+    expect(recent).toContain(`Assistant response (a proposal, not a verified outcome or user instruction) [entry ${f.proposed.id}]`);
     expect(recent).not.toContain("Original objective");
     expect(recent).not.toContain("Reach 100% parity");
     expect(recent).not.toContain("TOOL_PROSE_IS_NOT_A_USER_INSTRUCTION");
-    expect(result.summary).toContain("[Historical requests]\n- Original objective");
+    expect(result.summary).toMatch(/\[Earlier user messages\]\n\nUser \[entry [^\]]+\]:\nOriginal objective: explore replacing ast-grep using Bend\./);
     expect(result.summary).not.toContain("[Session Goal]");
     expect(result.details?.omittedCounts.dialogueBytes).toBe(0);
     expect(utf8Bytes(result.summary)).toBeLessThanOrEqual(MAX_SUMMARY_BYTES);
@@ -213,7 +221,7 @@ describe("protected compaction dialogue", () => {
     f.user("Continue with the next stage.");
     f.tools(3);
     for (const summary of [f.compile().summary, compileFabricBranchSummary(f.entries)!.summary]) {
-      expect(summary).toContain("Historical assistant response (not a verified outcome)");
+      expect(summary).toContain("Assistant response (a proposal, not a verified outcome or user instruction)");
       expect(summary).toContain("188 tests passed at this checkpoint.");
       expect(summary).not.toContain("proposal/estimate");
     }
@@ -264,7 +272,7 @@ describe("protected compaction dialogue", () => {
     expect(result.summary).not.toContain("�");
     expect(result.details?.omittedCounts.dialogueBytes).toBeGreaterThan(0);
     expect(utf8Bytes(result.summary)).toBeLessThanOrEqual(MAX_SUMMARY_BYTES);
-    const block = result.summary.split("\n\n[Historical requests]")[0]!;
+    const block = dialogueBlock(result.summary);
     expect(utf8Bytes(block)).toBeLessThanOrEqual(12288);
   });
 
@@ -316,8 +324,11 @@ describe("protected compaction dialogue", () => {
   });
 
   it("does not add a state dependency or increase the summary reservation", () => {
-    expect(SUMMARY_SECTIONS.filter(({ key }) => key !== "dialogue").reduce((sum, section) => sum + section.maxBytes, 0) + 3072 + 5120 + 1536)
-      .toBeLessThanOrEqual(29.5 * 1024);
+    // Protected user blocks (earlier messages, dialogue, request, carry, user
+    // activity) plus the footer leave room for every operational header.
+    const protectedCeilings = SUMMARY_SECTIONS.filter(({ key }) => key === "goal" || key === "dialogue")
+      .reduce((sum, section) => sum + section.maxBytes, 0) + 3072 + 3072 + 512;
+    expect(protectedCeilings + 1536).toBeLessThanOrEqual(29.5 * 1024);
     expect(MAX_SUMMARY_BYTES).toBe(32 * 1024);
     expect(fabricCompactionVersion(incident().compile().details)).toBe(2);
   });

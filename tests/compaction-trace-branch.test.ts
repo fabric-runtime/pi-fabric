@@ -138,9 +138,8 @@ describe("Fabric execution trace compaction", () => {
     expect(sections.files.join("\n")).toContain("write.ts [entry e3/3]");
     expect(sections.files.join("\n")).toContain("Created:");
     expect(sections.files.join("\n")).toContain("created.ts [entry e3/4]");
-    expect(sections.outstanding.join("\n")).toContain("exact edit failure");
-    expect(sections.outstanding.join("\n")).toContain("typed test failure");
-    expect(sections.outstanding.every((line) => line.includes("failure") ? line.includes("[RESOLVED]") : true)).toBe(true);
+    // Both failures were resolved by exact retries: one addressed count, no itemized text.
+    expect(sections.outstanding).toEqual(["… omitted 2 error records later resolved by an exact retry; source entries e3/1 → e3/5"]);
     expect(sections.activity.join("\n")).toContain("Implement trace consumption");
     expect(sections.activity.join("\n")).toContain("Project typed files, failures, and nested Fabric activity");
     expect(sections.activity.join("\n")).toContain("→ succeeded [entry e2]");

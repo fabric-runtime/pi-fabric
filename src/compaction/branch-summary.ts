@@ -204,7 +204,8 @@ export const compileFabricBranchSummary = (
     .filter(({ key }) => projected.sections[key].length > 0)
     .map(({ header }) => header);
   if (instructions.requestLines.length > 0) {
-    sections.splice(projected.sections.dialogue.length > 0 ? 1 : 0, 0, "[Compaction Request]");
+    const userBlocks = (projected.sections.goal.length > 0 ? 1 : 0) + (projected.sections.dialogue.length > 0 ? 1 : 0);
+    sections.splice(userBlocks, 0, "[Compaction Request]");
   }
   const rendered = renderSummaryWithMetadata(projected.sections, {
     firstEntryId: entriesToSummarize[0]?.id ?? "",

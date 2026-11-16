@@ -27,6 +27,7 @@ a set of small policy kernels, **not a proof of every subsystem invariant**.
 | Capability authority | `authority.ts`: `capabilityAuthority` | `verified/authority.ts`, `core/action-registry.ts` | `authority_issue_exact`, `authority_use_safe`, `authority_use_complete`, `authority_derive_safe`, `authority_derive_complete`, `authority_child_use_safe`, `authority_released_cannot_derive`, `authority_released_not_live`, `authority_released_refused` |
 | Binding lifecycle | `lifecycle.ts`: `bindingStep` | `verified/lifecycle.ts`, `core/provider-bindings.ts`, `core/provider-operations.ts` | 19 step laws: safety, `Open`-based completeness, exact counts, close reservation, quarantine |
 | Compaction | `compaction.ts`: `compactionCut`; `policy.ts`: `summaryWithin`, `sampleWithin` | `compaction/hook.ts`, `compaction/bounds.ts` | `cut_sound`, `span_sound`, `refusal_final`, `header_once`, `cut_complete`, `summary_bounds`, `summary_complete`, `sample_accounting`, `sample_complete` |
+| Compaction context salience | `context.ts`: `summaryAllocation`, `userStaleness`, `failureLedger` | `verified/context.ts`, `compaction/render.ts`, `compaction/user-activity.ts`, `compaction/projections.ts` | `user_first`, `allocation_within`, `operations_use_the_rest`, `unanchored_is_zero`, `user_resets`, `background_never_resets`, `compaction_counts_once`, `only_user_clears`, `failures_conserved`, `itemized_bounded`, `skipped_are_open`, `resolved_never_itemized`, `open_itemized_with_room`, `fresh_first`, `aged_fills_room` |
 | Memory | `policy.ts`: `lineageSelected`, `pointerCurrent`, `chunkAccepted`, `coverageComplete` | `memory/normalize.ts`, `memory/expand-service.ts`, `memory/digest.ts`, `memory/index.ts` | `active_lineage_only`, `explicit_all_lineages`, `pointer_sound`, `pointer_complete`, `chunk_sound`, `chunk_complete`, `coverage_sound`, `coverage_complete` |
 | Entropy normal forms | `policy.ts`: `useNormalized` | `entropy/normal-form.ts` | `normalization_sound`, `normalization_complete`, `canonical_identity` |
 | Storage CAS | `storage.ts`: `storageTransition` | `verified/storage.ts`, `mesh/store.ts` | `storage_safe` (three plan cases), `storage_put_complete`, `storage_delete_complete`, `storage_absent_delete_complete`, `storage_stale_refused`, `storage_put_overflow`, `storage_delete_overflow` |
@@ -192,6 +193,14 @@ so its cost grows with the rows and their matches, not with every pair of rows.
   shows that a span keeps the cut open only if the cut was open and the span is
   allowed. Together they give the old `spans_sound` over any finite span list.
   The production check feeds every span to the compiled machine.
+
+- The failure ledger is a fold over failures: fresh ones newest first, then
+  aged ones, then resolved ones. `failures_conserved` holds over every run, so
+  each failure in a summary is itemized or counted in exactly one addressed
+  range. `fresh_first` keeps aged failures out of the room once a fresh open
+  failure was left out. The staleness fold counts compaction markers
+  and background deliveries after the latest user message; only a user message
+  resets it.
 
 ### Proof-backed testing
 

@@ -5,6 +5,7 @@ import { promptGuidanceKernels, PROMPT_GUIDANCE_BUGS } from "./prompt-guidance.j
 import { actorNameKernels, ACTOR_NAME_BUGS } from "./actor-name.js";
 import { authorityKernels, AUTHORITY_BUGS } from "./authority.js";
 import { compactionKernels, CUT_BUGS } from "./compaction.js";
+import { contextKernels, CONTEXT_BUGS } from "./context.js";
 import { budgetKernels, BUDGET_BUGS } from "./budget.js";
 import { executionKernels, EXECUTION_BUGS } from "./execution.js";
 import { grantKernels, GRANT_BUGS } from "./grants.js";
@@ -30,6 +31,7 @@ export interface KernelModule {
 export const modules: readonly KernelModule[] = [
   { stem: "policy", source: "proofs/policy.ts", kernels: policyKernels as any, bugs: POLICY_BUGS },
   { stem: "compaction", source: "proofs/compaction.ts", kernels: compactionKernels as any, bugs: CUT_BUGS },
+  { stem: "context", source: "proofs/context.ts", kernels: contextKernels as any, bugs: CONTEXT_BUGS },
   { stem: "resources", source: "proofs/resources.ts", kernels: resourceKernels as any, bugs: RESOURCE_BUGS },
   { stem: "lifecycle", source: "proofs/lifecycle.ts", kernels: lifecycleKernels as any, bugs: LIFECYCLE_BUGS },
   { stem: "storage", source: "proofs/storage.ts", kernels: storageKernels as any, bugs: STORAGE_BUGS },

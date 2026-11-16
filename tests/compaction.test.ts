@@ -923,7 +923,7 @@ describe("compaction error state machine", () => {
     expect(lines.some((l) => l.includes("read src/x.ts") && !l.includes("[RESOLVED]"))).toBe(true);
   });
 
-  it("marks a bash error [RESOLVED] when the same command is later re-run OK", () => {
+  it("counts a bash error as resolved when the same command is later re-run OK", () => {
     resetIds();
     resetCallIds();
     resetClock();
@@ -939,7 +939,8 @@ describe("compaction error state machine", () => {
     );
     const events = normalizeEntries(session.slice(0, 5));
     const lines = projectOutstanding(events);
-    expect(lines.some((l) => l.includes("bash: make test") && l.includes("[RESOLVED]"))).toBe(true);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^… omitted 1 error records later resolved by an exact retry; source entries /);
   });
 
   it("leaves an error open without classifying its prose when nothing resolves it", () => {

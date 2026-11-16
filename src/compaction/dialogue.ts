@@ -60,7 +60,7 @@ export const dialogueExcerpts = (exchange: DialogueExchange): DialogueExcerpt[] 
     `${role} [entry ${message.entryId}${message.retained ? "; retained raw" : ""}]:`;
   const userHeading = heading("User instruction", exchange.user);
   const assistantHeading = exchange.assistant
-    ? heading("Historical assistant response (not a verified outcome)", exchange.assistant)
+    ? heading("Assistant response (a proposal, not a verified outcome or user instruction)", exchange.assistant)
     : "";
   const available = Math.max(0, MAX_EXCHANGE_BYTES - utf8Bytes(userHeading + assistantHeading) - 8);
   const userText = exchange.user.retained ? "" : exchange.user.text;
