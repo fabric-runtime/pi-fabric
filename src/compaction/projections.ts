@@ -664,3 +664,5 @@ export const projectWithMetadata = (events: CompactionEvent[], retainedDialogue:
 
 export const project = (events: CompactionEvent[]): Sections =>
   projectWithMetadata(events).sections;
+
+// CI baseline probe: selects the same affected tests as 0.138.0 against 0.137.0 code.

@@ -177,3 +177,5 @@ export const renderSummaryWithMetadata = (sections: Sections, options: RenderOpt
 
 export const renderSummary = (sections: Sections, options: RenderOptions): string =>
   renderSummaryWithMetadata(sections, options).summary;
+
+// CI baseline probe: selects the same affected tests as 0.138.0 against 0.137.0 code.

@@ -167,3 +167,5 @@ export class AgentCompletionInbox {
     }
   }
 }
+
+// CI baseline probe: selects the same affected tests as 0.138.0 against 0.137.0 code.

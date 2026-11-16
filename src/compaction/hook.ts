@@ -1066,3 +1066,5 @@ export const registerCompactionHook = (pi: ExtensionAPI, options: CompactionHook
   pi.on("session_before_compact", handlers.beforeCompact);
   pi.on("session_before_tree", handlers.beforeTree);
 };
+
+// CI baseline probe: selects the same affected tests as 0.138.0 against 0.137.0 code.
