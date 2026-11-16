@@ -7,6 +7,7 @@ import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { assertWorkerRuntime, writeWorkerStartupFailure } from "./worker/startup.js";
 import { MODEL_PIN_ENV, MODEL_PIN_EXIT_CODE, modelPinFailure, parseModelPinViolation } from "./agents/model-pin.js";
 import { createDurableSessionFile } from "./durable/worker-role-seed.js";
+import { hasWorkerRecovery } from "./agents/worker-recovery.js";
 import { explainMissingInstall } from "./worker/missing-install.js";
 import { normalizeRunDisplay } from "./run-display.js";
 import { nativeFabricExecExclusions } from "./core/child-tool-allowlist.js";
@@ -557,12 +558,18 @@ const main = async (): Promise<void> => {
   let closeTimer: NodeJS.Timeout | undefined;
   const recoveryWatchdog = new PiRecoveryWatchdog((error) => failStalledChild(error));
   const taskPrompt = new PiTaskPromptLifecycle((error) => failStalledChild(error, "fabric_prompt_error"));
-  const killChild = (): void => {
+  const killChild = (preserveCheckpoint = false): void => {
     taskPrompt.dispose();
     recoveryWatchdog.dispose();
     stallWatchdog.dispose();
     if (closeTimer) clearTimeout(closeTimer);
-    terminateChild(child, "SIGTERM");
+    // A recoverable outside interruption must not let native session.dispose()
+    // abort the durable task: that would commit a terminal "Operation aborted".
+    // Crash the child instead; its OS lease is released and recovery resumes it.
+    if (preserveCheckpoint) terminateChild(child, "SIGKILL");
+    // Otherwise RPC EOF runs session_shutdown. Do not also signal Pi: older
+    // RPC hosts exit on the second shutdown request before async hooks finish.
+    else if (!isPi) terminateChild(child, "SIGTERM");
     killTimer ??= setTimeout(() => terminateChild(child, "SIGKILL"), KILL_GRACE_MS);
     killTimer.unref();
     child.stdin?.end();
@@ -1498,7 +1505,9 @@ const main = async (): Promise<void> => {
     if (terminalStatus) return;
     terminalStatus = "stopped";
     terminalError = "Agent stopped";
-    killChild();
+    // AgentManager.stop removes this marker before signalling us. Its presence
+    // distinguishes an outside interruption from an intentional terminal stop.
+    killChild(options.runner === "pi-durable" && hasWorkerRecovery(path.dirname(options.statusFile)));
   };
   process.once("SIGTERM", stop);
   process.once("SIGINT", stop);
