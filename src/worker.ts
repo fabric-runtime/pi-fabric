@@ -556,6 +556,8 @@ const main = async (): Promise<void> => {
     : undefined;
   let killTimer: NodeJS.Timeout | undefined;
   let closeTimer: NodeJS.Timeout | undefined;
+  // An intentional Pi stop leaves the group alone until Pi exits; see below.
+  let signalGroupAfterExit = false;
   const recoveryWatchdog = new PiRecoveryWatchdog((error) => failStalledChild(error));
   const taskPrompt = new PiTaskPromptLifecycle((error) => failStalledChild(error, "fabric_prompt_error"));
   const killChild = (preserveCheckpoint = false): void => {
@@ -570,6 +572,7 @@ const main = async (): Promise<void> => {
     // Otherwise RPC EOF runs session_shutdown. Do not also signal Pi: older
     // RPC hosts exit on the second shutdown request before async hooks finish.
     else if (!isPi) terminateChild(child, "SIGTERM");
+    else signalGroupAfterExit = true;
     killTimer ??= setTimeout(() => terminateChild(child, "SIGKILL"), KILL_GRACE_MS);
     killTimer.unref();
     child.stdin?.end();
@@ -1521,6 +1524,10 @@ const main = async (): Promise<void> => {
     });
     child.once("close", (code) => resolve(code));
   });
+  // Pi exits on stdin EOF without signalling its process group, and its exit
+  // clears the SIGKILL deadline. A helper an extension started in that group
+  // would outlive the stop; Pi is gone now, so this is no second shutdown request.
+  if (signalGroupAfterExit && process.platform !== "win32") terminateChild(child, "SIGTERM");
 
   if (steerTimer) clearInterval(steerTimer);
   clearTimeout(recordedResultTimer);

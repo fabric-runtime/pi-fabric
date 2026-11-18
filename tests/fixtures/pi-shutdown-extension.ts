@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -13,6 +14,12 @@ export default function (pi: ExtensionAPI) {
     streamSimple() { throw new Error("Shutdown test must not request a model"); },
   });
   pi.on("input", async (_event, ctx) => {
+    if (fs.existsSync(path.join(root, "helper"))) {
+      // A helper in Pi's process group with ignored stdio: Pi's exit does not end it.
+      const helper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      helper.unref();
+      fs.writeFileSync(path.join(root, "helper-pid"), String(helper.pid));
+    }
     fs.writeFileSync(path.join(root, "ready"), String(process.pid));
     await ctx.ui.confirm("Synthetic pending question", "Wait for stop");
     return { action: "handled" };
