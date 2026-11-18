@@ -105,8 +105,22 @@ describe("fabric.json memory section parsing", () => {
     expect(config.indexDir).toBeUndefined();
   });
 
-  test("project .pi/fabric.json overrides agent-dir values field-wise", () => {
-    const config = resolveMemoryConfig({}, { agentDir, cwd: projectDir });
+  test("ignores a workspace file unless its trust was supplied by the host", () => {
+    const project = path.join(root, "untrusted-index-project");
+    writeFabric(path.join(project, ".pi", "fabric.json"), {
+      memory: { indexDir: "/tmp/project-index", sources: [{ id: "project-only", kind: "fs", root: sourceRoot }] },
+    });
+    const untrusted = buildCliContext({ agentDir, cwd: project });
+    expect(untrusted.config.indexDir).not.toBe("/tmp/project-index");
+    expect(untrusted.sources?.get("project-only")).toBeUndefined();
+    expect(untrusted.sources?.get("laptop")).toBeDefined();
+    const trusted = buildCliContext({ agentDir, cwd: project, projectTrusted: true });
+    expect(trusted.sources?.get("project-only")).toBeDefined();
+    expect(trusted.sources?.get("laptop")).toBeUndefined();
+    expect(untrusted.sources?.get("project-only")).toBeUndefined();
+  });
+  test("trusted project .pi/fabric.json overrides agent-dir values field-wise", () => {
+    const config = resolveMemoryConfig({}, { agentDir, cwd: projectDir, projectTrusted: true });
     expect(config.maxSessions).toBe(7);
     // Sibling fields from the agent file survive the deep merge.
     expect(config.maxEntryChars).toBe(12_345);
@@ -124,7 +138,7 @@ describe("fabric.json memory section parsing", () => {
     writeFabric(path.join(overrideProject, ".pi", "fabric.json"), {
       memory: { sources: [{ id: "beta", kind: "fs", root: "/tmp/beta" }] },
     });
-    const config = resolveMemoryConfig({}, { agentDir: overrideAgent, cwd: overrideProject });
+    const config = resolveMemoryConfig({}, { agentDir: overrideAgent, cwd: overrideProject, projectTrusted: true });
     expect(config.sources).toEqual([{ id: "beta", kind: "fs", root: "/tmp/beta" }]);
   });
 
@@ -145,7 +159,7 @@ describe("fabric.json memory section parsing", () => {
     writeRawFabric(path.join(corruptProject, ".pi", "fabric.json"), "[1, 2, 3]");
     const emptyAgent = path.join(root, "empty-agent");
     writeRawFabric(path.join(emptyAgent, "fabric.json"), "   \n");
-    const config = resolveMemoryConfig({}, { agentDir: corruptAgent, cwd: corruptProject });
+    const config = resolveMemoryConfig({}, { agentDir: corruptAgent, cwd: corruptProject, projectTrusted: true });
     expect(config.enabled).toBe(DEFAULT_MEMORY_CONFIG.enabled);
     const emptyConfig = resolveMemoryConfig({}, { agentDir: emptyAgent });
     expect(emptyConfig.maxSessions).toBe(DEFAULT_MEMORY_CONFIG.maxSessions);
@@ -256,8 +270,8 @@ describe("strict memory.sources validation (fork coordinates)", () => {
   });
 });
 
-describe("resolution order: overrides > env > project > agent > defaults", () => {
-  test("env PI_RECALL_INDEX_DIR beats the file's indexDir; explicit overrides beat env", () => {
+describe("resolution order: env > overrides > trusted project > agent > defaults", () => {
+  test("env PI_RECALL_INDEX_DIR beats file and explicit index paths", () => {
     const indexAgent = path.join(root, "index-agent");
     writeFabric(path.join(indexAgent, "fabric.json"), {
       memory: { indexDir: "/tmp/from-file" },
@@ -267,7 +281,7 @@ describe("resolution order: overrides > env > project > agent > defaults", () =>
       expect(resolveMemoryConfig({}, { agentDir: indexAgent }).indexDir).toBe("/tmp/from-env");
       expect(
         resolveMemoryConfig({ indexDir: "/tmp/from-override" }, { agentDir: indexAgent }).indexDir,
-      ).toBe("/tmp/from-override");
+      ).toBe("/tmp/from-env");
     } finally {
       if (previousIndexDir === undefined) delete process.env[INDEX_DIR_ENV];
       else process.env[INDEX_DIR_ENV] = previousIndexDir;

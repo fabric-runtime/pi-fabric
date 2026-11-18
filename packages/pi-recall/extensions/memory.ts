@@ -79,24 +79,9 @@ const ENTRY_RANGE_PARAM = Type.Optional(
 // One cache per session, mirroring the engine's per-provider MemoryRequestCache.
 const cache = new MemoryRequestCache();
 
-// Read-only fabric.json layer locations (agent-dir plan first, project
-// .pi/fabric.json second — resolveFabricConfig ordering). One shared object
-// keeps the added load cost to a single stat+read per file; no eager imports
-// beyond the node:fs builtins the config module already carries.
-const memoryConfigFiles = { agentDir: resolveAgentDir(), cwd: process.cwd() };
-
-// Registry behind the tools' source= parameter: configured fs sources are
-// seeded at load, and embedding hosts can register further portable sources
-// through registerMemorySource. Without it on the context, every
-// source-qualified call failed to resolve its source by construction.
+// The global registry contains explicit host registrations only. File-backed
+// sources belong to the current trusted context, not the process.
 const memorySources = createMemorySourceRegistry();
-const configuredSources = createConfiguredMemorySourceRegistry(
-  resolveMemoryConfig({}, memoryConfigFiles).sources ?? [],
-);
-for (const id of configuredSources.ids()) {
-  const source = configuredSources.get(id);
-  if (source !== undefined) memorySources.register(source);
-}
 
 /** Register a portable memory source for this extension's source-qualified
  *  memory_recall / memory_expand / memory_sessions calls. */
@@ -109,15 +94,24 @@ interface SessionManagerLike {
   getSessionFile?: () => string | undefined;
 }
 
-const buildContext = (sessionManager: SessionManagerLike | undefined): MemoryProviderContext => {
-  const context: MemoryProviderContext = {
-    agentDir: memoryConfigFiles.agentDir,
-    cwd: memoryConfigFiles.cwd,
-    config: resolveMemoryConfig({}, memoryConfigFiles),
-    sources: memorySources,
-  };
-  const sessionId = sessionManager?.getSessionId?.();
-  const sessionFile = sessionManager?.getSessionFile?.();
+interface RecallHostContext {
+  cwd?: string;
+  sessionManager?: SessionManagerLike;
+  isProjectTrusted?(): boolean;
+}
+
+const buildContext = (host: RecallHostContext | undefined): MemoryProviderContext => {
+  const agentDir = resolveAgentDir();
+  const cwd = host?.cwd ?? process.cwd();
+  const config = resolveMemoryConfig({}, { agentDir, cwd, projectTrusted: host?.isProjectTrusted?.() === true });
+  const sources = createConfiguredMemorySourceRegistry(config.sources ?? []);
+  for (const id of memorySources.ids()) {
+    const source = memorySources.get(id);
+    if (source) sources.register(source);
+  }
+  const context: MemoryProviderContext = { agentDir, cwd, config, sources };
+  const sessionId = host?.sessionManager?.getSessionId?.();
+  const sessionFile = host?.sessionManager?.getSessionFile?.();
   if (sessionId !== undefined) context.sessionId = sessionId;
   if (sessionFile !== undefined) context.sessionFile = sessionFile;
   return context;
@@ -204,7 +198,7 @@ export default function (pi: ExtensionAPI): void {
       entryRange: ENTRY_RANGE_PARAM,
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const context = buildContext(ctx?.sessionManager as SessionManagerLike | undefined);
+      const context = buildContext(ctx);
       try {
         const response = await processMemoryRecall(
           normalizeMemoryArgs("recall", params as Record<string, unknown>),
@@ -258,7 +252,7 @@ export default function (pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const sessionManager = ctx?.sessionManager as SessionManagerLike | undefined;
-      const context = buildContext(sessionManager);
+      const context = buildContext(ctx);
       let args = normalizeMemoryArgs("expand", params as Record<string, unknown>);
       if (args.session === undefined) {
         // Engine parity: prepareArguments injected the live session for expand.
@@ -311,7 +305,7 @@ export default function (pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const sessionManager = ctx?.sessionManager as SessionManagerLike | undefined;
-      const context = buildContext(sessionManager);
+      const context = buildContext(ctx);
       let args = normalizeMemoryArgs("outline", params as Record<string, unknown>);
       if (args.session === undefined) {
         // Engine parity: prepareArguments injected the live session for expand.
@@ -346,7 +340,7 @@ export default function (pi: ExtensionAPI): void {
       limit: Type.Optional(Type.Number({ minimum: 1, description: "Maximum sessions returned; capped at the internal session ceiling." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const context = buildContext(ctx?.sessionManager as SessionManagerLike | undefined);
+      const context = buildContext(ctx);
       try {
         const response = await processMemorySessions(
           normalizeMemoryArgs("sessions", params as Record<string, unknown>),

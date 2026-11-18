@@ -13,6 +13,7 @@ export const buildCliContext = (
   overrides: {
     agentDir?: string;
     cwd?: string;
+    projectTrusted?: boolean;
     config?: Partial<FabricMemoryConfig>;
     sessionId?: string;
     sessionFile?: string;
@@ -20,7 +21,7 @@ export const buildCliContext = (
 ): MemoryProviderContext => {
   const agentDir = overrides.agentDir ?? resolveAgentDir();
   const cwd = overrides.cwd ?? process.cwd();
-  const config = resolveMemoryConfig(overrides.config, { agentDir, cwd });
+  const config = resolveMemoryConfig(overrides.config, { agentDir, cwd, projectTrusted: overrides.projectTrusted === true });
   return {
     agentDir,
     cwd,

@@ -30,8 +30,9 @@ probe a cold session with one rare literal term first. Page with
 
 ## Configured sources (fabric.json)
 
-`${agentDir}/fabric.json` (then `${cwd}/.pi/fabric.json`) may carry a
-`memory.sources` list of `fs` adapters over local session archives:
+`${agentDir}/fabric.json` may carry a `memory.sources` list of `fs` adapters
+over local session archives. Put `--trust-project-config` before the CLI
+command to also read `${cwd}/.pi/fabric.json` in a trusted checkout.
 
     pi-recall recall --source laptop 'the query terms'
 

@@ -108,32 +108,6 @@ const boundedInteger = (value: unknown, fallback: number, min: number, max: numb
     ? Math.max(min, Math.min(max, value))
     : fallback;
 
-const mergeObjects = (
-  base: Record<string, unknown>,
-  override: Record<string, unknown>,
-): Record<string, unknown> => {
-  const merged = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    const baseValue = merged[key];
-    if (
-      typeof baseValue === "object" &&
-      baseValue !== null &&
-      !Array.isArray(baseValue) &&
-      typeof value === "object" &&
-      value !== null &&
-      !Array.isArray(value)
-    ) {
-      merged[key] = mergeObjects(
-        baseValue as Record<string, unknown>,
-        value as Record<string, unknown>,
-      );
-    } else {
-      merged[key] = value;
-    }
-  }
-  return merged;
-};
-
 const MEMORY_SOURCE_ID_PATTERN = /^[a-z0-9][a-z0-9_.-]{0,127}$/;
 
 /**
@@ -279,17 +253,18 @@ const parseMemorySection = (memory: Record<string, unknown>): FabricMemoryConfig
 export interface MemoryConfigFiles {
   /** Directory whose fabric.json is read first (the agent tree). */
   agentDir?: string;
-  /** Working directory whose .pi/fabric.json deep-merges on top. */
+  /** Working directory whose .pi/fabric.json merges on top when explicitly trusted. */
   cwd?: string;
+  projectTrusted?: boolean;
 }
 
 /** Resolution order (later wins), mirroring the engine's resolveFabricConfig
  *  (agent-dir plan first, project merge second):
  *  1. DEFAULT_MEMORY_CONFIG
  *  2. memory section of ${agentDir}/fabric.json
- *  3. memory section of ${cwd}/.pi/fabric.json, deep-merged field-wise on top
- *  4. PI_RECALL_INDEX_DIR (the write-path override, unchanged behavior)
- *  5. explicit overrides (tests / embedding hosts) — highest
+ *  3. memory section of ${cwd}/.pi/fabric.json, only when trusted
+ * 4. explicit overrides (tests / embedding hosts)
+ * 5. PI_RECALL_INDEX_DIR (the existing write-path override)
  * A missing or unparseable file at either location is skipped silently, and
  * only the memory section is ever consulted: this layer never writes,
  * migrates, or validates the rest of fabric.json. */
@@ -302,18 +277,18 @@ export const resolveMemoryConfig = (
     files.agentDir !== undefined
       ? readFabricJson(path.join(files.agentDir, "fabric.json"))
       : undefined,
-    files.cwd !== undefined
+    files.cwd !== undefined && files.projectTrusted === true
       ? readFabricJson(path.join(files.cwd, ".pi", "fabric.json"))
       : undefined,
   ].filter((document): document is Record<string, unknown> => document !== undefined);
   for (const document of plans) {
-    memoryDocument = mergeObjects(memoryDocument, objectValue(document.memory));
+    memoryDocument = { ...memoryDocument, ...objectValue(document.memory) };
   }
   const indexDir = process.env[INDEX_DIR_ENV];
   return {
     ...DEFAULT_MEMORY_CONFIG,
     ...parseMemorySection(memoryDocument),
-    ...(indexDir !== undefined && indexDir !== "" ? { indexDir } : {}),
     ...overrides,
+    ...(indexDir !== undefined && indexDir !== "" ? { indexDir } : {}),
   };
 };

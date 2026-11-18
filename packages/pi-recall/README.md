@@ -59,9 +59,13 @@ wins):
 
 1. built-in defaults;
 2. `memory` section of `${agentDir}/fabric.json`;
-3. `memory` section of `${cwd}/.pi/fabric.json`, deep-merged field-wise on top;
-4. `PI_RECALL_INDEX_DIR` (write-path override, unchanged);
-5. explicit overrides passed programmatically (tests / embedding hosts).
+3. `memory` section of `${cwd}/.pi/fabric.json`, only for trusted projects;
+4. explicit overrides passed programmatically (tests / embedding hosts);
+5. `PI_RECALL_INDEX_DIR` (the existing write-path override).
+
+In Pi, project trust comes from the active session. In the standalone CLI,
+project settings are off by default. To opt in for a trusted checkout, put
+`--trust-project-config` before the command.
 
 A missing or unparseable file at either location is skipped silently and only
 the `memory` section is ever consulted — the layer never writes, migrates, or
@@ -82,8 +86,8 @@ would otherwise surface only as a confusing `source_not_found` at call time.
       }
     }
 
-Configured sources are seeded into the CLI context and the pi extension at
-load; source-qualified recall works without any env var:
+Configured sources are scoped to the effective CLI or Pi tool context;
+source-qualified recall works without any env var:
 
     pi-recall recall --source laptop 'shell contour'
 
