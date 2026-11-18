@@ -28,8 +28,11 @@ planned; the code is ours.
 
 Index compatibility is exact: `MEMORY_CACHE_VERSION = 6` unchanged, the index
 at `~/.pi/agent/fabric/memory-index` is read as-is (built lazily on read),
-zero migration. The live index of the production contour stays authoritative
-while both surfaces coexist.
+zero migration. The session JSONL remains authoritative. Current Fabric and
+pi-recall releases coordinate index publication and eviction with per-entry
+`.lock` directories. If a process is hard-killed, an empty lock can block
+updates for that entry without blocking queries. Stop all clients using the
+index before deleting any stranded lock.
 
 ## CLI
 
