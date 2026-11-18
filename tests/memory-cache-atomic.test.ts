@@ -108,15 +108,20 @@ describe.each(cases)("$name cache publication", ({ load, cachePath, kind }) => {
     fs.writeFileSync(cache, JSON.stringify(cached));
     expect(load(ref, options)).toEqual(cached);
     const next = path.join(root, "next");
+    const opened = path.join(root, "opened");
     fs.writeFileSync(next, "{invalid replacement");
     const open = fs.openSync;
     let swapped = false;
     vi.spyOn(fs, "openSync").mockImplementation((name, flags, mode) => {
-      const fd = open(name, flags, mode);
-      if (!swapped && name === cache) {
-        swapped = true;
-        fs.renameSync(next, cache);
-      }
+      if (swapped || name !== cache) return open(name, flags, mode);
+      swapped = true;
+      // Model the same situation at the open boundary: the fd names the old
+      // file while the pathname names new bytes. Windows cannot reliably
+      // rename over an already-open destination, so park the original first.
+      fs.renameSync(cache, opened);
+      const fd = open(opened, flags, mode);
+      try { fs.renameSync(next, cache); }
+      catch (error) { fs.closeSync(fd); throw error; }
       return fd;
     });
     expect(load(ref, options)).toEqual(cached);
