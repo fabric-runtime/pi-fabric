@@ -126,3 +126,28 @@ describe.skipIf(!posix).each(["pi", "pi-durable"] as const)("%s child graceful s
     expect(alive(pid)).toBe(false);
   }, 25_000);
 });
+
+// The tail of stdout is parsed after the child exits. A token limit it trips
+// must still reach the deferred group cleanup (pi runner: the fixture speaks RPC).
+describe.skipIf(!posix)("pi child stopped by its final output", () => {
+  it("ends a helper in the child's group when a token limit trips on the child's final output", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-shutdown-tail-"));
+    roots.push(root);
+    const helperFile = path.join(root, "helper-pid");
+    vi.stubEnv("FAKE_PI_HELPER_PID_FILE", helperFile);
+    const manager = new AgentManager(root, {
+      ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi", extensions: true,
+      durableWorkerRecovery: false, timeoutMs: 30_000, maxConcurrent: 1, maxTokensPerChild: 5,
+    }, {
+      workerPath,
+      piBinary: path.resolve("tests/fixtures/fake-pi-rpc-exit-helper.mjs"),
+      runRoot: path.join(root, "runs"), fullCodeMode: false,
+    });
+    managers.push(manager);
+    const result = await manager.run({ task: "burn tokens", transport: "process" });
+    expect(result.status, JSON.stringify(result)).toBe("timed_out");
+    expect(result.error ?? "").toContain("agents.maxTokensPerChild");
+    const helper = Number(fs.readFileSync(helperFile, "utf8"));
+    await vi.waitFor(() => expect(alive(helper)).toBe(false), { timeout: 3_000 });
+  }, 25_000);
+});

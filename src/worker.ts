@@ -1524,11 +1524,6 @@ const main = async (): Promise<void> => {
     });
     child.once("close", (code) => resolve(code));
   });
-  // Pi exits on stdin EOF without signalling its process group, and its exit
-  // clears the SIGKILL deadline. A helper an extension started in that group
-  // would outlive the stop; Pi is gone now, so this is no second shutdown request.
-  if (signalGroupAfterExit && process.platform !== "win32") terminateChild(child, "SIGTERM");
-
   if (steerTimer) clearInterval(steerTimer);
   clearTimeout(recordedResultTimer);
   if (recordedResultPending && !terminalStatus) {
@@ -1619,6 +1614,11 @@ const main = async (): Promise<void> => {
   }
   // A handled task cannot start its turn once the child is gone.
   taskPrompt.childExited();
+  // Pi exits on stdin EOF without signalling its process group, and its exit
+  // clears the SIGKILL deadline. A helper an extension started in that group
+  // would outlive the stop; Pi is gone now, so this is no second shutdown request.
+  // Run after the tail frames: a limit they trip also defers this signal.
+  if (signalGroupAfterExit && process.platform !== "win32") terminateChild(child, "SIGTERM");
   // Tail frames can request closure after the child has already exited.
   if (killTimer) clearTimeout(killTimer);
   if (closeTimer) clearTimeout(closeTimer);
