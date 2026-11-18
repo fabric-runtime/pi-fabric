@@ -546,7 +546,11 @@ type PiFindPatternArgument = { pattern?: string; query?: string; regex?: string;
 // Two-arg (primary, options) bags for the string-primary tools. Only option
 // aliases belong here (max/start/ctx/ic/...), never primary-field aliases —
 // the primary field comes from the positional string.
-type PiReadOptions = { offset?: number; limit?: number; start?: number; max?: number };
+type PiReadOptions = {
+  offset?: number; limit?: number; start?: number; max?: number;
+  /** Anchored anchor│content rows for hashline edits; ignored by the built-in read. */
+  anchors?: boolean;
+};
 // cwd is honored per call by the pi provider, which binds the command to a
 // shell definition rooted there; relative paths resolve from the session cwd.
 // The alias spellings mirror the shell entries in __piArgAliases: the
