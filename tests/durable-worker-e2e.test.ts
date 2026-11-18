@@ -143,6 +143,9 @@ describe("AgentManager real durable parent worker", () => {
     await manager.close();
     // A graceful external stop waits for the actual durable child/lease to
     // close, unlike merely observing the outer wrapper's PID disappear.
+    // Do not dispose the durable RPC session here: native dispose aborts the
+    // active task and persists "Operation aborted", which cannot be resumed.
+    // An outside interruption must leave its durable checkpoint unfinished.
     process.kill(-recovery.pid, "SIGTERM");
     await until(() => { try { process.kill(recovery.pid, 0); return false; } catch { return true; } });
     expect(JSON.parse(fs.readFileSync(path.join(directory, "status.json"), "utf8")).status).toBe("stopped");
