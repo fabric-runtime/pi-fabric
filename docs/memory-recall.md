@@ -140,7 +140,13 @@ Every cache record stores the exact session file path, branch mode, lineage
 fingerprint, privacy policy, and a SHA-256 `sourceHash`, along with source
 mtime and size. A same-size rewrite that preserves mtime still invalidates
 the record. Fabric creates cache directories with `0700` permissions and
-cache files with `0600` permissions on a best-effort basis.
+cache files with `0600` permissions on a best-effort basis. A refresh publishes
+complete JSON with a same-directory rename. Fabric and standalone pi-recall
+coordinate publication and eviction with a per-entry `.lock` directory. A
+contended write is skipped, not waited on; the query still uses the session
+JSONL. A hard process kill can leave an empty `.lock` that disables cache
+updates for one entry. Remove it only after stopping all clients using that
+index. Older releases do not participate in the lock protocol.
 
 A hot shard holds bounded normalized entry text plus `indexCoverage`. Each
 cold digest contains:

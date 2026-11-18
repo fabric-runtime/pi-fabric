@@ -629,6 +629,10 @@ export class FabricConversationView implements Component, Focusable {
     // On tiny screens, keep one transcript row instead of reserving the gap.
     const editorGap = editorShowsTopBorder && remaining > 1 ? [""] : [];
     remaining -= editorGap.length;
+    // The queue is docked too. Match the gap above the main Pi queue without
+    // hiding a queued row or the last transcript row on short terminals.
+    const queueGap = queueLines.length > 0 && queueLines.length + 2 <= remaining ? [""] : [];
+    remaining -= queueGap.length;
     const queueBudget = Math.max(0, remaining - 1);
     if (queueLines.length > queueBudget) {
       const cursor = queueLines.findIndex((line) => line.includes(CURSOR_MARKER));
@@ -673,7 +677,7 @@ export class FabricConversationView implements Component, Focusable {
       this.latest.paint(body, width, head.length, !imageRows?.has(body.length - 1) && !!entry && latestRow > 0,
         this.scrollbar.visible, this.theme);
     } else this.scrollbar.reset();
-    return [...head, ...body.slice(0, remaining), ...queueLines, ...editorGap, ...editorLines, ...footer, ...list]
+    return [...head, ...body.slice(0, remaining), ...queueGap, ...queueLines, ...editorGap, ...editorLines, ...footer, ...list]
       .slice(0, rows)
       .map((line) => isKittyImageLine(line) || visibleWidth(line) <= width ? line : truncateToWidth(line, width, ""));
   }

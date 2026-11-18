@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { writeJsonAtomic } from "../core/atomic-write.js";
 import { coverageComplete } from "../verified/policy.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -109,102 +110,107 @@ const normalizationOptions = (options: MemoryIndexOptions, lineage: SessionLinea
   indexToolOutput: options.indexToolOutput ?? DEFAULT_MEMORY_INDEX_PRIVACY.indexToolOutput,
 });
 
-const readShardFile = (
-  filePath: string,
-  maxBytes = DEFAULT_MAX_SYNC_SOURCE_BYTES,
-): Shard | null => {
+/** Structural validity of an already-parsed shard record against the size of
+ *  the file it was read from. Pure, so cache cleanup can validate a record
+ *  it already parsed instead of reading the file a second time. */
+const validShardRecord = (parsed: Shard, fileSize: number): boolean =>
+  parsed.cacheVersion === MEMORY_CACHE_VERSION &&
+  parsed.kind === "shard" &&
+  typeof parsed.sessionFile === "string" &&
+  typeof parsed.sessionId === "string" &&
+  typeof parsed.sourceHash === "string" &&
+  parsed.sourceHash.length === 64 &&
+  (parsed.branches === "active" || parsed.branches === "all") &&
+  typeof parsed.lineageFingerprint === "string" &&
+  parsed.lineageFingerprint.length === 64 &&
+  typeof parsed.policy === "string" &&
+  typeof parsed.cacheBytes === "number" &&
+  parsed.cacheBytes === fileSize &&
+  typeof parsed.cacheSourceRatio === "number" &&
+  typeof parsed.totalEntryCount === "number" &&
+  typeof parsed.indexCoverage === "object" &&
+  parsed.indexCoverage !== null &&
+  typeof parsed.indexCoverage.complete === "boolean" &&
+  Array.isArray(parsed.indexCoverage.reasons) &&
+  parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") &&
+  Array.isArray(parsed.entries) &&
+  parsed.entries.every((entry) =>
+    entry !== null &&
+    typeof entry === "object" &&
+    typeof entry.index === "number" &&
+    typeof entry.sessionFile === "string" &&
+    typeof entry.text === "string");
+
+/** Structural validity of an already-parsed digest record against the size
+ *  of the file it was read from; see validShardRecord. */
+const validDigestRecord = (parsed: DigestShard, fileSize: number): boolean =>
+  parsed.cacheVersion === MEMORY_CACHE_VERSION &&
+  parsed.kind === "digest" &&
+  typeof parsed.sessionId === "string" &&
+  typeof parsed.file === "string" &&
+  typeof parsed.sourceHash === "string" &&
+  parsed.sourceHash.length === 64 &&
+  (parsed.branches === "active" || parsed.branches === "all") &&
+  typeof parsed.lineageFingerprint === "string" &&
+  parsed.lineageFingerprint.length === 64 &&
+  typeof parsed.policy === "string" &&
+  typeof parsed.cacheBytes === "number" &&
+  parsed.cacheBytes === fileSize &&
+  typeof parsed.cacheSourceRatio === "number" &&
+  Array.isArray(parsed.filesTouched) &&
+  Array.isArray(parsed.vocabulary) &&
+  parsed.vocabulary.every((term, index) =>
+    typeof term === "string" && (index === 0 || parsed.vocabulary[index - 1]! < term)) &&
+  Array.isArray(parsed.addresses) &&
+  parsed.addresses.every((address) =>
+    Array.isArray(address) &&
+    address.length === 10 &&
+    typeof address[0] === "number" &&
+    (address[1] === null || typeof address[1] === "string") &&
+    (address[2] === null || typeof address[2] === "string") &&
+    (address[3] === null || typeof address[3] === "string") &&
+    (address[4] === null || typeof address[4] === "string") &&
+    (address[5] === null || typeof address[5] === "number") &&
+    (address[6] === null || typeof address[6] === "string") &&
+    (address[7] === null || typeof address[7] === "string") &&
+    (address[8] === null || typeof address[8] === "string") &&
+    (address[9] === null ||
+      address[9] === "succeeded" ||
+      address[9] === "failed" ||
+      address[9] === "aborted" ||
+      address[9] === "timed_out")) &&
+  typeof parsed.indexCoverage === "object" &&
+  parsed.indexCoverage !== null &&
+  typeof parsed.indexCoverage.complete === "boolean" &&
+  typeof parsed.indexCoverage.vocabularyBytes === "number" &&
+  Array.isArray(parsed.indexCoverage.reasons) &&
+  parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") &&
+  typeof parsed.mtime === "number" &&
+  typeof parsed.size === "number";
+
+// The size check, byte budget, and JSON must all describe the same inode.
+// A path stat followed by a path read can straddle another process's rename.
+const withCacheSnapshot = <T>(filePath: string, read: (fd: number, stat: fs.Stats) => T): T => {
+  // Do not block opening unexpected special files such as FIFOs on POSIX.
+  const fd = fs.openSync(filePath, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
   try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile() || stat.size > maxBytes) return null;
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Shard;
-    if (
-      parsed.cacheVersion !== MEMORY_CACHE_VERSION ||
-      parsed.kind !== "shard" ||
-      typeof parsed.sessionFile !== "string" ||
-      typeof parsed.sessionId !== "string" ||
-      typeof parsed.sourceHash !== "string" ||
-      parsed.sourceHash.length !== 64 ||
-      (parsed.branches !== "active" && parsed.branches !== "all") ||
-      typeof parsed.lineageFingerprint !== "string" ||
-      parsed.lineageFingerprint.length !== 64 ||
-      typeof parsed.policy !== "string" ||
-      typeof parsed.cacheBytes !== "number" ||
-      parsed.cacheBytes !== stat.size ||
-      typeof parsed.cacheSourceRatio !== "number" ||
-      typeof parsed.totalEntryCount !== "number" ||
-      typeof parsed.indexCoverage !== "object" ||
-      parsed.indexCoverage === null ||
-      typeof parsed.indexCoverage.complete !== "boolean" ||
-      !Array.isArray(parsed.indexCoverage.reasons) ||
-      !parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") ||
-      !Array.isArray(parsed.entries) ||
-      !parsed.entries.every((entry) =>
-        entry !== null &&
-        typeof entry === "object" &&
-        typeof entry.index === "number" &&
-        typeof entry.sessionFile === "string" &&
-        typeof entry.text === "string")
-    ) return null;
-    return parsed;
-  } catch {
-    return null;
+    return read(fd, fs.fstatSync(fd));
+  } finally {
+    fs.closeSync(fd);
   }
 };
 
-const readDigestFile = (
+const readCacheFile = <T>(
   filePath: string,
-  maxBytes = DEFAULT_MAX_COLD_CACHE_BYTES,
-): DigestShard | null => {
+  maxBytes: number,
+  valid: (value: T, fileSize: number) => boolean,
+): T | null => {
   try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile() || stat.size > maxBytes) return null;
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as DigestShard;
-    if (
-      parsed.cacheVersion !== MEMORY_CACHE_VERSION ||
-      parsed.kind !== "digest" ||
-      typeof parsed.sessionId !== "string" ||
-      typeof parsed.file !== "string" ||
-      typeof parsed.sourceHash !== "string" ||
-      parsed.sourceHash.length !== 64 ||
-      (parsed.branches !== "active" && parsed.branches !== "all") ||
-      typeof parsed.lineageFingerprint !== "string" ||
-      parsed.lineageFingerprint.length !== 64 ||
-      typeof parsed.policy !== "string" ||
-      typeof parsed.cacheBytes !== "number" ||
-      parsed.cacheBytes !== stat.size ||
-      typeof parsed.cacheSourceRatio !== "number" ||
-      !Array.isArray(parsed.filesTouched) ||
-      !Array.isArray(parsed.vocabulary) ||
-      !parsed.vocabulary.every((term, index) =>
-        typeof term === "string" && (index === 0 || parsed.vocabulary[index - 1]! < term)) ||
-      !Array.isArray(parsed.addresses) ||
-      !parsed.addresses.every((address) =>
-        Array.isArray(address) &&
-        address.length === 10 &&
-        typeof address[0] === "number" &&
-        (address[1] === null || typeof address[1] === "string") &&
-        (address[2] === null || typeof address[2] === "string") &&
-        (address[3] === null || typeof address[3] === "string") &&
-        (address[4] === null || typeof address[4] === "string") &&
-        (address[5] === null || typeof address[5] === "number") &&
-        (address[6] === null || typeof address[6] === "string") &&
-        (address[7] === null || typeof address[7] === "string") &&
-        (address[8] === null || typeof address[8] === "string") &&
-        (address[9] === null ||
-          address[9] === "succeeded" ||
-          address[9] === "failed" ||
-          address[9] === "aborted" ||
-          address[9] === "timed_out")) ||
-      typeof parsed.indexCoverage !== "object" ||
-      parsed.indexCoverage === null ||
-      typeof parsed.indexCoverage.complete !== "boolean" ||
-      typeof parsed.indexCoverage.vocabularyBytes !== "number" ||
-      !Array.isArray(parsed.indexCoverage.reasons) ||
-      !parsed.indexCoverage.reasons.every((reason) => typeof reason === "string") ||
-      typeof parsed.mtime !== "number" ||
-      typeof parsed.size !== "number"
-    ) return null;
-    return parsed;
+    return withCacheSnapshot(filePath, (fd, stat) => {
+      if (!stat.isFile() || stat.size > maxBytes) return null;
+      const parsed = JSON.parse(fs.readFileSync(fd, "utf8")) as T;
+      return valid(parsed, stat.size) ? parsed : null;
+    });
   } catch {
     return null;
   }
@@ -229,24 +235,51 @@ const applyCacheMetrics = <T extends CacheRecord>(value: T): T => {
   return value;
 };
 
-const writeCacheFile = (filePath: string, value: Shard | DigestShard): boolean => {
+// Shards and digests are replaceable snapshots, never authoritative state or
+// read/merge/write records. Only publication and eviction need exclusion. The
+// best-effort cache never waits or steals by age: a crash can strand one key's
+// empty lock directory, but queries still compute from the source. Clear a
+// stranded .lock only with both memory clients stopped.
+const withCacheMutation = (filePath: string, mutate: () => void): void => {
+  const lock = `${filePath}.lock`;
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-    try { fs.chmodSync(path.dirname(filePath), 0o700); } catch {}
-    fs.writeFileSync(filePath, JSON.stringify(value), { encoding: "utf8", mode: 0o600 });
-    try { fs.chmodSync(filePath, 0o600); } catch {}
-    return true;
+    fs.mkdirSync(lock, { mode: 0o700 });
   } catch {
-    return false;
+    return;
+  }
+  try {
+    mutate();
+  } catch {
+    // Cache writes/eviction are best effort.
+  } finally {
+    try { fs.rmdirSync(lock); } catch {}
+  }
+};
+
+const writeCacheFile = (filePath: string, value: Shard | DigestShard): void => {
+  try {
+    const directory = path.dirname(filePath);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    try { fs.chmodSync(directory, 0o700); } catch {}
+    withCacheMutation(filePath, () => {
+      // Replace the index entry rather than writing through a leaf symlink.
+      writeJsonAtomic(filePath, value);
+      try { fs.chmodSync(filePath, 0o600); } catch {}
+    });
+  } catch {
+    // An unusable index directory must not fail a query.
   }
 };
 
 const removeCacheFile = (filePath: string): void => {
-  try {
-    fs.rmSync(filePath, { force: true, recursive: true });
-  } catch {
-    // Cache cleanup is best effort.
-  }
+  // Do not recursively remove an unexpected directory at a cache pathname.
+  fs.rmSync(filePath, { force: true });
+};
+
+const evictCacheFile = (filePath: string, shouldRemove = () => true): void => {
+  withCacheMutation(filePath, () => {
+    if (shouldRemove()) removeCacheFile(filePath);
+  });
 };
 
 export interface SourceState {
@@ -310,16 +343,16 @@ export const loadShard = (ref: SessionRef, options: MemoryIndexOptions): Shard =
   const filePath = shardPathForSession(ref.file, options.indexDir, lineage.branches);
   const state = fingerprintSource(ref.file);
   if (!state) {
-    removeCacheFile(filePath);
+    evictCacheFile(filePath, () => !fs.existsSync(ref.file));
     return missingShard(ref, lineage);
   }
   const policy = shardPolicy(options, lineage);
-  const cached = readShardFile(
+  const cached = readCacheFile(
     filePath,
     options.maxSyncSourceBytes ?? DEFAULT_MAX_SYNC_SOURCE_BYTES,
+    validShardRecord,
   );
   if (isCacheFresh(cached, state, policy) && cached?.sessionFile === ref.file) return cached;
-  if (fs.existsSync(filePath)) removeCacheFile(filePath);
   const { entries, header, indexCoverage } = normalizeSession(
     ref.file,
     options.maxEntryChars,
@@ -332,7 +365,6 @@ export const loadShard = (ref: SessionRef, options: MemoryIndexOptions): Shard =
     finalState.sourceHash !== state.sourceHash ||
     finalLineage.fingerprint !== lineage.fingerprint
   ) {
-    removeCacheFile(filePath);
     return missingShard(
       ref,
       finalLineage,
@@ -487,18 +519,17 @@ export const loadDigest = (ref: SessionRef, options: MemoryIndexOptions): Digest
   const filePath = digestPathForSession(ref.file, options.indexDir, lineage.branches);
   const state = fingerprintSource(ref.file);
   if (!state) {
-    removeCacheFile(filePath);
+    evictCacheFile(filePath, () => !fs.existsSync(ref.file));
     return missingDigest(ref, lineage);
   }
   const policy = digestPolicy(options, lineage);
   const maxCacheBytes = options.maxColdCacheBytes ?? DEFAULT_MAX_COLD_CACHE_BYTES;
-  const cached = readDigestFile(filePath, maxCacheBytes);
+  const cached = readCacheFile(filePath, maxCacheBytes, validDigestRecord);
   if (
     isCacheFresh(cached, state, policy) &&
     cached?.file === ref.file &&
     serializedBytes(cached) <= maxCacheBytes
   ) return cached;
-  if (fs.existsSync(filePath)) removeCacheFile(filePath);
 
   const { entries, header, indexCoverage } = normalizeSession(
     ref.file,
@@ -512,7 +543,6 @@ export const loadDigest = (ref: SessionRef, options: MemoryIndexOptions): Digest
     finalState.sourceHash !== state.sourceHash ||
     finalLineage.fingerprint !== lineage.fingerprint
   ) {
-    removeCacheFile(filePath);
     return missingDigest(
       ref,
       finalLineage,
@@ -541,7 +571,18 @@ export const loadDigest = (ref: SessionRef, options: MemoryIndexOptions): Digest
     cacheBytes: 0,
     cacheSourceRatio: 0,
   }, maxCacheBytes);
-  if (persisted.cacheBytes <= maxCacheBytes) writeCacheFile(filePath, persisted);
+  if (persisted.cacheBytes <= maxCacheBytes) {
+    writeCacheFile(filePath, persisted);
+  } else {
+    // Keep the cache budget even when this replacement cannot be stored. Do
+    // not evict a fresh digest another process has already published.
+    evictCacheFile(filePath, () => {
+      const current = readCacheFile(filePath, maxCacheBytes, validDigestRecord);
+      if (isCacheFresh(current, state, policy) && current?.file === ref.file) return false;
+      return fingerprintSource(ref.file)?.sourceHash === state.sourceHash &&
+        resolveLineage(ref.file, options).fingerprint === lineage.fingerprint;
+    });
+  }
   return persisted;
 };
 
@@ -576,6 +617,52 @@ export interface TieredIndexBundle {
   coverage: MemoryCoverage;
 }
 
+interface CacheInspection {
+  bytes: number;
+  verdict: "keep" | "remove" | "budget";
+}
+
+const inspectCacheFile = (
+  cacheFile: string,
+  indexDir: string,
+  branchesToClean: MemoryBranches,
+  remainingBytes: number,
+): CacheInspection => {
+  try {
+    if (!fs.lstatSync(cacheFile).isFile()) return { bytes: 0, verdict: "remove" };
+    return withCacheSnapshot(cacheFile, (fd, stat) => {
+      if (!stat.isFile()) return { bytes: 0, verdict: "remove" };
+      if (stat.size > remainingBytes) return { bytes: 0, verdict: "budget" };
+      const bytes = stat.size;
+      const contents = fs.readFileSync(fd, "utf8");
+      let record: Shard | DigestShard | null;
+      try {
+        record = JSON.parse(contents) as Shard | DigestShard | null;
+      } catch {
+        return { bytes, verdict: "remove" };
+      }
+      if (!record || (record.branches !== "active" && record.branches !== "all")) {
+        return { bytes, verdict: "remove" };
+      }
+      const branches = record.branches;
+      if (branches !== branchesToClean) return { bytes, verdict: "keep" };
+      const source = record.kind === "shard" && validShardRecord(record, bytes)
+        ? record.sessionFile
+        : record.kind === "digest" && validDigestRecord(record, bytes) ? record.file : null;
+      const expected = !source ? null : record.kind === "shard"
+        ? shardPathForSession(source, indexDir, branches)
+        : digestPathForSession(source, indexDir, branches);
+      return {
+        bytes,
+        verdict: source !== null && expected === cacheFile && fs.existsSync(source) ? "keep" : "remove",
+      };
+    });
+  } catch {
+    // An unobservable entry is not evidence that it should be removed.
+    return { bytes: 0, verdict: "keep" };
+  }
+};
+
 const cleanupCacheDirectory = (
   indexDir: string,
   branchesToClean: MemoryBranches,
@@ -600,49 +687,18 @@ const cleanupCacheDirectory = (
       }
       inspected += 1;
       const cacheFile = path.join(indexDir, entry.name);
-      if (!entry.isFile()) {
-        removeCacheFile(cacheFile);
-        continue;
+      const inspect = (): CacheInspection["verdict"] => {
+        const result = inspectCacheFile(cacheFile, indexDir, branchesToClean, maxBytes - inspectedBytes);
+        inspectedBytes += result.bytes;
+        return result.verdict;
+      };
+      let verdict = inspect();
+      if (verdict === "remove") {
+        // Re-validate while holding the same lock as publishers. The sweep's
+        // original observation may describe a file that has been replaced.
+        evictCacheFile(cacheFile, () => (verdict = inspect()) === "remove");
       }
-      let cacheBytes: number;
-      try {
-        cacheBytes = fs.statSync(cacheFile).size;
-      } catch {
-        removeCacheFile(cacheFile);
-        continue;
-      }
-      if (inspectedBytes + cacheBytes > maxBytes) {
-        return { complete: false, reasons: ["cache_cleanup_budget"] };
-      }
-      inspectedBytes += cacheBytes;
-      try {
-        const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as Record<string, unknown>;
-        const kind = parsed.kind;
-        const source = kind === "shard" && typeof parsed.sessionFile === "string"
-          ? parsed.sessionFile
-          : kind === "digest" && typeof parsed.file === "string" ? parsed.file : null;
-        const branches = parsed.branches === "active" || parsed.branches === "all"
-          ? parsed.branches
-          : null;
-        if (branches !== null && branches !== branchesToClean) continue;
-        const expected = source && branches && kind === "shard"
-          ? shardPathForSession(source, indexDir, branches)
-          : source && branches && kind === "digest"
-            ? digestPathForSession(source, indexDir, branches)
-            : null;
-        const structurallyValid = kind === "shard"
-          ? readShardFile(cacheFile, cacheBytes) !== null
-          : kind === "digest" ? readDigestFile(cacheFile, cacheBytes) !== null : false;
-        if (
-          parsed.cacheVersion !== MEMORY_CACHE_VERSION ||
-          source === null ||
-          expected !== cacheFile ||
-          !fs.existsSync(source) ||
-          !structurallyValid
-        ) removeCacheFile(cacheFile);
-      } catch {
-        removeCacheFile(cacheFile);
-      }
+      if (verdict === "budget") return { complete: false, reasons: ["cache_cleanup_budget"] };
     }
   } finally {
     directory.closeSync();
@@ -714,7 +770,7 @@ export const loadTieredIndex = (
         }
       } else if (tier === "hot") {
         const shard = loadShard(ref, options);
-        removeCacheFile(digestPathForSession(
+        evictCacheFile(digestPathForSession(
           ref.file,
           options.indexDir,
           options.branches ?? "active",
@@ -728,7 +784,7 @@ export const loadTieredIndex = (
         }
       } else {
         const digest = loadDigest(ref, options);
-        removeCacheFile(shardPathForSession(
+        evictCacheFile(shardPathForSession(
           ref.file,
           options.indexDir,
           options.branches ?? "active",
