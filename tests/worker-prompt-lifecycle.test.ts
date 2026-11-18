@@ -85,7 +85,9 @@ describe.skipIf(!hasWorker)("real worker initial prompt lifecycle", () => {
     expect(fs.readFileSync(path.join(root, "sends"), "utf8")).toBe("0");
     expect(fs.readFileSync(path.join(root, "prompts"), "utf8")).toBe("1");
     expect(manager.listForUi().some(run => run.status === "running")).toBe(false);
-    expect(() => process.kill(Number(fs.readFileSync(path.join(root, "child-pid"), "utf8")), 0)).toThrow();
+    const childPid = Number(fs.readFileSync(path.join(root, "child-pid"), "utf8"));
+    // Terminal status can appear before the OS finishes reaping the child.
+    await vi.waitFor(() => expect(() => process.kill(childPid, 0)).toThrow(), { timeout: 3_000 });
   });
 
   it.each(["started", "queued", "race", "started-handled"])("completes a %s task without false rejection", async scenario => {
@@ -114,7 +116,9 @@ describe.skipIf(!hasWorker)("real worker initial prompt lifecycle", () => {
     expect(result.status).toBe("stopped");
     expect(fs.readFileSync(path.join(root, "sends"), "utf8")).toBe("0");
     expect(manager.listForUi().some(run => run.status === "running")).toBe(false);
-    expect(() => process.kill(Number(fs.readFileSync(path.join(root, "child-pid"), "utf8")), 0)).toThrow();
+    const childPid = Number(fs.readFileSync(path.join(root, "child-pid"), "utf8"));
+    // Terminal status can appear before the OS finishes reaping the child.
+    await vi.waitFor(() => expect(() => process.kill(childPid, 0)).toThrow(), { timeout: 3_000 });
   });
 
   it.each(["text", "directive"] as const)("finishes a consumed %s actor activation without stopping the persistent mailbox", async responseMode => {
