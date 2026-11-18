@@ -1,51 +1,76 @@
 import { Value } from "typebox/value";
 
-const extractBalancedJson = (text: string, start: number): string | null => {
-  const open = text[start];
-  if (open !== "{" && open !== "[") return null;
-  const close = open === "{" ? "}" : "]";
-  let depth = 0;
-  let inString = false;
+const MAX_SALVAGE_CHARS = 1024 * 1024;
+const MAX_PARSED_CANDIDATES = 16;
+
+// Find spans in one pass even when a model emits a long run of unclosed
+// brackets. Keep inner completions so malformed surrounding prose cannot
+// hide a later value; a successfully parsed outer value will own its span.
+const balancedSpans = (text: string): Int32Array => {
+  const ends = new Int32Array(text.length);
+  const stack: number[] = [];
+  let quoted = false;
   let escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (quoted) {
       if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
       continue;
     }
-    if (ch === '"') inString = true;
-    else if (ch === open) depth++;
-    else if (ch === close) {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
+    if (char === '"' && stack.length) quoted = true;
+    else if (char === "{" || char === "[") stack.push(i);
+    else if (char === "}" || char === "]") {
+      const start = stack.pop();
+      if (start === undefined) continue;
+      if ((text[start] === "{") === (char === "}")) ends[start] = i + 1;
+      else stack.length = 0;
     }
   }
-  return null;
+  return ends;
 };
 
-export const parseStructuredValue = (text: string): unknown => {
+export const parseStructuredValue = (text: string, schema?: Record<string, unknown>): unknown => {
   const trimmed = text.trim();
+  let originalError: unknown;
   try {
     return JSON.parse(trimmed);
-  } catch {
-    // Whole text is not JSON; try extraction below.
+  } catch (error) {
+    originalError = error;
   }
-  const fenced = trimmed.match(/```(?:json)?\s*\n([\s\S]*?)\n```/i);
+  const source = trimmed.slice(0, MAX_SALVAGE_CHARS);
+  // Bound bytes sent to JSON.parse independently of the number of positions
+  // that look balanced, so nested, unparsable spans cannot make this quadratic.
+  let remaining = source.length * 4;
+  let parsed = 0;
+  let first: unknown;
+  const unmatched = Symbol("unmatched JSON candidate");
+  const tryCandidate = (candidate: string): { result: unknown; parsed: boolean } => {
+    remaining -= candidate.length;
+    let value: unknown;
+    try { value = JSON.parse(candidate); }
+    catch { return { result: unmatched, parsed: false }; }
+    if (parsed++ === 0) first = value;
+    return { result: !schema || Value.Check(schema, value) ? value : unmatched, parsed: true };
+  };
+  const fenced = source.match(/```(?:json)?\s*\n([\s\S]*?)\n```/i);
   if (fenced?.[1]) {
-    try {
-      return JSON.parse(fenced[1].trim());
-    } catch {
-      // Fenced block is not JSON; try balanced extraction below.
-    }
+    const { result } = tryCandidate(fenced[1]);
+    if (result !== unmatched) return result;
   }
-  const start = trimmed.search(/[{\[]/);
-  if (start >= 0) {
-    const balanced = extractBalancedJson(trimmed, start);
-    if (balanced) return JSON.parse(balanced);
+  const spans = balancedSpans(source);
+  for (let i = 0; i < spans.length && parsed < MAX_PARSED_CANDIDATES && remaining > 0; i++) {
+    const end = spans[i]!;
+    if (!end || end - i > remaining) continue;
+    const attempted = tryCandidate(source.slice(i, end));
+    if (attempted.result !== unmatched) return attempted.result;
+    // An object nested inside an unrelated but valid payload is not a
+    // separate answer. Keep looking after the valid candidate instead.
+    if (attempted.parsed) i = end - 1;
   }
-  return JSON.parse(trimmed);
+  if (parsed === 0) throw originalError;
+  return first;
 };
 
 export function validateAgentResult<T extends { status: string; text: string; value?: unknown; error?: string }>(record: T, schema?: Record<string, unknown>): T {
@@ -53,7 +78,7 @@ export function validateAgentResult<T extends { status: string; text: string; va
   let parsed = false;
   try {
     // An explicit null is a value; only a missing one falls back to the text.
-    const value = record.value !== undefined ? record.value : parseStructuredValue(record.text);
+    const value = record.value !== undefined ? record.value : parseStructuredValue(record.text, schema);
     parsed = true;
     if (!Value.Check(schema, value)) {
       const errors = [...Value.Errors(schema, value)].slice(0, 5).map((error) => error.message).join("; ");
