@@ -264,6 +264,7 @@ it("replaces an anchor-aware read override's codemode-script lines with the prog
     expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE.length).toBeLessThanOrEqual(700);
     expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("pi.read({path, anchors: true})");
     expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("plain file text");
+    expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("`structuredContent.anchors[].anchor` holds fresh anchors for the next edit");
   });
 
   it("adds no compatibility block for a read override without anchors or an output schema", () => {

@@ -1,20 +1,21 @@
 import type { CapturedToolCatalog } from "../capture/catalog.js";
-import { PI_CORE_TOOL_NAMES } from "./pi-tools.js";
+import { isCodemodeScriptGuideline, PI_CORE_TOOL_NAMES } from "./pi-tools.js";
 
 /**
  * An override line about "a codemode script" describes Pi's native codemode
  * results (`nativeTools.*`, or `tools.*` in the native profile), not the
- * Fabric results of `pi.*` and `extensions.*`. Dropped here; the
- * compatibility block below states what holds for programs.
+ * Fabric results of `pi.*` and `extensions.*`. Dropped here (and relabelled
+ * "nativeTools only: " on the fabric_exec description in the additive profile);
+ * the compatibility block below states what holds for programs.
  */
-export const isCodemodeScriptGuideline = (guideline: string): boolean => /\bcodemode script\b/i.test(guideline);
+export { isCodemodeScriptGuideline };
 
 /** Fabric-authored program contract for an anchor-aware read override (hashline). */
 export const ANCHOR_READ_COMPATIBILITY_GUIDANCE = [
   "Program results with this read override:",
   "- `pi.read(path)` returns plain file text; `pi.read({path, anchors: true})` returns `anchor│content` rows (a string) for `extensions.replace`/`replace_match`/`insert`.",
   "- `pi.grep` returns anchored rows as a string. `nativeTools.read({path, anchors: true})` returns `{ text, lines[].anchor }`; `nativeTools.grep` returns `{ text, results }`.",
-  "- `extensions.<edit tool>` resolves to `{ text, details, structuredContent }` and rejects on failure; `pi.write`/`pi.edit` reject too, e.g. a write refused for copied anchors.",
+  "- `extensions.<edit tool>` resolves to `{ text, details, structuredContent }` and rejects on failure; `structuredContent.anchors[].anchor` holds fresh anchors for the next edit. `pi.write`/`pi.edit` reject too, e.g. a write refused for copied anchors.",
 ].join("\n");
 
 const anchorAwareRead = (definition: { parameters?: unknown; outputSchema?: unknown }): boolean => {

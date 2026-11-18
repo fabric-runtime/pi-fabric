@@ -13,6 +13,7 @@ import type {
   FabricToolPlacementResultV1,
 } from "../protocol.js";
 import type { ToolLoadout, ToolLoadoutChanges } from "@earendil-works/pi-coding-agent";
+import { isCodemodeScriptGuideline } from "./pi-tools.js";
 
 // Hide every registered declaration, including historical transcript declarations,
 // except resolved foreground tools (full code mode only; enforce resolves none).
@@ -24,18 +25,23 @@ export const fabricToolLoadout = (
   loadout: ToolLoadout,
   exclusive: boolean,
   foreground: readonly string[] = [],
+  options: { nativeProfile?: boolean } = {},
 ): ToolLoadoutChanges | undefined => {
   if (!exclusive) return undefined;
   const hiddenDeclarations = loadout.registered.map((tool) => tool.name)
     .filter((name) => name !== "fabric_exec" && !foreground.includes(name));
   const hidden = new Set(hiddenDeclarations);
+  // "codemode script" lines describe nativeTools.* results (and tools.* in the
+  // native profile), not pi.*/extensions.*, which resolve Fabric results and reject.
+  const label = (rule: string): string =>
+    !options.nativeProfile && isCodemodeScriptGuideline(rule) ? `nativeTools only: ${rule}` : rule;
   const guidelines = loadout.callable.flatMap((tool) => {
     // The capability was added in 1.0.4; older supported hosts still put these
     // rules in the system prompt and need no duplicate.
     const rules = typeof loadout.getPromptGuidelines === "function"
       ? loadout.getPromptGuidelines(tool.name) : [];
     return hidden.has(tool.name) && rules.length > 0
-      ? [`${tool.name}:`, ...rules.map((rule) => `- ${rule}`)] : [];
+      ? [`${tool.name}:`, ...rules.map((rule) => `- ${label(rule)}`)] : [];
   });
   const fabric = loadout.declared.find((tool) => tool.name === "fabric_exec");
   return {
