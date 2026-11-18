@@ -28,6 +28,20 @@ Default matches any term (OR); `--phrase` = adjacency, `--regex` = pattern,
 probe a cold session with one rare literal term first. Page with
 `--limit`/`--offset` (the output names the next offset).
 
+## Configured sources (fabric.json)
+
+`${agentDir}/fabric.json` may carry a `memory.sources` list of `fs` adapters
+over local session archives. Put `--trust-project-config` before the CLI
+command to also read `${cwd}/.pi/fabric.json` in a trusted checkout.
+
+    pi-recall recall --source laptop 'the query terms'
+
+Source-qualified hits carry a `memory-source:<id>/…` session key; expand them
+with the follow pointer they print. No env var is needed — the source list
+comes from fabric.json (`PI_RECALL_INDEX_DIR` still redirects index writes).
+A malformed source entry fails the command with
+`Invalid memory.sources[i]: …` instead of silently dropping the source.
+
 ## Tool door
 
 The package also registers tools `memory_recall` / `memory_expand` /

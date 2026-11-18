@@ -20,7 +20,8 @@ import { parseOutlineArgv, runOutlineCall } from "../src/cli/outline.js";
 import { runSessions } from "../src/cli/sessions.js";
 
 const USAGE = [
-  "usage: pi-recall <command> [flags]",
+  "usage: pi-recall [--trust-project-config] <command> [flags]",
+  "  --trust-project-config  read this project’s .pi/fabric.json memory settings",
   "commands:",
   "  recall <terms…>       ranked search over session memory",
   "  expand <id|key=val…>  full entry text (id=8hex, or session=… idx=…)",
@@ -35,6 +36,8 @@ const USAGE = [
   "recall only:",
   "  --phrase | --regex    query mode (default: literal terms)",
   "  --all                 require every term in one hot entry",
+  "  --source <id>         source-qualified recall over a configured fabric.json",
+  "                        fs source (memory.sources)",
   "expand keys: id= session= idx= offset= textOffset= maxChars= branches= role=",
   "             expectedSourceHash= expectedLineageFingerprint=",
   "outline keys: session= role= branches=   flags: --branches <b> --json",
@@ -104,6 +107,15 @@ const parseFlags = (input: string[], usage: string): ParsedFlags => {
       case "--all":
         args.queryMatch = "all";
         break;
+      case "--source": {
+        // Match the argv path's rejection (recall.ts: `recall source= is empty`):
+        // an empty operand would drop out at the service and silently answer
+        // from the filesystem scopes — wrong corpus with a green exit.
+        const source = operandValue();
+        if (source === "") throw new Error("recall source= is empty");
+        args.source = source;
+        break;
+      }
       case "-h":
       case "--help":
         console.log(usage);
@@ -116,34 +128,40 @@ const parseFlags = (input: string[], usage: string): ParsedFlags => {
   return { args, positional };
 };
 
-const command = process.argv[2];
+const argv = process.argv.slice(2);
+const projectTrusted = argv[0] === "--trust-project-config";
+if (projectTrusted) argv.shift();
+const [command, ...inputArgs] = argv;
 try {
   if (command === "recall") {
-    const { args, positional } = parseFlags(process.argv.slice(3), USAGE);
+    const { args, positional } = parseFlags(inputArgs, USAGE);
     args.query = positional.join(" ");
     if (args.query === "") {
       console.error(USAGE);
       process.exit(2);
     }
-    if (args.scope === undefined) args.scope = "global";
-    const response = await runRecall(args, buildCliContext());
+    // Global default only for filesystem-scope recall; a source-qualified
+    // call must omit scope (the service derives scope from the selected
+    // source) or name that source/session explicitly.
+    if (args.source === undefined && args.scope === undefined) args.scope = "global";
+    const response = await runRecall(args, buildCliContext({ projectTrusted }));
     const rendered = renderRecall(response);
     for (const line of rendered.lines) console.log(line);
     process.exit(rendered.ok ? 0 : 1);
   }
   if (command === "expand") {
-    const input = process.argv.slice(3).filter((argument) => argument !== "");
+    const input = inputArgs.filter((argument) => argument !== "");
     // Bare 8-hex positional → id=<hex>; everything else is key=value lines.
     const normalized = input.length === 1 && /^[0-9a-f]{8}$/i.test(input[0]!)
       ? [`id=${input[0]}`]
       : input;
     const call = parseExpandArgv(normalized);
-    const result = await runExpandCall(call, buildCliContext());
+    const result = await runExpandCall(call, buildCliContext({ projectTrusted }));
     for (const line of result.lines) console.log(line);
     process.exit(result.ok ? 0 : 1);
   }
   if (command === "outline") {
-    const { args, positional } = parseFlags(process.argv.slice(3), USAGE);
+    const { args, positional } = parseFlags(inputArgs, USAGE);
     const json = args.json === true;
     delete args.json;
     const call = parseOutlineArgv(positional);
@@ -164,15 +182,15 @@ try {
     if (unsupported.length > 0) {
       throw new Error(`outline does not support --${unsupported.join(", --")}\n${USAGE}`);
     }
-    const result = await runOutlineCall(call, buildCliContext(), json);
+    const result = await runOutlineCall(call, buildCliContext({ projectTrusted }), json);
     for (const line of result.lines) console.log(line);
     process.exit(result.ok ? 0 : 1);
   }
   if (command === "sessions") {
-    const { args } = parseFlags(process.argv.slice(3), USAGE);
+    const { args } = parseFlags(inputArgs, USAGE);
     if (typeof args.pageSize === "number") args.limit = args.pageSize;
     delete args.pageSize;
-    const result = await runSessions(args, buildCliContext());
+    const result = await runSessions(args, buildCliContext({ projectTrusted }));
     for (const line of result.lines) console.log(line);
     process.exit(result.ok ? 0 : 1);
   }
