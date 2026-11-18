@@ -850,7 +850,7 @@ export function createConversationQueue(options: ConversationQueueOptions): Conv
       }
       // Native Pi pending-messages display (ground-truth labels/colors) or
       // an older bridge without the renderer members.
-      const lines: string[] = [""];
+      const lines: string[] = [];
       const innerWidth = Math.max(0, width - 2);
       const dequeueHint = (options.keybindings ?? getKeybindings()).getKeys("app.message.dequeue").join("/") || DEQUEUE_FALLBACK;
       for (const row of rows) {

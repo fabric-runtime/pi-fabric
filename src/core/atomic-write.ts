@@ -181,26 +181,21 @@ export const writeFileAtomic = (
 ): void => {
   mkdirDurable(path.dirname(filePath), options?.dirMode ?? 0o700, options?.fsync === true, options?.durabilityRoot);
   const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  // A failed exclusive open does not own this pathname and must not unlink it.
+  const descriptor = fs.openSync(temporary, "wx", options?.mode ?? 0o600);
+  let published = false;
   try {
-    if (options?.fsync) {
-      const descriptor = fs.openSync(temporary, "wx", options.mode ?? 0o600);
-      try {
-        fs.writeFileSync(descriptor, contents, "utf8");
-        fs.fsyncSync(descriptor);
-      } finally {
-        fs.closeSync(descriptor);
-      }
-    } else {
-      fs.writeFileSync(temporary, contents, {
-        encoding: "utf8",
-        mode: options?.mode ?? 0o600,
-      });
+    try {
+      fs.writeFileSync(descriptor, contents, "utf8");
+      if (options?.fsync) fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
     }
     renameAtomic(temporary, filePath, options);
+    published = true;
     if (options?.fsync) fsyncDirectory(path.dirname(filePath));
   } finally {
-    // No-op right after a successful rename; removes the temp on failure.
-    fs.rmSync(temporary, { force: true });
+    if (!published) fs.rmSync(temporary, { force: true });
   }
 };
 
