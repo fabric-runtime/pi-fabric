@@ -269,6 +269,47 @@ describe.each(["regular", "fullscreen"] as const)("native conversation dock in %
     expect(historyText(lines[editorTop - 1]!)).toBe("");
   });
 
+  it("leaves one row above the participant delivery box and keeps the editor gap below it", () => {
+    vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue(["latest participant output"]);
+    const h = makeHarness({ mode });
+    const initial = h.view.render(100);
+    expect(initial.slice(editorStatusRow(initial) - 2, editorStatusRow(initial)).map(historyText))
+      .toEqual(["latest participant output", ""]);
+    const queue = h.state.queues.get("a")!;
+    expect(queue.stage("wait for me", "followUp").ok).toBe(true);
+    const native = h.view.render(100);
+    const nativeTop = native.findIndex((line) => line.includes("Follow-up: wait for me"));
+    expect(nativeTop).toBeGreaterThan(1);
+    expect(native.slice(nativeTop - 2, nativeTop).map(historyText)).toEqual(["latest participant output", ""]);
+
+    // The queue-steer bridge renders just the box, not surrounding layout.
+    const box = ["┌ delivery plan (1) ─", "│ wait for me", "└───────────────────"];
+    vi.spyOn(queue, "render").mockReturnValue(box);
+    const lines = h.view.render(100);
+    const boxTop = lines.indexOf(box[0]!);
+    expect(boxTop).toBeGreaterThan(1);
+    expect(lines.slice(boxTop - 2, editorStatusRow(lines)).map(historyText))
+      .toEqual(["latest participant output", "", ...box, ""]);
+  });
+
+  it("keeps the participant transcript and queue visible before adding spacing on short terminals", () => {
+    vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue(["latest participant output"]);
+    const box = ["┌ delivery plan (1) ─", "│ wait for me", "└───────────────────"];
+    const baseline = makeHarness({ mode }).view.render(100);
+    const dockHeight = baseline.length - editorStatusRow(baseline) + 1;
+    const rows = dockHeight + box.length + 1; // Exactly room for the dock, the box, and one transcript row.
+    const h = makeHarness({ mode, rows });
+    h.view.render(100);
+    const queue = h.state.queues.get("a")!;
+    vi.spyOn(queue, "render").mockReturnValue(box);
+    const lines = h.view.render(100).map(historyText);
+    expect(lines).toHaveLength(rows);
+    expect(lines).toContain(box.at(-1));
+    const boxTop = lines.indexOf(box[0]!);
+    expect(boxTop).toBeGreaterThan(0);
+    expect(lines[boxTop - 1]).toBe("latest participant output");
+  });
+
   it("keeps the dock indicator out of an older page's transcript end", () => {
     vi.useFakeTimers();
     vi.spyOn(FabricConversationTranscriptRenderer.prototype, "render").mockReturnValue(
