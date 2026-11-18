@@ -39,6 +39,16 @@ describe("parseStructuredValue prose salvage", () => {
     expect(parseStructuredValue(text, reportSchema)).toEqual({ verdict: "fenced", lines: 1 });
   });
 
+  it("recovers a value after a long run of unclosed brackets without rescanning each prefix", () => {
+    expect(parseStructuredValue(`${"[".repeat(100_000)}{"verdict":"ok","lines":2}`, reportSchema)).toEqual({ verdict: "ok", lines: 2 });
+  });
+
+  it("does not promote a nested field of a different valid candidate to a standalone answer", () => {
+    const text = 'Example {"sample":{"verdict":"example","lines":0}}. Actual {"verdict":"ok","lines":2}';
+    expect(parseStructuredValue(text, reportSchema)).toEqual({ verdict: "ok", lines: 2 });
+    expect(validateAgentResult(rec('Only an example {"sample":{"verdict":"example","lines":0}}.'), reportSchema).status).toBe("failed");
+  });
+
   it("throws the whole-text parse error when no candidate parses", () => {
     expect(() => parseStructuredValue("no json here, just `#[test]` and [see]")).toThrow();
   });
