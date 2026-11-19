@@ -107,6 +107,19 @@ export class PeerPresenceLedger {
     for (const id of this.#known.keys()) this.#missingSince.set(id, Number.NEGATIVE_INFINITY);
   }
 
+  /**
+   * Start or clear the departure grace window of each known peer without
+   * reporting anything, so a departure seen during a run is ripe by the next
+   * prompt. Peers the model was never told about are not tracked.
+   */
+  observe(current: readonly PeerPresenceRecord[], now: number): void {
+    const live = new Set(current.map((record) => record.id));
+    for (const id of this.#known.keys()) {
+      if (live.has(id)) this.#missingSince.delete(id);
+      else if (!this.#missingSince.has(id)) this.#missingSince.set(id, now);
+    }
+  }
+
   take(current: readonly PeerPresenceRecord[], now: number): PeerPresenceChange | undefined {
     const live = new Map(current.map((record) => [record.id, record] as const));
     const joined = [...live.values()].filter((record) => !this.#known.has(record.id));
@@ -135,40 +148,38 @@ export class PeerPresenceLedger {
 }
 
 /**
- * Deterministic for a given change: no clock, run status, or model enters the
- * text, so the persisted notice never differs between two requests.
+ * How the model should treat the peers a notice names. Stated once in the
+ * system prompt, so each notice carries only the change.
+ */
+export const PEER_COORDINATION_GUIDANCE =
+  "Peer sessions: a <fabric-peers> notice names, by label, other Pi sessions that joined or left this project and share its files with you. " +
+  "File or git changes you did not make may be theirs: do not revert or overwrite them. " +
+  "Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and their ids, " +
+  "and `agents.steer` to message one by id. " +
+  "Coordinate only with relevant peers that are running or have pending messages, not every connected session. " +
+  "Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.";
+
+const listLabels = (records: readonly PeerPresenceRecord[], ownCwd: string | undefined): string => {
+  const listed = records.slice(0, MAX_LISTED_PEERS).map((record) =>
+    record.label + (record.cwd && record.cwd !== ownCwd ? ` (working in ${record.cwd})` : ""));
+  const unlisted = records.length - MAX_LISTED_PEERS;
+  return listed.join(", ") + (unlisted > 0 ? `, and ${unlisted} more` : "");
+};
+
+/**
+ * Only the change, by label: ids stay behind `agents.peers`, and the advice on
+ * what to do about peers lives in the system prompt. Deterministic for a given
+ * change: no clock, run status, or model enters the text, so the persisted
+ * notice never differs between two requests.
  */
 export const formatPeerPresenceNotice = (change: PeerPresenceChange, selfCwd?: string): string => {
-  const joined = new Set(change.joined.map((record) => record.id));
-  const markJoined = change.present.length > joined.size;
   const ownCwd = selfCwd === undefined ? undefined : clean(selfCwd, 240);
   const lines = ["<fabric-peers>"];
-  if (change.present.length > 0) {
-    lines.push("Other Pi sessions are connected to this project and share its files with you:");
-    for (const record of change.present.slice(0, MAX_LISTED_PEERS)) {
-      lines.push(
-        `- ${record.label} (id ${record.id})` +
-          (record.cwd && record.cwd !== ownCwd ? `, working in ${record.cwd}` : "") +
-          (markJoined && joined.has(record.id) ? ", just joined" : ""),
-      );
-    }
-    const unlisted = change.present.length - MAX_LISTED_PEERS;
-    if (unlisted > 0) lines.push(`- and ${unlisted} more`);
-  } else {
-    lines.push("No other Pi session is connected to this project any more.");
-  }
-  if (change.left.length > 0) {
-    lines.push(`No longer present: ${change.left.map((record) => record.label).join(", ")}.`);
-  }
-  if (change.present.length > 0) {
-    lines.push(
-      "File or git changes you did not make may be theirs: do not revert or overwrite them. " +
-        "Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` " +
-        "inside `fabric_exec` to see who is running and `agents.steer` to message one by id. " +
-        "Coordinate only with relevant peers that are running or have pending messages, not every connected session. " +
-        "Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.",
-    );
-  }
+  if (change.joined.length > 0) lines.push(`joined: ${listLabels(change.joined, ownCwd)}`);
+  if (change.left.length > 0) lines.push(`left: ${listLabels(change.left, ownCwd)}`);
+  lines.push(change.present.length > 0
+    ? `connected: ${change.present.length}`
+    : "No other Pi session is connected to this project now.");
   lines.push("</fabric-peers>");
   return lines.join("\n");
 };
@@ -192,9 +203,11 @@ export interface PeerPresenceNotifierOptions {
 
 /**
  * Tells a root session's model when other root sessions join or leave the
- * project. Notices are appended at a turn boundary as persistent transcript
- * messages and never touch the system prompt or an earlier message, so the
- * provider's cached prefix stays valid.
+ * project. A notice rides only a run the person started: every change since
+ * the last notice is folded into one message at the next prompt, and a run
+ * started by a custom message or continued after a tool call adds nothing.
+ * Notices are persistent transcript messages and never touch an earlier
+ * message, so the provider's cached prefix stays valid.
  */
 export class PeerPresenceNotifier {
   readonly #ledger = new PeerPresenceLedger();
@@ -213,24 +226,18 @@ export class PeerPresenceNotifier {
       const unsubscribe = (pi.on as (name: string, fn: (...fnArgs: any[]) => unknown) => unknown)(event, handler);
       if (typeof unsubscribe === "function") this.#unsubscribe.push(unsubscribe as () => void);
     };
-    subscribe("before_agent_start", (_event, ctx) => {
+    subscribe("before_agent_start", (event, ctx) => {
       // A run without a UI has no reader for the notice, and the model's reply to
-      // it would replace the answer in `pi -p` output. Skip before the ledger moves.
-      if (ctx?.hasUI === false) return undefined;
+      // it would replace the answer in `pi -p` output. A run a custom message
+      // started (a completion, a peer message) is not the person's. Skip both
+      // before the ledger moves, so the next prompt still carries the change.
+      if (ctx?.hasUI === false || event?.messageType === "custom") return undefined;
       const message = this.#take(ctx);
       return message ? { message } : undefined;
     });
-    subscribe("turn_end", (event, ctx) => {
-      // Only a turn that goes on to another model call. A final turn waits for
-      // the next prompt, which folds every change made while idle into one notice.
-      if (ctx?.hasUI === false || ctx?.signal?.aborted || event?.message?.role !== "assistant" || event.message.stopReason !== "toolUse") {
-        return undefined;
-      }
-      const message = this.#take(ctx);
-      if (!message) return undefined;
-      // A boundary entry rides the next request without forcing an extra one.
-      return { entries: [...(event.entries ?? []), { type: "custom_message", ...message }] };
-    });
+    // A departure seen mid-run starts its grace window now, so it is ripe by
+    // the next prompt. Nothing is added to the run.
+    subscribe("turn_end", () => { this.#observe(); return undefined; });
     subscribe("session_tree", (_event, ctx) => this.#restore(ctx));
     subscribe("session_compact", () => this.#ledger.reset());
   }
@@ -245,6 +252,14 @@ export class PeerPresenceNotifier {
       this.#ledger.restoreFromEntries(context?.sessionManager?.getBranch?.() ?? []);
     } catch {
       this.#ledger.reset();
+    }
+  }
+
+  #observe(): void {
+    try {
+      if (this.options.enabled()) this.#ledger.observe(this.options.peers().map(peerPresenceRecord), this.#now());
+    } catch {
+      // Presence is advisory: a damaged mesh read must never fail a turn.
     }
   }
 
