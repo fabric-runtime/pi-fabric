@@ -48,6 +48,30 @@ describe("published build artifact guards", () => {
     expect(missing.stderr.replace(/\r\n/g, "\n")).toContain("Missing build artifacts:\nextension-bootstrap.js");
   }, 90_000);
 
+  it("exposes standalone memory services through the published subpath", () => {
+    const functions = [
+      "AmbiguousSessionError", "MemoryRequestCache", "bm25Score",
+      "createConfiguredMemorySourceRegistry", "createMemorySourceClient",
+      "enumerateAllSessions", "loadTieredIndex", "planMemoryQuery", "presentRecall",
+      "processMemoryExpand", "processMemoryOutline", "processMemoryRecall",
+      "processMemorySessions", "recallFailure", "resolveIndexOptions", "searchMemoryIndex",
+    ];
+    const numbers = [
+      "MEMORY_CACHE_VERSION", "EXPAND_DEFAULT_MAX_CHARS", "EXPAND_DEFAULT_MAX_ENTRIES",
+      "EXPAND_MAX_CHARS", "EXPAND_MAX_CONTEXT", "EXPAND_MAX_ENTRIES", "EXPAND_MAX_EXACT_SELECTORS",
+      "OUTLINE_MAX_ENTRIES", "RECALL_DEFAULT_PAGE_SIZE", "RECALL_DEFAULT_SNIPPET_CHARS",
+      "RECALL_MAX_PAGE_SIZE", "RECALL_MAX_SNIPPET_CHARS",
+    ];
+    // Resolve the manifest export in plain Node, not Vitest's TypeScript resolver.
+    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", `
+      import assert from "node:assert/strict";
+      import * as memory from "pi-fabric/memory";
+      for (const name of ${JSON.stringify(functions)}) assert.equal(typeof memory[name], "function", name);
+      for (const name of ${JSON.stringify(numbers)}) assert.equal(typeof memory[name], "number", name);
+    `], { cwd: root, encoding: "utf8", timeout: 20_000 });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+  });
   it("uses host-only wildcard peers and exact Pi development dependencies", () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     expect(manifest.dependencies["pi-fabric-worker-sdk"]).toBe(`npm:@earendil-works/pi-coding-agent@${manifest.devDependencies["@earendil-works/pi-coding-agent"]}`);
