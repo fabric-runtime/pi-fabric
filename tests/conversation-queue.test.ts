@@ -65,7 +65,10 @@ const baseOptions = (overrides: Partial<ConversationQueueOptions> = {}): Convers
 });
 
 /** Stub bridge that hands out real isolated per-target queue state. */
-const stubBridgeListener = (bus: ReturnType<typeof fakeBus>) => {
+const stubBridgeListener = (
+  bus: ReturnType<typeof fakeBus>,
+  renderer?: Pick<ConversationQueueBridgeV1, "buildTimelineItems" | "createTimelineWidget">,
+) => {
   const retained = new Map<string, {
     rows: { id: string; lane: "steer" | "followUp"; text: string; images: unknown[]; sequence: number; paused?: boolean }[];
     seq: number;
@@ -235,6 +238,7 @@ const stubBridgeListener = (bus: ReturnType<typeof fakeBus>) => {
       isQueueableSubmission: (text: string) => !text.trim().startsWith("/") && !text.trim().startsWith("!") && text.trim() !== "",
       laneLabel: (lane) => (lane === "steer" ? "steer" : "follow-up"),
       laneColor: (lane) => (lane === "steer" ? "accent" : "warning"),
+      ...renderer,
     };
     request.respond({ ok: true, bridge });
   });
@@ -302,6 +306,30 @@ describe("conversation queue staging restrictions", () => {
 });
 
 describe("conversation queue dispatch and restoration", () => {
+  it("appends the delivery hint without modifying the bridge’s cached render rows", async () => {
+    const cachedRows = Object.freeze(["cached timeline"]);
+    const bus = fakeBus();
+    const unsubscribe = stubBridgeListener(bus, {
+      buildTimelineItems: () => [],
+      createTimelineWidget: () => ({ render: () => cachedRows, invalidate() {} }),
+    });
+    const queue = createConversationQueue(baseOptions({ piEvents: bus }));
+    try {
+      queue.stage("queued work", "steer");
+      expect(queue.render(90)).toBe(cachedRows);
+      expect(await queue.submit("steer")).toBe(true);
+      for (let frame = 0; frame < 2; frame++) {
+        expect(queue.render(90)).toEqual([
+          "cached timeline",
+          "[dim]Sent rows await child delivery; they cannot be edited locally.",
+        ]);
+      }
+      expect(cachedRows).toEqual(["cached timeline"]);
+    } finally {
+      queue.dispose();
+      unsubscribe();
+    }
+  });
   it("dispatches the head lane batch, marks rows immutable dispatched, and keeps them visible", async () => {
     const send = vi.fn(async () => ({ messageId: "env-7" }));
     const bus = fakeBus();

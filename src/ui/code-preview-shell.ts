@@ -144,7 +144,7 @@ const updateTiming = (
 
 class TimingPreservedComponent implements Component {
   constructor(readonly component: Component, private readonly state: TimingState) {}
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     return this.component.render(width);
   }
   invalidate(): void {
@@ -173,7 +173,7 @@ const BACKGROUND_SHORTCUT = "(ctrl+b to run in background)";
 
 class BackgroundShortcutFooter implements Component {
   constructor(private readonly component: Component, private readonly theme: Theme) {}
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     const lines = this.component.render(width);
     // A nested waiting shell may already have supplied the same connected hint.
     if (width < 12 || lines.some(line => line.includes("ctrl+b"))) return lines;

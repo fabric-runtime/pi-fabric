@@ -58,7 +58,7 @@ describe("TUI width bounds (#84)", () => {
     "a̐éö̲".repeat(150),
   ];
 
-  const expectBounded = (rows: string[], width: number) => {
+  const expectBounded = (rows: readonly string[], width: number) => {
     for (const row of rows) {
       expect(visibleWidth(row)).toBeLessThanOrEqual(width);
     }

@@ -118,7 +118,7 @@ const render = (
   options: Partial<FabricConversationTranscriptRenderOptions> = {},
 ) => renderer.render(transcript, width, renderOptions(options));
 
-const plain = (lines: string[]) => lines.map(stripTerminalSequences);
+const plain = (lines: readonly string[]) => lines.map(stripTerminalSequences);
 
 describe("focused conversation native component rendering", () => {
   it.each(["agent", "actor"] as const)("projects hidden %s feedback like Main's notification without exposing its payload", (kind) => {

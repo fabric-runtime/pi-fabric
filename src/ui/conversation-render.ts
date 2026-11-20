@@ -82,8 +82,8 @@ const stableKey = (value: unknown): string => {
 };
 
 interface RenderedRow {
-  render: (width: number) => string[];
-  lines?: string[] | undefined;
+  render: (width: number) => readonly string[];
+  lines?: readonly string[] | undefined;
   spacer: boolean;
   dynamic: boolean;
   partial?: boolean;
@@ -453,7 +453,7 @@ export class FabricConversationTranscriptRenderer {
     text: string,
     width: number,
     options: FabricConversationTranscriptRenderOptions,
-  ): string[] {
+  ): readonly string[] {
     const component = new (getConversationHost().UserMessageComponent)(
       terminalSafe(text, false),
       this.markdownTheme(options),
@@ -777,10 +777,10 @@ const customText = (message: CustomAgentMessage): string =>
       .join("\n");
 
 const safeRender = (
-  component: { render(width: number): string[] },
+  component: { render(width: number): readonly string[] },
   width: number,
   fallback: () => string[],
-): string[] => {
+): readonly string[] => {
   try {
     // Native rows are preserved verbatim: components already wrap and pad to
     // width, so re-truncating would clip the trailing background cell.

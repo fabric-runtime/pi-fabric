@@ -112,7 +112,7 @@ export class KittyViewport {
 /** Hide only background placements that can reach the visible terminal. Leave
  * offscreen scrollback intact; removing it would force unnecessary reuploads on
  * close. Return text-only frames unchanged instead of copying retained history. */
-export function hideKittyImages(lines: string[], viewportHeight = lines.length): string[] {
+export function hideKittyImages(lines: readonly string[], viewportHeight = lines.length): readonly string[] {
   const start = Math.max(0, lines.length - viewportHeight);
   let result: string[] | undefined;
   const hide = (row: number): void => { result ??= lines.slice(); result[row] = ""; };

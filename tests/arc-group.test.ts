@@ -42,8 +42,7 @@ describe("continueArcGroup", () => {
   it("downgrades only the trailing run so a footer arc can close the group", () => {
     // Mirrors TimingFooter appending `╰─ Took …` below a body's arcs.
     const base = ["out", arcItem(theme, "truncated"), arcItem(theme, "full output")];
-    const grouped = continueArcGroup(base);
-    grouped.push(arcItem(theme, "Took 4ms"));
+    const grouped = [...continueArcGroup(base), arcItem(theme, "Took 4ms")];
     expect(grouped).toEqual(["out", "├─ truncated", "├─ full output", "╰─ Took 4ms"]);
     expect(base[1]).toBe("╰─ truncated");
   });

@@ -1326,7 +1326,7 @@ export class FabricConversationView implements Component, Focusable {
     return truncateToWidth(this.theme.fg(color, this.feedback.text), width, "");
   }
 
-  private renderEditorLines(innerWidth: number): string[] {
+  private renderEditorLines(innerWidth: number): readonly string[] {
     const editor = this.editor;
     if (!editor) return [];
     return editor.render(innerWidth);

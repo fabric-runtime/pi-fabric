@@ -23,7 +23,7 @@ const target: FabricConversationTarget = {
   usage: { input: 1200, output: 400, cacheRead: 600, cacheWrite: 0, cost: 0.012 }, contextWindow: 128000,
 };
 const tui = { terminal: { rows: 22, columns: 120 }, requestRender: vi.fn() } as unknown as TUI;
-const plain = (lines: string[]) => lines.map(stripTerminalSequences);
+const plain = (lines: readonly string[]) => lines.map(stripTerminalSequences);
 
 describe("native conversation chrome", () => {
   it.each([0, 1] as const)("matches native user background width and padding (%s)", (outputPad) => {

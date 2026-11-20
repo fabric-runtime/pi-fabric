@@ -358,7 +358,7 @@ export const createFabricExecTool = (
       const maxLimit = context.expanded
         ? lines.length
         : Math.min(lines.length, baseLimit + MAX_FABRIC_CODE_TRANSFER_LINES);
-      const renderCodePreview = (limit: number, width: number): string[] => {
+      const renderCodePreview = (limit: number, width: number): readonly string[] => {
         const shown = lines.slice(0, limit);
         const lineNumberWidth = String(Math.max(1, shown.length)).length;
         const preview = shown

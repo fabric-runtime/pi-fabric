@@ -43,20 +43,21 @@ export interface PiDurableLocator {
 }
 
 type Runtime = { durable: typeof import("@earendil-works/pi-durable"); context: typeof import("@earendil-works/chord/context") };
+const testedDurableVersions = ["1.4.0", "1.5.0", "1.6.0"];
 let runtimePromise: Promise<Runtime> | undefined;
 async function runtime(): Promise<Runtime> {
   return runtimePromise ??= Promise.resolve().then(() => {
     const require = createRequire(import.meta.url);
     for (const name of ["@earendil-works/pi-durable", "@earendil-works/chord"]) {
       const metadata = require(`${name}/package.json`) as { version?: string };
-      if (!["1.4.0", "1.5.0"].includes(metadata.version ?? "")) throw new Error(`Unsupported ${name} version ${metadata.version ?? "unknown"}; expected 1.4.0 or 1.5.0`);
+      if (!testedDurableVersions.includes(metadata.version ?? "")) throw new Error(`Unsupported ${name} version ${metadata.version ?? "unknown"}; expected ${testedDurableVersions.join(", ")}`);
     }
     return Promise.all([import("@earendil-works/pi-durable"), import("@earendil-works/chord/context")]);
   })
     .then(([durable, context]) => ({ durable, context }))
     .catch((cause: unknown) => {
       runtimePromise = undefined;
-      throw new Error(`Pi durable runner requires tested dependencies @earendil-works/pi-durable and @earendil-works/chord (1.4.0 or 1.5.0): ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+      throw new Error(`Pi durable runner requires tested dependencies @earendil-works/pi-durable and @earendil-works/chord (${testedDurableVersions.join(", ")}): ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     });
 }
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");

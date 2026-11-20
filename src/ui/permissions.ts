@@ -75,7 +75,7 @@ export class FabricPermissionsComponent {
     const bodyWidth = Math.max(1, width - 2);
     const line = "─".repeat(Math.max(0, width));
     const header = theme.bold(theme.fg("accent", "Permissions")) + theme.fg("muted", `  ${this.queue.pendingCount} blocked`);
-    let body: string[];
+    let body: readonly string[];
     let hint: string;
     const record = this.#detailId ? this.queue.list().find(item => item.id === this.#detailId) : undefined;
     if (record) {
@@ -91,15 +91,17 @@ export class FabricPermissionsComponent {
       ];
       const visible = Math.max(1, rows - 4);
       this.#scroll = Math.min(this.#scroll, Math.max(0, content.length - visible));
-      body = content.slice(this.#scroll, this.#scroll + visible);
-      while (body.length < visible) body.push("");
+      const page = content.slice(this.#scroll, this.#scroll + visible);
+      while (page.length < visible) page.push("");
+      body = page;
       hint = record.status === "pending" ? "a allow once · d deny · ↑↓ scroll · esc back" : "↑↓ scroll · esc back";
     } else {
       body = this.#records.length ? this.#list.render(bodyWidth) : ["No blocked calls."];
       hint = "↑↓ select · enter review · r refresh · esc close";
     }
-    if (this.#error) body[body.length - 1] = theme.fg("error", text(this.#error));
-    return [header, theme.fg("border", line), ...body.map(value => ` ${value}`), theme.fg("border", line), theme.fg("muted", hint)]
+    const bodyLines = body.map(value => ` ${value}`);
+    if (this.#error && bodyLines.length > 0) bodyLines[bodyLines.length - 1] = ` ${theme.fg("error", text(this.#error))}`;
+    return [header, theme.fg("border", line), ...bodyLines, theme.fg("border", line), theme.fg("muted", hint)]
       .map(value => truncateToWidth(value, width));
   }
 }

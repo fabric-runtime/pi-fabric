@@ -6,7 +6,7 @@ type OverlayEntry = { component: Component; focusOrder: number };
 type Compositor = {
   overlayStack: OverlayEntry[];
   isOverlayVisible(entry: OverlayEntry): boolean;
-  compositeOverlays(lines: string[], width: number, height: number): string[];
+  compositeOverlays(lines: readonly string[], width: number, height: number): readonly string[];
   compositeLineAt(base: string, overlay: string, column: number, width: number, totalWidth: number): string;
 };
 const leases = new WeakMap<object, { count: number; restore(): void }>();

@@ -143,7 +143,7 @@ export interface ConversationQueueBridgeV1 {
       renderInlineEditor?: (width: number) => string[];
     },
     theme: Theme,
-  ): { render(width: number): string[]; invalidate(): void };
+  ): { render(width: number): readonly string[]; invalidate(): void };
   extractInlineEditorLines?(lines: readonly string[], paddingX?: number): string[];
 }
 
@@ -178,7 +178,7 @@ export interface ConversationQueueOptions {
     setText(text: string): void;
     handleInput?(data: string): void;
     /** Full renderer, used for real inline row editing via the bridge. */
-    render?(width: number): string[];
+    render?(width: number): readonly string[];
     /** Editor interior padding, forwarded to the inline line extractor. */
     paddingX?: number;
   };
@@ -219,7 +219,7 @@ export interface ConversationQueue {
   /** Decorated rows in timeline order (dispatched rows first, then queued). */
   rows(): ConversationQueueRow[];
   /** Queue list lines rendered above the editor; empty when nothing is held. */
-  render(width: number): string[];
+  render(width: number): readonly string[];
   /**
    * Row-editing input handling. Consumes keys only while an editing session
    * is active or when the dequeue binding starts one; everything else passes
@@ -845,8 +845,9 @@ export function createConversationQueue(options: ConversationQueueOptions): Conv
           theme,
         );
         const lines = widget.render(width);
-        if (dispatched.length > 0) lines.push(theme.fg("dim", truncateToWidth("Sent rows await child delivery; they cannot be edited locally.", width, "")));
-        return lines;
+        return dispatched.length > 0
+          ? [...lines, theme.fg("dim", truncateToWidth("Sent rows await child delivery; they cannot be edited locally.", width, ""))]
+          : lines;
       }
       // Native Pi pending-messages display (ground-truth labels/colors) or
       // an older bridge without the renderer members.

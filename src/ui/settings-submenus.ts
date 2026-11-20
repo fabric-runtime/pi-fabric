@@ -260,7 +260,7 @@ abstract class NumericInputSubmenu extends Container {
     this.input.handleInput(data);
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     this.input.focused = true;
     return super.render(width);
   }
@@ -319,7 +319,7 @@ export class StringInputSubmenu extends Container {
     this.input.handleInput(data);
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     this.input.focused = true;
     return super.render(width);
   }
