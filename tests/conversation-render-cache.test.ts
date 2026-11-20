@@ -299,8 +299,8 @@ describe("conversation renderer retained-row cache", () => {
     expect(updates).not.toHaveBeenCalled();
   });
 
-  it("borrows stable immutable frames without freezing dynamic output or exposing mutable copies", () => {
-    const output = ["dynamic first"];
+  it("borrows stable immutable frames and preserves defensive copies across dynamic updates", () => {
+    let output = Object.freeze(["dynamic first"]);
     const dynamicRender = vi.fn(() => output);
     const { renderer } = setup({ getMessageRenderer: () => () => ({ render: dynamicRender, invalidate() {} }) });
     const transcript = nativeTranscript([{ role: "custom", customType: "mutable", timestamp: 1, content: "", display: true }]);
@@ -311,7 +311,8 @@ describe("conversation renderer retained-row cache", () => {
     mutable.fill("corrupted copy");
     expect(renderer.render(transcript, 80, options, "borrow")).toBe(first);
     expect(first.join("\n")).not.toContain("corrupted copy");
-    output[0] = "dynamic second";
+    // Pi 1.6 containers use the child array identity to detect row changes.
+    output = Object.freeze(["dynamic second"]);
     const second = renderer.render(transcript, 80, options, "borrow");
     expect(second).not.toBe(first);
     expect(second.join("\n")).toContain("dynamic second");
