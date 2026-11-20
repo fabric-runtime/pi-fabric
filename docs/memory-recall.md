@@ -99,6 +99,19 @@ These are explicit retrieval primitives. Fabric does not automatically recall
 before a turn, inject historical context, choose bot/group permissions, or
 require a hosted memory vendor. Such recipes belong to the embedding product.
 
+## Standalone consumers
+
+A CLI or embedding that does not run the Fabric provider can import
+`processMemoryRecall`, `processMemoryExpand`, `processMemoryOutline`, and
+`processMemorySessions` from `pi-fabric/memory`. Pass a `MemoryProviderContext`
+with the agent directory, working directory, and memory configuration; register
+portable sources on that context when using a named source. The same entry also
+exports the request-limit constants and lower-level discovery, cache, and search
+helpers. Import them from `pi-fabric/memory`, not internal `dist/` paths.
+
+For an integration that only works with registered portable sources, prefer
+`createMemorySourceClient`: it does not fall back to filesystem discovery.
+
 ## Active branches
 
 `memory.recall`, `memory.sessions`, and `memory.expand` accept
