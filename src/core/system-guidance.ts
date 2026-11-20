@@ -48,8 +48,15 @@ export interface ExtensionRosterToolSource {
 // are often full relative paths, so they are only used when no manifest exists.
 const manifestNameCache = new Map<string, string | undefined>();
 
+// Pi gives tools that have no file a synthetic path: `builtin:<name>` for its
+// built-in extensions, `<inline:name>` for inline ones. path.resolve treats
+// such a string as relative to the cwd, so walking from it would find the cwd
+// project's package.json and label Pi's own tools with that project's name.
+const isSyntheticSourcePath = (sourcePath: string): boolean =>
+  sourcePath.startsWith("builtin:") || (sourcePath.startsWith("<") && sourcePath.endsWith(">"));
+
 const packageNameFromManifest = (startPath: string | undefined): string | undefined => {
-  if (!startPath) return undefined;
+  if (!startPath || isSyntheticSourcePath(startPath)) return undefined;
   let directory = path.dirname(path.resolve(startPath));
   // Every folder the walk passes through resolves to the same answer, so the
   // result is cached for all of them. Caching undefined for a folder below the
