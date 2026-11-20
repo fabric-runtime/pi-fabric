@@ -197,6 +197,13 @@ export class ResidencyClient {
 
   async ensureHost(): Promise<ResidentHostOwner> {
     if (this.#closed) throw new Error("Fabric residency client is closed");
+    // The resident host and the workers it starts would run outside the
+    // operator's launch wrapper: refuse instead of running them unconfined.
+    if (this.options.config.agents.launchWrapper) {
+      throw new Error(
+        'Durable residency (residency: "durable" agents and actors) is unavailable while agents.launchWrapper is set: the resident host would run outside the launch wrapper',
+      );
+    }
     this.#refreshPiModels();
     atomicWrite(this.#configPath, this.options.config);
     const existing = this.#liveOwner();

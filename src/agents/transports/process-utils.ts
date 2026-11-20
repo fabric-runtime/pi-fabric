@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import type { AgentTransportHandle, AgentTransportLaunch } from "../types.js";
 
 export interface ExecFileResult {
   stdout: string;
@@ -209,19 +210,147 @@ export const workerCommand = async (
 ): Promise<string> =>
   (await scriptSpawnArgs(workerPath, workerArguments)).map(shellQuote).join(" ");
 
+/**
+ * Environment the `agents.launchWrapper` process receives, so it can choose
+ * grants without parsing worker arguments. Empty without a wrapper.
+ */
+export const launchWrapperEnvironment = (request: AgentTransportLaunch): Record<string, string> => {
+  const wrapper = request.launchWrapper;
+  if (!wrapper) return {};
+  return {
+    PI_FABRIC_LAUNCH_RUN_ID: request.id,
+    PI_FABRIC_LAUNCH_CWD: request.cwd,
+    PI_FABRIC_LAUNCH_RUN_DIRECTORY: wrapper.runDirectory,
+    ...(wrapper.writePolicy ? { PI_FABRIC_LAUNCH_WRITE_POLICY: JSON.stringify(wrapper.writePolicy) } : {}),
+    PI_FABRIC_LAUNCH_DEPTH: String(wrapper.depth),
+  };
+};
+
+/**
+ * The argv a transport executes: `[...launchWrapper, runtime, workerPath,
+ * ...workerArguments]`, or the plain worker argv without a wrapper.
+ * `resolveRuntime` lets a transport whose service has its own PATH pin the
+ * runtime before the wrapper prefix is added.
+ */
+export const launchArgv = async (
+  request: AgentTransportLaunch,
+  resolveRuntime?: (runtime: string) => Promise<string>,
+): Promise<string[]> => {
+  const argv = await scriptSpawnArgs(request.workerPath, request.workerArguments);
+  if (resolveRuntime) argv[0] = await resolveRuntime(argv[0]!);
+  return request.launchWrapper ? [...request.launchWrapper.argv, ...argv] : argv;
+};
+
+const ENV_EXECUTABLE = "/usr/bin/env";
+
+/**
+ * `launchArgv` for a transport that cannot set the child's environment
+ * itself (a terminal session or service): with a wrapper, `/usr/bin/env` sets
+ * the wrapper environment and execs the wrapper, so every value stays one argv
+ * entry and nothing is interpolated into a shell.
+ */
+export const environmentLaunchArgv = async (
+  request: AgentTransportLaunch,
+  resolveRuntime?: (runtime: string) => Promise<string>,
+): Promise<string[]> => {
+  const argv = await launchArgv(request, resolveRuntime);
+  if (!request.launchWrapper) return argv;
+  if (process.platform === "win32") {
+    throw new Error("agents.launchWrapper needs the process transport on Windows");
+  }
+  const assignments = Object.entries(launchWrapperEnvironment(request)).map(([name, value]) => `${name}=${value}`);
+  return [ENV_EXECUTABLE, ...assignments, ...argv];
+};
+
+/** One quoted shell command line, for transports that take one (tmux, LocalTerm). */
+export const launchCommand = async (request: AgentTransportLaunch): Promise<string> =>
+  (await environmentLaunchArgv(request)).map(shellQuote).join(" ");
+
+/**
+ * Run a transport launch under `agents.launchWrapper`. A wrapper that is not
+ * an executable file yields a handle that is already dead, so the run takes
+ * the startup-failure path (bounded startup retries, then failed) with an
+ * error naming the wrapper. A transport that captures no stderr reports the
+ * wrapper instead, so a wrapper that exits early is named too.
+ */
+export const launchWrapped = async (
+  kind: AgentTransportHandle["kind"],
+  request: AgentTransportLaunch,
+  launch: () => Promise<AgentTransportHandle>,
+): Promise<AgentTransportHandle> => {
+  const wrapper = request.launchWrapper?.argv[0];
+  if (wrapper === undefined) return launch();
+  if (!(await isExecutableFile(wrapper))) {
+    return {
+      kind,
+      readStderr: () => `agents.launchWrapper ${wrapper} is not an executable file`,
+      isAlive: async () => false,
+      stop: async () => {},
+    };
+  }
+  const handle = await launch();
+  return handle.readStderr
+    ? handle
+    : { ...handle, readStderr: () => `no stderr captured; launched under agents.launchWrapper ${wrapper}` };
+};
+
+/** Start one Fabric worker launch as a detached process. */
+export const spawnLaunch = async (
+  request: AgentTransportLaunch,
+  options: { captureStderr?: boolean } = {},
+): Promise<DetachedProcess> => {
+  const [command, ...args] = await launchArgv(request);
+  if (!request.launchWrapper) return spawnArgv(command!, args, request.cwd, options);
+  return spawnArgv(command!, args, request.cwd, {
+    ...options,
+    env: { ...process.env, ...launchWrapperEnvironment(request) },
+    exitNote: `launched under agents.launchWrapper ${request.launchWrapper.argv[0]}`,
+  });
+};
+
+export interface DetachedProcess {
+  pid: number;
+  stop(): Promise<void>;
+  isAlive(): Promise<boolean>;
+  readStderr(): string;
+}
+
+/**
+ * Start a script directly under a resolved runtime, with no launch wrapper.
+ * Only the resident durable host uses this; it refuses to start while
+ * `agents.launchWrapper` is set (see ResidencyClient).
+ */
 export const spawnDetached = async (
   workerPath: string,
   workerArguments: string[],
   cwd: string,
   options: { captureStderr?: boolean } = {},
-): Promise<{ pid: number; stop(): Promise<void>; isAlive(): Promise<boolean>; readStderr(): string }> => {
+): Promise<DetachedProcess> => {
   const runtime = await resolveScriptRuntime(runtimeOptionsForWorker(workerPath));
-  const child = spawn(runtime, [workerPath, ...workerArguments], {
+  return spawnArgv(runtime, [workerPath, ...workerArguments], cwd, options);
+};
+
+const spawnArgv = async (
+  command: string,
+  args: string[],
+  cwd: string,
+  options: { captureStderr?: boolean; env?: NodeJS.ProcessEnv; exitNote?: string },
+): Promise<DetachedProcess> => {
+  const child = spawn(command, args, {
     cwd,
     detached: process.platform !== "win32",
     // Resident hosts must remain independent of the launching process's pipes.
     stdio: ["ignore", "ignore", options.captureStderr ? "pipe" : "ignore"],
+    ...(options.env ? { env: options.env } : {}),
   });
+  // A wrapped launch reports how its process ended, so a wrapper that fails
+  // before the worker writes a record is named in the run's error.
+  let exit: string | undefined;
+  if (options.exitNote) {
+    child.once("exit", (code, signal) => {
+      exit = `${options.exitNote}, which exited with ${signal ? `signal ${signal}` : `code ${code}`}`;
+    });
+  }
   // Drain throughout the run, retaining only a bounded UTF-8 tail in memory.
   // No disk log can grow without bound or keep secrets after run cleanup.
   const decoder = new StringDecoder("utf8");
@@ -241,7 +370,7 @@ export const spawnDetached = async (
   (child.stderr as (NodeJS.ReadableStream & { unref?: () => void }) | null)?.unref?.();
   return {
     pid,
-    readStderr: () => stderr,
+    readStderr: () => (exit ? (stderr.trim() ? `${stderr.trim()}\n${exit}` : exit) : stderr),
     async stop() {
       try {
         process.kill(process.platform === "win32" ? pid : -pid, "SIGTERM");

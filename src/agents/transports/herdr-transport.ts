@@ -4,7 +4,7 @@ import type {
   AgentTransportLaunch,
 } from "../types.js";
 import { EXTERNAL_TRANSPORT_LIVENESS_POLL_INTERVAL_MS } from "../constants.js";
-import { scriptSpawnArgs } from "./process-utils.js";
+import { environmentLaunchArgv, launchWrapped } from "./process-utils.js";
 import { herdrSocketRequest, type HerdrSocketRequest } from "./herdr-socket.js";
 
 interface HerdrLayoutApplyResponse {
@@ -45,7 +45,11 @@ export class HerdrTransport implements AgentTransportAdapter {
     }
   }
 
-  async launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+  launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+    return launchWrapped(this.kind, request, () => this.#launch(request));
+  }
+
+  async #launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
     const workspaceId = this.environment.HERDR_WORKSPACE_ID;
     if (!workspaceId) throw new Error("Herdr transport requires HERDR_WORKSPACE_ID");
     const response = (await this.#request({
@@ -58,7 +62,7 @@ export class HerdrTransport implements AgentTransportAdapter {
           type: "pane",
           label: request.name,
           cwd: request.cwd,
-          command: await scriptSpawnArgs(request.workerPath, request.workerArguments),
+          command: await environmentLaunchArgv(request),
         },
       },
     })) as HerdrLayoutApplyResponse;

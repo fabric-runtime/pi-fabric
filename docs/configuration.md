@@ -706,6 +706,7 @@ Other agent settings:
 - `childQuestions`: `"cancel"` (default) cancels every dialog a Pi child opens; `"route"` forwards it to the parent's UI, or to a root-held [decision](decisions.md#routed-child-questions) when the parent has no UI. Durable runs always use a decision.
 - `childQuestionTimeoutMs`: default deadline for a routed child dialog (default `600000`, bounded to 1 s..24 h); a dialog's own timeout wins.
 - `childQuestionTools`: exact tool names a Pi child with extensions gets when `childQuestions` is `"route"` (default `["ask"]`; `[]` grants none). Entries with `*`, a leading `+` or `-`, and `fabric_exec` are dropped. The grant never widens an inherited allowlist and is skipped for an empty `tools` list and for `+name`/`-name` tool lists.
+- `launchWrapper` (unset by default): an argv prefix, such as an OS sandbox command, that every Fabric worker process starts under, on every transport. The worker runs as `[...launchWrapper, runtime, worker, ...arguments]` in the same cwd, so children keep every built-in runner feature. It takes 1 to 32 non-empty strings, and the first must be an absolute path to the wrapper executable. Any other value fails config loading and saving, so a broken setting never runs children unwrapped. While it is set, durable residency is refused. See [launch wrapper](agents.md#launch-wrapper) for the environment the wrapper receives.
 
 ### Usage tracking with external tools
 
