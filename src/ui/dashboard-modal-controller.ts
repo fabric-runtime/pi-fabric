@@ -6,14 +6,14 @@ import type { FabricDashboardMessageTarget } from "./dashboard.js";
 interface ModalChild {
   focused: boolean;
   handleInput(data: string): void;
-  render(width: number): string[];
+  render(width: number): readonly string[];
 }
 
 export interface DashboardModalContent {
   title: string;
   narrowTitle: string;
   hint: string;
-  render(width: number): string[];
+  render(width: number): readonly string[];
 }
 
 type PickerKind = "model" | "thinking" | "delivery" | "events" | "tools";

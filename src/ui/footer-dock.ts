@@ -25,7 +25,7 @@ const parentOf = (owner: unknown, nodes: readonly unknown[], target: unknown, de
   return undefined;
 };
 
-type Rendering = { render(width: number): string[] };
+type Rendering = { render(width: number): readonly string[] };
 
 /**
  * Put a `label` badge on the right of the editor's top border, before its last
@@ -33,7 +33,7 @@ type Rendering = { render(width: number): string[] };
  * the border's own colour, so it follows Pi's thinking level. Only plain border
  * cells are replaced: Pi's scroll indicator or working label keep their place.
  */
-export const withBorderBadge = (lines: string[], label: string | undefined): string[] => {
+export const withBorderBadge = (lines: readonly string[], label: string | undefined): readonly string[] => {
   if (!label) return lines;
   const index = lines.findIndex((line) => stripVTControlCharacters(line).startsWith("─"));
   const line = lines[index];
@@ -149,7 +149,7 @@ export class FooterDock {
     const render = editor.render;
     const badge = this.badge;
     const live = { on: true };
-    const wrapper = (width: number): string[] => {
+    const wrapper = (width: number): readonly string[] => {
       const lines = render.call(editor, width);
       if (!live.on) return lines;
       const badged = withBorderBadge(lines, badge());

@@ -13,7 +13,7 @@ export interface ResultRowBalance {
   finalized?: boolean;
 }
 
-export type LimitRenderer = (limit: number, width: number) => string[];
+export type LimitRenderer = (limit: number, width: number) => readonly string[];
 
 export class HiddenRowBorrowingComponent implements Component {
   #cachedWidth: number | undefined;
@@ -101,7 +101,7 @@ class PartialResultObserver implements Component {
     private readonly balance: ResultRowBalance,
   ) {}
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     const lines = this.component.render(width);
     const previous = this.balance.partial;
     if (

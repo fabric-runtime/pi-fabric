@@ -3,11 +3,12 @@ import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord";
 import { Agent, runToolCall, type AgentOptions, type AgentEvent, type AgentMessage, type AgentState, type AgentTurnContext, type AgentContext, type AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getCurrentSystemMessage, getCurrentTools, getToolStateChanges, toToolDeclaration, normalizeContext } from "@earendil-works/pi-ai";
 import type { AssistantMessage, ImageContent, Message, Models, ToolResultMessage } from "@earendil-works/pi-ai";
-import { Harness, createRegistry, defineDoc, defineTask, type Storage, type TaskId, type Tx, type Conversation } from "@earendil-works/pi-durable";
+import { Harness, createRegistry, defineDoc, defineTask, type Storage, type TaskId, type Tx, type Conversation, type JsonObject } from "@earendil-works/pi-durable";
+
+type JsonValue = JsonObject[string];
 
 // This is deliberately a worker-only module. The Harness scheduler owns both
 // requests and tool invocations; no native Agent loop runs behind this adapter.

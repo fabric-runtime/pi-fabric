@@ -15,12 +15,14 @@ process.env.PI_FABRIC_AGENT_DIR = path.join(scratch, "exports");
 const host = await import("@earendil-works/pi-coding-agent");
 const ai = await import("@earendil-works/pi-ai");
 const { Type } = await import("typebox");
-assert.equal(host.VERSION, "1.5.0");
+const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const expectedHostVersion = manifest.devDependencies["@earendil-works/pi-coding-agent"];
+assert.equal(host.VERSION, expectedHostVersion);
 assert.equal(typeof host.ExtensionRunner.prototype.getAllRegisteredTools, "function");
 assert.equal(typeof host.ExtensionRunner.prototype.createToolContext, "function");
 const hostEntry = await realpath(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
 const hostManifest = JSON.parse(await readFile(path.resolve(path.dirname(hostEntry), "../package.json"), "utf8"));
-assert.equal(hostManifest.version, "1.5.0");
+assert.equal(hostManifest.version, expectedHostVersion);
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 let scenarios = 0;
 try {

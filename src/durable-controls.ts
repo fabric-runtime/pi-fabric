@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Conversation, Cursor, Harness, Storage, Submission, SubmissionRecord } from "@earendil-works/pi-durable";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 
 export interface PiDurableMessageOptions {
   /** Stable caller-issued identity. Retrying the same message is a no-op, including after reattachment. */

@@ -23,7 +23,7 @@ const continueArc = (line: string): string =>
  * items so a following arc can close the group. Returns the input untouched
  * when no arc item trails the block.
  */
-export function continueArcGroup(lines: string[]): string[] {
+export function continueArcGroup(lines: readonly string[]): readonly string[] {
   let start = lines.length;
   while (start > 0 && isArcLine(lines[start - 1]!)) start--;
   if (start === lines.length) return lines;

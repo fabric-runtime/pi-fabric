@@ -14,7 +14,6 @@
 // plain object, so it does not pin a pi-durable runtime version, and its static
 // graph holds no Node-only module (scripts/assert-build-artifacts.mjs checks).
 import type { Context } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord";
 import type {
   ConversationId,
   Extension,
@@ -167,7 +166,7 @@ const loadKernel = (wasmModule: WebAssembly.Module | undefined): Promise<FabricK
 };
 
 /** The text of a schema-less tool's collapsed output: a string, or the text items of an array. */
-const textOf = (value: JsonValue | undefined): string => {
+const textOf = (value: JsonObject[string] | undefined): string => {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return "";
   return value.flatMap((item) => isObject(item) && item.type === "text" && typeof item.text === "string" ? [item.text] : []).join("\n");

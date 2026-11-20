@@ -1152,8 +1152,8 @@ describe("FabricSettingsComponent", () => {
         reloadConfig: vi.fn(() => Object.assign(config, loadFabricConfig(location))),
         agents: { claudeModels: vi.fn().mockResolvedValue([]) },
       } as unknown as FabricState;
-      let globalLines: string[] = [];
-      let projectLines: string[] = [];
+      let globalLines: readonly string[] = [];
+      let projectLines: readonly string[] = [];
       const context = {
         mode: "tui",
         cwd,
