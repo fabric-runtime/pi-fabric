@@ -6,10 +6,12 @@ import type { FabricUiController } from "../ui/controller.js";
 import { FABRIC_WIDGET_FOCUS_SHORTCUT } from "../ui/widget-keys.js";
 import { safeText } from "../ui/format.js";
 import {
+  FABRIC_DECISION_ANSWER_EVENT,
   FABRIC_DECISION_REQUEST_EVENT,
   FABRIC_DECISIONS_CAPABILITY_EVENT,
   FABRIC_PEER_AWAIT_SETTLE_EVENT,
   FABRIC_PEER_CARDS_EVENT,
+  readFabricDecisionAnswerRequestV1,
   readFabricDecisionRequestV1,
   readFabricDecisionsCapabilityRequestV1,
   FABRIC_PREWALK_REQUEST_EVENT,
@@ -145,10 +147,22 @@ export function registerFabricCommand(pi: ExtensionAPI, deps: FabricCommandDeps)
       (error: unknown) => request.respond({ ok: false, error: `Fabric decisions unavailable: ${String(error)}` }),
     );
   });
-  if (unsubscribeDecisionsCapability || unsubscribeDecisionRequest) {
+  // An extension answers or cancels a stored decision. This is a pi.events
+  // request carrying functions and the extension context, so only code in
+  // this Pi process can make it: not bash, the CLI, a program or a model.
+  const unsubscribeDecisionAnswer = pi.events?.on?.(FABRIC_DECISION_ANSWER_EVENT, (value) => {
+    const request = readFabricDecisionAnswerRequestV1(value);
+    if (!request || !request.claim()) return;
+    void import("../decisions/events.js").then(
+      ({ answerFabricDecisionAnswerRequest }) => answerFabricDecisionAnswerRequest(request, resolveDecisions),
+      (error: unknown) => request.respond({ ok: false, id: request.id, error: `Fabric decisions unavailable: ${String(error)}` }),
+    );
+  });
+  if (unsubscribeDecisionsCapability || unsubscribeDecisionRequest || unsubscribeDecisionAnswer) {
     pi.on("session_shutdown", () => {
       unsubscribeDecisionsCapability?.();
       unsubscribeDecisionRequest?.();
+      unsubscribeDecisionAnswer?.();
       decisionRequests.abort();
     });
   }

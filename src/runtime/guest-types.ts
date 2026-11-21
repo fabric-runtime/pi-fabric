@@ -1520,7 +1520,7 @@ interface FabricDecision {
   escalation?: { chain: string[]; hop: number; hopTimeoutMs: number; onFinal: "cancel" | "default" };
   history?: Array<{ holder: string; until: number; reason: "expired" | "escalated"; text?: string; by?: string }>;
   status: "open" | "answered" | "expired" | "cancelled";
-  answer?: { optionId?: string; text?: string; answeredBy: string; via: string; at: number };
+  answer?: { optionId?: string; text?: string; answeredBy: string; via: string; answererKind?: "person" | "agent"; at: number };
 }
 interface FabricDecisionsApi {
   raise(args: { title: string; kind?: FabricDecision["kind"]; body?: string; options?: Array<{ id: string; label: string }>; input?: FabricDecision["input"]; holder?: string; deadline?: number; timeoutMs?: number; onExpire?: "cancel" | "default" | "escalate"; defaultOptionId?: string; escalation?: { chain?: string[]; hopTimeoutMs?: number; onFinal?: "cancel" | "default" } }): Promise<{ id: string }>;
