@@ -953,6 +953,13 @@ describe("Fabric configuration", () => {
     const huge = normalizeFabricConfig({ agents: { maxTokensPerChild: Number.MAX_VALUE } });
     expect(huge.agents.maxTokensPerChild).toBe(100_000_000);
   });
+
+  it("normalizes the per-child turn limit and treats zero as disabled", () => {
+    expect(DEFAULT_FABRIC_CONFIG.agents.maxTurnsPerChild).toBe(0);
+    expect(normalizeFabricConfig({ agents: { maxTurnsPerChild: 300 } }).agents.maxTurnsPerChild).toBe(300);
+    expect(normalizeFabricConfig({ agents: { maxTurnsPerChild: -1 } }).agents.maxTurnsPerChild).toBe(0);
+    expect(normalizeFabricConfig({ agents: { maxTurnsPerChild: Number.MAX_VALUE } }).agents.maxTurnsPerChild).toBe(1_000_000);
+  });
 });
 
 describe("native MCP ownership configuration", () => {

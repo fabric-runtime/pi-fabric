@@ -295,6 +295,7 @@ export interface AgentWorkerOptions {
   tools: string[];
   grantedRisks: string[];
   maxTokens?: number;
+  maxTurns?: number;
   fabricExtensionPath?: string;
   model?: string;
   thinking?: string;
