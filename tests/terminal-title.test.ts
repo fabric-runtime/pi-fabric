@@ -57,7 +57,7 @@ describe("terminalTitleText", () => {
 });
 
 describe("FabricTerminalTitle", () => {
-  it("shows the declared title, records it, and coalesces repeats", () => {
+  it("shows the declared title, coalesces repeats, and records nothing while it runs", () => {
     const { applied, appended, controller, context } = harness();
 
     controller.show(context, "record release evidence");
@@ -65,9 +65,41 @@ describe("FabricTerminalTitle", () => {
     controller.show(context, "  ");
 
     expect(applied).toEqual(["record release evidence"]);
+    expect(appended).toEqual([]);
+  });
+
+  it("writes at most one entry for ten title changes, holding the last title", () => {
+    const { applied, appended, controller, context } = harness();
+    for (let index = 1; index <= 10; index += 1) controller.show(context, `milestone ${index}`);
+    expect(applied).toHaveLength(10);
+    expect(appended).toEqual([]);
+
+    controller.flush();
+    controller.flush();
+
     expect(appended).toEqual([
-      { customType: TERMINAL_TITLE_ENTRY_TYPE, data: { version: 1, title: "record release evidence" } },
+      { customType: TERMINAL_TITLE_ENTRY_TYPE, data: { version: 1, title: "milestone 10" } },
     ]);
+  });
+
+  it("does not record a resumed title again when nothing changed", () => {
+    const { appended, controller, context } = harness({ entries: [entry("record release evidence")] });
+    controller.resume(context);
+    controller.flush();
+    expect(appended).toEqual([]);
+    controller.show(context, "next milestone");
+    controller.flush();
+    expect(appended).toEqual([
+      { customType: TERMINAL_TITLE_ENTRY_TYPE, data: { version: 1, title: "next milestone" } },
+    ]);
+  });
+
+  it("keeps an unrecorded title across a branch switch instead of reverting to an older entry", () => {
+    const { applied, controller, context } = harness({ entries: [entry("older run")] });
+    controller.show(context, "current milestone");
+    controller.resume(context);
+    expect(applied.at(-1)).toBe("current milestone");
+    expect(controller.current()).toBe("current milestone");
   });
 
   it("holds the last title instead of reverting", () => {
@@ -112,6 +144,7 @@ describe("FabricTerminalTitle", () => {
 
     const disabled = harness({ enabled: false });
     disabled.controller.show(disabled.context, "record release evidence");
+    disabled.controller.flush();
     expect(disabled.applied).toEqual([]);
     expect(disabled.appended).toEqual([]);
 
@@ -134,13 +167,15 @@ describe("FabricTerminalTitle", () => {
     } as unknown as ExtensionContext;
 
     controller.show(context, "record release evidence");
+    expect(() => controller.flush()).not.toThrow();
     expect(applied).toEqual(["record release evidence"]);
   });
 });
 
 describe("installTerminalTitle", () => {
-  const handlers = () => {
+  const handlers = (appended: unknown[] = []) => {
     const registered = new Map<string, (event: unknown, context: unknown) => void>();
+    const title = new FabricTerminalTitle({ appendEntry: (customType, data) => { appended.push({ customType, data }); } }, () => true);
     installTerminalTitle(
       {
         on: (event: string, handler: (event: unknown, context: unknown) => void) => {
@@ -148,9 +183,9 @@ describe("installTerminalTitle", () => {
           return () => {};
         },
       } as never,
-      new FabricTerminalTitle({ appendEntry: () => undefined }, () => true),
+      title,
     );
-    return registered;
+    return Object.assign(registered, { title });
   };
 
   it("adopts the title on start and branch switch, and reasserts after Pi retitles", async () => {
@@ -158,6 +193,7 @@ describe("installTerminalTitle", () => {
     expect([...registered.keys()].sort()).toEqual([
       "agent_settled",
       "session_info_changed",
+      "session_shutdown",
       "session_start",
       "session_tree",
     ]);
@@ -174,6 +210,22 @@ describe("installTerminalTitle", () => {
     expect(applied).toEqual([]);
     await tick();
     expect(applied).toEqual(["record release evidence"]);
+  });
+
+  it("records the held title once, synchronously, when the session shuts down", () => {
+    const appended: unknown[] = [];
+    const registered = handlers(appended);
+    const context = {
+      mode: "tui",
+      hasUI: true,
+      sessionManager: { getEntries: () => [], getSessionName: () => undefined },
+      ui: { setTitle: () => undefined },
+    } as unknown as ExtensionContext;
+    registered.title.show(context, "first");
+    registered.title.show(context, "second");
+    expect(appended).toEqual([]);
+    registered.get("session_shutdown")!({ type: "session_shutdown", reason: "quit" }, context);
+    expect(appended).toEqual([{ customType: TERMINAL_TITLE_ENTRY_TYPE, data: { version: 1, title: "second" } }]);
   });
 
   it("tolerates an event with no context", async () => {

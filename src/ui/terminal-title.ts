@@ -45,11 +45,16 @@ const recordedTitle = (context: ExtensionContext): string | undefined => {
  * the run that set it, and is adopted again when the session is resumed. Nested
  * call detail never reaches the window, because the declared milestone is the
  * one line a tab has room for.
+ *
+ * The title lives in memory while the session runs. Only a resume needs it
+ * from disk, so one entry is written when the session shuts down, and only
+ * when the title differs from the one last recorded.
  */
 export class FabricTerminalTitle {
   readonly #host: TitleEntryHost;
   readonly #enabled: () => boolean;
   #title: string | undefined;
+  #recorded: string | undefined;
 
   constructor(host: TitleEntryHost, enabled: () => boolean) {
     this.#host = host;
@@ -59,23 +64,36 @@ export class FabricTerminalTitle {
   /** Adopt the title this session recorded, after Pi applies its own. */
   resume(context: ExtensionContext): void {
     if (!this.#enabled()) return;
+    // A title declared in this process is newer than anything on disk: it is
+    // recorded only at shutdown, so an entry here can only be older.
+    if (this.#title) {
+      this.#write(context, this.#title);
+      return;
+    }
     const recorded = recordedTitle(context);
     if (!recorded) return;
     this.#title = recorded;
+    this.#recorded = recorded;
     this.#write(context, recorded);
   }
 
-  /** Show the declared display title for a run and record it for resumes. */
+  /** Show the declared display title for a run; `flush` records it for resumes. */
   show(context: ExtensionContext, title: string | undefined): void {
     if (!this.#enabled()) return;
     const text = terminalTitleText(title);
     if (!text || text === this.#title) return;
     this.#title = text;
     this.#write(context, text);
+  }
+
+  /** Record the held title once, for the next resume, if it changed. */
+  flush(): void {
+    if (!this.#enabled() || !this.#title || this.#title === this.#recorded) return;
     try {
-      this.#host.appendEntry(TERMINAL_TITLE_ENTRY_TYPE, { version: 1, title: text });
+      this.#host.appendEntry(TERMINAL_TITLE_ENTRY_TYPE, { version: 1, title: this.#title });
+      this.#recorded = this.#title;
     } catch {
-      // A session that refuses the entry keeps the live title for this run.
+      // A session that refuses the entry still showed the live title.
     }
   }
 
@@ -125,4 +143,12 @@ export const installTerminalTitle = (pi: ExtensionAPI, title: FabricTerminalTitl
   pi.on("session_tree", later((context) => title.resume(context)));
   pi.on("session_info_changed", later((context) => title.reassert(context)));
   pi.on("agent_settled", later((context) => title.reassert(context)));
+  // Synchronous: Pi disposes the session right after its shutdown handlers.
+  pi.on("session_shutdown", () => {
+    try {
+      title.flush();
+    } catch {
+      // Ignore: the title is decoration.
+    }
+  });
 };
