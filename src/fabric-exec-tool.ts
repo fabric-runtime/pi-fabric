@@ -179,6 +179,7 @@ export const createFabricExecTool = (
         loadout,
         state.config.fullCodeMode || state.config.schema.mode === "enforce",
         state.foregroundTools(loadout.declared.map((tool) => tool.name)).tools,
+        { nativeProfile: state.config.executor.codemodeProfile === "native" },
       );
     },
     label: "Fabric",

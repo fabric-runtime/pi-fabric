@@ -107,7 +107,7 @@ other_window = await pi.read(path="src/config.ts", offset=41, limit=40)
 return {"readmeLines": len(text.splitlines()), "window": window, "next": other_window}
 ```
 
-`pi.read`, `pi.grep`, `pi.find`, and `pi.ls` return strings. `pi.bash`, `pi.powershell` (Windows only), `pi.edit`, and `pi.write` return **native Python dictionaries**, not objects with attribute access:
+`pi.read`, `pi.grep`, `pi.find`, and `pi.ls` return strings. `pi.read` returns plain file text even when an extension such as pi-hashline-edit-pro overrides `read` with anchored rows; pass `anchors: true` (`anchors=True` in Python) to get the override's `anchor│content` rows for its edit tools. `pi.bash`, `pi.powershell` (Windows only), `pi.edit`, and `pi.write` return **native Python dictionaries**, not objects with attribute access:
 
 ```python
 r = await pi.bash({"command": "git status --short", "settle": True})

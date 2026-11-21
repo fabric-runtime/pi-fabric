@@ -29,6 +29,7 @@ import {
 import { parseShellMonitor, shellMonitorSchema } from "../core/shell-monitor.js";
 import { abortSafeReadOperations } from "./pi-read-operations.js";
 import { expandSkillDirMarkersForRead } from "../core/skill-dir.js";
+import { readPlainText } from "../core/read-plain-text.js";
 import type {
   FabricActionDescriptor,
   FabricBashMiddlewareV1,
@@ -98,7 +99,23 @@ const closedPiInputSchema = (name: PiCoreToolName, source: unknown): Record<stri
       } };
     }
   }
+  if (name === "read") Object.assign(properties, withReadAnchorsProperty(properties));
   return { ...schema, properties, additionalProperties: false };
+};
+
+// Fabric-owned `pi.read` argument: return the read tool's anchored display
+// rows instead of plain file text. Forwarded only to a read that declares it.
+const READ_ANCHORS_PROPERTY = {
+  type: "boolean",
+  description: "Return the read tool's display rows (anchor│content with hashline) instead of plain file text.",
+};
+const withReadAnchorsProperty = (properties: Record<string, unknown>): Record<string, unknown> =>
+  Object.hasOwn(properties, "anchors") ? properties : { ...properties, anchors: READ_ANCHORS_PROPERTY };
+const readSchemaWithAnchors = (schema: Record<string, unknown>): Record<string, unknown> => {
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return schema;
+  const next = withReadAnchorsProperty(properties as Record<string, unknown>);
+  return next === properties ? schema : { ...schema, properties: next };
 };
 
 const NOTIFY_FIELD_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
@@ -393,7 +410,11 @@ export class PiToolsProvider implements FabricProvider {
           namespace: "extension-middleware",
         };
       }
-      return { ...override, namespace: "extension-override" };
+      return {
+        ...override,
+        ...(name === "read" ? { inputSchema: readSchemaWithAnchors(override.inputSchema) } : {}),
+        namespace: "extension-override",
+      };
     }
     const tool = this.#tools[name];
     if (!tool || this.#requireCapturedOverrides) return undefined;
@@ -702,6 +723,16 @@ export class PiToolsProvider implements FabricProvider {
   ): Promise<unknown> {
     const name = actionName as PiCoreToolName;
     this.#assertAllowed(name);
+    // `anchors` is Fabric's own pi.read switch. Forward it only to a read
+    // tool that declares it, so a schema-closed read never sees an unknown key.
+    let readAnchors = false;
+    if (name === "read" && Object.hasOwn(args, "anchors")) {
+      readAnchors = args.anchors === true;
+      if (!this.#readDeclaresAnchors()) {
+        const { anchors: _anchors, ...forwarded } = args;
+        args = forwarded;
+      }
+    }
     if (process.env.PI_FABRIC_WRITE_POLICY) {
       // Confined child: also enforce on paths where no tool_call hook replays.
       const guard = await import("../agents/write-guard.js");
@@ -765,7 +796,7 @@ export class PiToolsProvider implements FabricProvider {
       this.#attachReadMedia(name, result, context);
       this.#attachReadNote(name, result, context);
       this.#attachPreview(name, result, args, context);
-      return this.#normalizeResult(name, result, args, context);
+      return this.#normalizeResult(name, result, args, context, readAnchors);
     }
     const tool = this.#definitionFor(name, args);
     // Without a runner (e.g. before the first tool refresh populated the
@@ -787,9 +818,9 @@ export class PiToolsProvider implements FabricProvider {
       this.#attachReadMedia(name, result, context);
       this.#attachReadNote(name, result, context);
       this.#attachPreview(name, result, args, context);
-      return this.#normalizeResult(name, result, args, context);
+      return this.#normalizeResult(name, result, args, context, readAnchors);
     }
-    return this.#invokeWithEvents(name, tool, args, context, runner, middleware, preflightEmitted);
+    return this.#invokeWithEvents(name, tool, args, context, runner, middleware, preflightEmitted, readAnchors);
   }
 
   // Emit the tool_call preflight for a nested pi.* call and enforce a block.
@@ -820,6 +851,7 @@ export class PiToolsProvider implements FabricProvider {
     runner: ExtensionRunner,
     middleware: FabricBashMiddlewareV1 | undefined,
     preflightEmitted = false,
+    readAnchors = false,
   ): Promise<unknown> {
     const toolCallId = context.nestedToolCallId;
     // Pi's own nested calls name their caller on every event; so do these replays,
@@ -929,7 +961,7 @@ export class PiToolsProvider implements FabricProvider {
       throw new Error(text || (thrown instanceof Error ? thrown.message : `Pi tool ${name} failed`));
     }
     this.#attachPreview(name, result, args, context);
-    return this.#normalizeResult(name, result, args, context);
+    return this.#normalizeResult(name, result, args, context, readAnchors);
   }
 
   // Schema-enforce and early-startup calls may have no ExtensionRunner, so the
@@ -940,11 +972,21 @@ export class PiToolsProvider implements FabricProvider {
     result: { content: ToolContent; details?: unknown; isError?: boolean; structuredContent?: unknown },
     args: Record<string, unknown>,
     context: FabricInvocationContext,
+    readAnchors = false,
   ): unknown {
     if (context.nativeToolResult) return nativeToolResult(this.#definitionFor(name, args), result as PiToolResult);
     const normalized = normalizeResult(name, result);
     if (name !== "read" || typeof normalized !== "string") return normalized;
-    return expandSkillDirMarkersForRead(normalized, args, this.#cwd);
+    // pi.read returns file text; anchors:true keeps the display rows. A cleared
+    // structuredContent (content-only redaction) falls back to the display.
+    const text = readAnchors ? normalized : readPlainText(normalized, result.structuredContent) ?? normalized;
+    return expandSkillDirMarkersForRead(text, args, this.#cwd);
+  }
+
+  #readDeclaresAnchors(): boolean {
+    const definition = this.#catalog?.get("read")?.definition ?? this.#tools.read;
+    const properties = (definition?.parameters as { properties?: Record<string, unknown> } | undefined)?.properties;
+    return properties !== undefined && Object.hasOwn(properties, "anchors");
   }
 
   #attachPartialPreview(

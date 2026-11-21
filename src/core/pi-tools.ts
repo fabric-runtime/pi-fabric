@@ -11,6 +11,9 @@ export const PI_CORE_TOOL_NAMES = [
 
 export type PiCoreToolName = (typeof PI_CORE_TOOL_NAMES)[number];
 
+/** A tool guideline about "a codemode script" (Pi native codemode results); see core-override-guidance.ts. */
+export const isCodemodeScriptGuideline = (guideline: string): boolean => /\bcodemode script\b/i.test(guideline);
+
 const PI_SHELL_TOOL_NAMES = ["bash", "powershell"] as const;
 export type PiShellToolName = (typeof PI_SHELL_TOOL_NAMES)[number];
 
