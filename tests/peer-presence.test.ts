@@ -136,32 +136,38 @@ describe("formatPeerPresenceNotice", () => {
     expect(formatPeerPresenceNotice(second, "/repo")).toBe(text);
     expect(text).toBe([
       "<fabric-peers>",
-      "Other Pi sessions are connected to this project and share its files with you:",
-      "- FAB-2 (id session:FAB-2)",
-      "- FAB-3 (id session:FAB-3)",
-      "File or git changes you did not make may be theirs: do not revert or overwrite them. Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and `agents.steer` to message one by id. Coordinate only with relevant peers that are running or have pending messages, not every connected session. Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.",
+      "joined: FAB-2, FAB-3",
+      "connected: 2",
       "</fabric-peers>",
     ].join("\n"));
     expect(text).not.toMatch(/\bidle\b|a\/b|\d{5}/);
   });
 
-  it("marks later joiners, names a differing directory, and lists departures", () => {
+  it("lists only the change, by label, with no session id or coordination paragraph", () => {
     const text = formatPeerPresenceNotice({
       joined: [record("FAB-3", "/elsewhere")],
       left: [record("FAB-1")],
       present: [record("FAB-2"), record("FAB-3", "/elsewhere")],
     }, "/repo");
-    expect(text).toContain("- FAB-2 (id session:FAB-2)\n");
-    expect(text).toContain("- FAB-3 (id session:FAB-3), working in /elsewhere, just joined");
-    expect(text).toContain("No longer present: FAB-1.");
+    expect(text).toBe([
+      "<fabric-peers>",
+      "joined: FAB-3 (working in /elsewhere)",
+      "left: FAB-1",
+      "connected: 2",
+      "</fabric-peers>",
+    ].join("\n"));
+    // A peer that did not change is not listed again.
+    expect(text).not.toContain("FAB-2");
+    expect(text).not.toContain("session:");
+    expect(text).not.toContain("agents.steer");
   });
 
-  it("drops the coordination advice once nobody else is present", () => {
+  it("says so once nobody else is present", () => {
     const text = formatPeerPresenceNotice({ joined: [], left: [record("FAB-2")], present: [] }, "/repo");
     expect(text).toBe([
       "<fabric-peers>",
-      "No other Pi session is connected to this project any more.",
-      "No longer present: FAB-2.",
+      "left: FAB-2",
+      "No other Pi session is connected to this project now.",
       "</fabric-peers>",
     ].join("\n"));
   });
@@ -177,8 +183,8 @@ describe("formatPeerPresenceNotice", () => {
 
     const many = Array.from({ length: 15 }, (_, index) => record(`FAB-${index + 1}`));
     const lines = formatPeerPresenceNotice({ joined: many, left: [], present: many }, "/repo").split("\n");
-    expect(lines.filter((line) => line.startsWith("- FAB-"))).toHaveLength(12);
-    expect(lines).toContain("- and 3 more");
+    expect(lines[1]).toBe(`joined: ${many.slice(0, 12).map((entry) => entry.label).join(", ")}, and 3 more`);
+    expect(lines[2]).toBe("connected: 15");
   });
 });
 
@@ -216,11 +222,8 @@ const harness = (initial: FabricPeerInfo[] = [], branch: unknown[] = []) => {
     setBranch: (value: unknown[]) => { branch = value; },
     fail: (value = true) => { failing = value; },
     advance: (ms: number) => { now += ms; },
-    start: () => handlers.get("before_agent_start")?.({}, context) as { message?: any } | undefined,
-    boundary: (stopReason = "toolUse", entries: unknown[] = [], ctx: ExtensionContext = context) =>
-      handlers.get("turn_end")?.({ message: { role: "assistant", stopReason }, entries }, ctx) as
-        | { entries: any[]; continue?: boolean }
-        | undefined,
+    start: (messageType: "user" | "custom" = "user") =>
+      handlers.get("before_agent_start")?.({ messageType }, context) as { message?: any } | undefined,
     emit: (name: string) => handlers.get(name)?.({}, context),
   };
 };
@@ -234,50 +237,58 @@ describe("PeerPresenceNotifier", () => {
       display: false,
       details: { version: 1, present: [{ id: "session:FAB-2", label: "FAB-2", cwd: "/repo" }] },
     });
-    expect(result?.message.content).toContain("- FAB-2 (id session:FAB-2)");
+    expect(result?.message.content).toBe("<fabric-peers>\njoined: FAB-2\nconnected: 1\n</fabric-peers>");
     expect(h.notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 connected", "info");
     expect(h.start()).toBeUndefined();
-    expect(h.boundary()).toBeUndefined();
     expect(h.notify).toHaveBeenCalledTimes(1);
   });
 
-  it("appends a mid-run arrival at the turn boundary without requesting a continuation", () => {
+  it("adds nothing at a turn boundary, so a mid-run join waits for the next prompt", () => {
     const h = harness();
     expect(h.start()).toBeUndefined();
     h.setPeers([peer("FAB-2")]);
-    const earlier = { type: "custom", customType: "other-extension" };
-    const result = h.boundary("toolUse", [earlier]);
-    expect(result?.entries).toHaveLength(2);
-    expect(result?.entries[0]).toBe(earlier);
-    expect(result?.entries[1]).toMatchObject({
-      type: "custom_message",
-      customType: PEER_PRESENCE_MESSAGE_TYPE,
-      display: false,
-    });
-    expect(result).not.toHaveProperty("continue");
-    expect(h.notify).toHaveBeenCalledWith("Fabric peers: joined FAB-2; 1 connected", "info");
-    expect(h.boundary()).toBeUndefined();
+    // A tool-use turn boundary never starts or extends a model run for a notice.
+    expect(h.handlers.get("turn_end")?.({ message: { role: "assistant", stopReason: "toolUse" }, entries: [] }, {} as ExtensionContext))
+      .toBeUndefined();
+    expect(h.notify).not.toHaveBeenCalled();
+    const next = h.start()?.message;
+    expect(next?.content).toBe("<fabric-peers>\njoined: FAB-2\nconnected: 1\n</fabric-peers>");
+    expect(next?.content).not.toContain("session:");
+    expect(h.start()).toBeUndefined();
   });
 
-  it("leaves a final, failed, or aborted turn to the next prompt", () => {
+  it("coalesces several changes made between prompts into one notice", () => {
     const h = harness([peer("FAB-2")]);
-    expect(h.boundary("stop")).toBeUndefined();
-    expect(h.boundary("error")).toBeUndefined();
-    expect(h.boundary("aborted")).toBeUndefined();
-    const aborted = { signal: { aborted: true } } as unknown as ExtensionContext;
-    expect(h.boundary("toolUse", [], aborted)).toBeUndefined();
-    expect(h.start()?.message.content).toContain("FAB-2");
+    h.start();
+    h.setPeers([peer("FAB-3")]);
+    // A turn boundary during some run sees FAB-2 missing and starts its grace window.
+    expect(h.emit("turn_end")).toBeUndefined();
+    h.advance(PEER_DEPARTURE_GRACE_MS);
+    h.setPeers([peer("FAB-3"), peer("FAB-4")]);
+    // A peer that came and went between prompts is never mentioned.
+    h.setPeers([peer("FAB-4")]);
+    expect(h.start()?.message.content).toBe(
+      "<fabric-peers>\njoined: FAB-4\nleft: FAB-2\nconnected: 1\n</fabric-peers>",
+    );
+    expect(h.notify).toHaveBeenCalledTimes(2);
   });
 
-  it("reports a debounced departure and drops the advice when alone again", () => {
+  it("skips a run started by a custom message and keeps the change for the next prompt", () => {
+    const h = harness([peer("FAB-2")]);
+    expect(h.start("custom")).toBeUndefined();
+    expect(h.notify).not.toHaveBeenCalled();
+    expect(h.start("user")?.message.content).toContain("joined: FAB-2");
+  });
+
+  it("reports a debounced departure and says when alone again", () => {
     const h = harness([peer("FAB-2")]);
     h.start();
     h.setPeers([]);
-    expect(h.boundary()).toBeUndefined();
+    expect(h.start()).toBeUndefined();
     h.advance(PEER_DEPARTURE_GRACE_MS);
-    const content = h.boundary()?.entries[0].content as string;
-    expect(content).toContain("No other Pi session is connected to this project any more.");
-    expect(content).toContain("No longer present: FAB-2.");
+    const content = h.start()?.message.content as string;
+    expect(content).toContain("left: FAB-2");
+    expect(content).toContain("No other Pi session is connected to this project now.");
     expect(content).not.toContain("agents.steer");
     expect(h.notify).toHaveBeenLastCalledWith("Fabric peers: left FAB-2; 0 connected", "info");
   });
@@ -298,7 +309,6 @@ describe("PeerPresenceNotifier", () => {
     const h = harness([peer("FAB-2")]);
     h.setEnabled(false);
     expect(h.start()).toBeUndefined();
-    expect(h.boundary()).toBeUndefined();
     h.setEnabled(true);
     h.fail();
     expect(h.start()).toBeUndefined();
@@ -386,15 +396,16 @@ describe("peer presence over a shared mesh", () => {
       cwd: project,
       now: () => now,
     });
-    const start = () => handlers.get("before_agent_start")?.({}, context) as { message?: any } | undefined;
+    const start = () => handlers.get("before_agent_start")?.({ messageType: "user" }, context) as { message?: any } | undefined;
     expect(start()).toBeUndefined();
 
     const second = await join(meshRoot, "beta", project);
     const label = second.self().label;
     expect(label).toMatch(/-2$/);
     const joined = start()?.message;
-    expect(joined.content).toContain(`- ${label} (id session:beta)`);
-    expect(joined.content).not.toContain(", working in ");
+    expect(joined.content).toContain(`joined: ${label}\n`);
+    expect(joined.content).not.toContain("session:beta");
+    expect(joined.content).not.toContain("working in");
     expect(second.peers().map((entry) => entry.id)).toEqual(["session:alpha"]);
     expect(start()).toBeUndefined();
 
@@ -402,7 +413,7 @@ describe("peer presence over a shared mesh", () => {
     directories.splice(directories.indexOf(second), 1);
     expect(start()).toBeUndefined();
     now += PEER_DEPARTURE_GRACE_MS;
-    expect(start()?.message.content).toContain(`No longer present: ${label}.`);
+    expect(start()?.message.content).toContain(`left: ${label}\n`);
     notifier.close();
   });
 });

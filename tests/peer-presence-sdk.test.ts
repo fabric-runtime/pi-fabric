@@ -16,7 +16,7 @@ const peer = (label: string): FabricPeerInfo => ({
 });
 
 describe("peer presence with the real Pi SDK", () => {
-  it("appends a mid-run notice to the request already owed and keeps every earlier request a prefix", async () => {
+  it("holds a mid-run join for the next user prompt and keeps every earlier request a prefix", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "fabric-presence-sdk-"));
     let peers: FabricPeerInfo[] = [];
     let now = 0;
@@ -75,21 +75,32 @@ describe("peer presence with the real Pi SDK", () => {
         await session.setModel(modelRuntime.getModel("offline-presence", "fixture")!);
         await session.prompt("Do the work.");
         await session.waitForIdle();
-        // The tool turn owed one more request; the notice rode it and forced none.
+        // The join happened during a tool-use run: nothing rides that run.
         expect(requests).toHaveLength(2);
         // The transcript carries the system prompt, so a prefix match covers it too.
         expect(JSON.parse(requests[0]![0]!)).toMatchObject({ role: "system" });
         expect(requests[0]!.join("\n")).not.toContain("fabric-peers");
         expect(requests[1]!.slice(0, requests[0]!.length)).toEqual(requests[0]);
-        expect(requests[1]!.at(-1)).toContain("FAB-2 (id session:FAB-2)");
-        expect(requests[1]!.at(-2)).toContain("worked");
+        expect(requests[1]!.join("\n")).not.toContain("fabric-peers");
+        expect(requests[1]!.at(-1)).toContain("worked");
+        expect(notify).not.toHaveBeenCalled();
 
         await session.prompt("Anything else?");
         await session.waitForIdle();
         expect(requests).toHaveLength(3);
-        // Unchanged peers add nothing, and the earlier notice is replayed byte-for-byte.
+        // The next user-started run carries the change, by label and without an id.
         expect(requests[2]!.slice(0, requests[1]!.length)).toEqual(requests[1]);
-        expect(requests[2]!.filter(message => message.includes("fabric-peers"))).toHaveLength(1);
+        const carried = requests[2]!.filter(message => message.includes("fabric-peers"));
+        expect(carried).toHaveLength(1);
+        expect(carried[0]).toContain("joined: FAB-2");
+        expect(carried[0]).not.toContain("session:FAB-2");
+
+        await session.prompt("Still there?");
+        await session.waitForIdle();
+        expect(requests).toHaveLength(4);
+        // Unchanged peers add nothing, and the earlier notice is replayed byte-for-byte.
+        expect(requests[3]!.slice(0, requests[2]!.length)).toEqual(requests[2]);
+        expect(requests[3]!.filter(message => message.includes("fabric-peers"))).toHaveLength(1);
         const notices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
         expect(notices).toHaveLength(1);
         expect(notices[0]).toMatchObject({ display: false });
@@ -101,14 +112,14 @@ describe("peer presence with the real Pi SDK", () => {
         peers = [];
         await session.prompt("Check presence while the peer lease settles.");
         await session.waitForIdle();
-        expect(requests).toHaveLength(4);
+        expect(requests).toHaveLength(5);
         expect(notify).toHaveBeenCalledTimes(1);
         now += PEER_DEPARTURE_GRACE_MS;
         await session.prompt("Check presence after the grace window.");
         await session.waitForIdle();
-        expect(requests).toHaveLength(5);
-        expect(requests[4]!.slice(0, requests[3]!.length)).toEqual(requests[3]);
-        expect(requests[4]!.at(-1)).toContain("No longer present: FAB-2.");
+        expect(requests).toHaveLength(6);
+        expect(requests[5]!.slice(0, requests[4]!.length)).toEqual(requests[4]);
+        expect(requests[5]!.find(message => message.includes("fabric-peers") && message.includes("left: FAB-2"))).toBeDefined();
         const updatedNotices = session.messages.filter(message => message.role === "custom" && message.customType === PEER_PRESENCE_MESSAGE_TYPE);
         expect(updatedNotices).toHaveLength(2);
         expect(updatedNotices.every(message => message.role === "custom" && message.display === false)).toBe(true);
@@ -116,7 +127,7 @@ describe("peer presence with the real Pi SDK", () => {
         expect(notify).toHaveBeenCalledTimes(2);
         await session.prompt("Nothing changed.");
         await session.waitForIdle();
-        expect(requests).toHaveLength(6);
+        expect(requests).toHaveLength(7);
         expect(notify).toHaveBeenCalledTimes(2);
         expect(errors).toEqual([]);
       } finally {

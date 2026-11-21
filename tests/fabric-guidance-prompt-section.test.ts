@@ -5,6 +5,7 @@ import { CapturedToolCatalog } from "../src/capture/catalog.js";
 import { normalizeFabricConfig } from "../src/config.js";
 import { FabricState } from "../src/fabric-state.js";
 import { fabricExecutionGuidelines } from "../src/core/execution-guidelines.js";
+import { PEER_COORDINATION_GUIDANCE } from "../src/topology/peer-presence.js";
 
 // Pi 1.4 renders the system prompt from named sections and diffs them turn to
 // turn. A handler that returns `systemPrompt` forces one opaque prompt instead:
@@ -94,6 +95,22 @@ describe("Fabric guidance as a Pi prompt section", () => {
     expect(rendered).toContain("<later_notes>\nLater extension notes.\n</later_notes>");
     expect(rendered).toContain(`<fabric>\n${options.sections.fabric}\n</fabric>`);
     expect(rendered.split("<available_skills>").length - 1).toBe(1);
+  });
+
+  it("states the peer coordination advice once in the fabric section, not in each notice", async () => {
+    const fabric = extension("pi-fabric", await loadFabric());
+    const { options, rendered, errors } = await startRun([fabric]);
+    expect(errors).toEqual([]);
+    expect(options.sections.fabric).toContain(PEER_COORDINATION_GUIDANCE);
+    expect(rendered.split(PEER_COORDINATION_GUIDANCE).length - 1).toBe(1);
+  });
+
+  it("leaves the peer advice out when peer notices are off", async () => {
+    const fabric = extension("pi-fabric", await loadFabric());
+    vi.spyOn(FabricState.prototype, "config", "get").mockReturnValue(normalizeFabricConfig({ mesh: { peerNotices: false } }));
+    const { options, errors } = await startRun([fabric]);
+    expect(errors).toEqual([]);
+    expect(options.sections.fabric).not.toContain("Peer sessions:");
   });
 
   it("produces the same sections on a second run with the same inputs", async () => {
