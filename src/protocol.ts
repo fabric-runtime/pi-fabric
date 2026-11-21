@@ -744,6 +744,10 @@ export const readFabricActionPolicyRegistrationV1 = (
 
 export const FABRIC_DECISIONS_CAPABILITY_EVENT = "pi-fabric:decisions:capability:v1";
 export const FABRIC_DECISION_REQUEST_EVENT = "pi-fabric:decisions:request:v1";
+/** Fabric emits one payload per decision lifecycle change it sees; see FabricDecisionsChangedV1. */
+export const FABRIC_DECISIONS_CHANGED_EVENT = "pi-fabric:decisions:changed:v1";
+/** Host-local request: answer or cancel a stored decision; see FabricDecisionAnswerRequestV1. */
+export const FABRIC_DECISION_ANSWER_EVENT = "pi-fabric:decisions:answer:v1";
 
 export type FabricDecisionInputV1 = "text" | "confirm" | "select" | "editor";
 
@@ -789,7 +793,81 @@ export interface FabricDecisionAnswerV1 {
   text?: string;
   answeredBy: string;
   via: string;
+  /** Whether a person or an agent answered, when the answering surface said so. */
+  answererKind?: FabricDecisionAnswererKindV1;
   at: number;
+}
+
+export type FabricDecisionAnswererKindV1 = "person" | "agent";
+
+/** A stored decision as Fabric's decision store records it. */
+export interface FabricDecisionRecordV1 {
+  id: string;
+  kind: "approval" | "question" | "escalation";
+  title: string;
+  body?: string;
+  options?: Array<{ id: string; label: string }>;
+  input?: FabricDecisionInputV1;
+  raisedBy: { participantId: string; runId?: string; sessionId?: string };
+  holder: string;
+  createdAt: number;
+  deadline?: number;
+  onExpire: "cancel" | "default" | "escalate";
+  defaultOptionId?: string;
+  escalation?: { chain: string[]; hop: number; hopTimeoutMs: number; onFinal: "cancel" | "default" };
+  history?: Array<{ holder: string; until: number; reason: "expired" | "escalated"; text?: string; by?: string }>;
+  status: "open" | "answered" | "expired" | "cancelled";
+  answer?: FabricDecisionAnswerV1;
+}
+
+export type FabricDecisionChangeV1 = "raised" | "answered" | "expired" | "cancelled" | "escalated";
+
+/**
+ * Emitted on `pi.events` in this Pi process for each decision lifecycle change
+ * on the session's mesh, whichever process made it. `decision` is the full
+ * stored record after the change, deeply frozen. A change made in this process
+ * arrives once, right after it is written. A change made by another process
+ * (the decisions CLI, a child agent, another session) arrives after Fabric
+ * reads its mesh wake hint, with the record as stored at that moment: when
+ * several such changes land between two reads, only the latest state arrives,
+ * named by its status (`escalated` for an open record with history).
+ * The decision store stays the authoritative record; read it again before
+ * acting on an old payload.
+ */
+export interface FabricDecisionsChangedV1 {
+  version: 1;
+  change: FabricDecisionChangeV1;
+  decision: FabricDecisionRecordV1;
+}
+
+/** Result of a FabricDecisionAnswerRequestV1. */
+export type FabricDecisionAnswerResultV1 =
+  | { ok: true; decision: FabricDecisionRecordV1 }
+  | { ok: false; id: string; error: string };
+
+/**
+ * Host-local request: answer or cancel a stored decision from an extension in
+ * this Pi process. The change goes through the decision store's
+ * compare-and-swap, so the first answer wins against any dialog, CLI or
+ * program answer. Fabric records `via: "extension:<source>"`, `answeredBy`
+ * and `answererKind` on the answer. An agent may not answer or cancel a
+ * decision the user holds, and an extension may not answer a decision it
+ * raised itself (it may cancel one).
+ */
+export interface FabricDecisionAnswerRequestV1 {
+  version: 1;
+  context: ExtensionContext;
+  /** Names the answering extension; must match `[A-Za-z0-9@][A-Za-z0-9@._/-]{0,63}`. */
+  source: string;
+  id: string;
+  action: "answer" | "cancel";
+  /** For `answer`: the option id, or text for a decision without options. */
+  answer?: { optionId?: string; text?: string };
+  /** Who answered, for example a user name; must match `[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}`. */
+  answeredBy: string;
+  answerer: FabricDecisionAnswererKindV1;
+  claim: () => boolean;
+  respond: (result: FabricDecisionAnswerResultV1) => void;
 }
 
 /** Only `answered` carries an answer; `cancelled` and `expired` never do. */
@@ -834,6 +912,29 @@ export const readFabricDecisionsCapabilityRequestV1 = (
     return undefined;
   }
   return value as FabricDecisionsCapabilityRequestV1;
+};
+
+export const readFabricDecisionAnswerRequestV1 = (
+  value: unknown,
+): FabricDecisionAnswerRequestV1 | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 1 ||
+    typeof record.context !== "object" ||
+    record.context === null ||
+    typeof record.claim !== "function" ||
+    typeof record.respond !== "function" ||
+    typeof record.source !== "string" ||
+    typeof record.id !== "string" ||
+    (record.action !== "answer" && record.action !== "cancel") ||
+    typeof record.answeredBy !== "string" ||
+    (record.answerer !== "person" && record.answerer !== "agent") ||
+    (record.answer !== undefined && (typeof record.answer !== "object" || record.answer === null || Array.isArray(record.answer)))
+  ) {
+    return undefined;
+  }
+  return value as FabricDecisionAnswerRequestV1;
 };
 
 export const readFabricDecisionRequestV1 = (

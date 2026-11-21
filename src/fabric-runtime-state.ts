@@ -91,6 +91,7 @@ import { actionApprovalOverride } from "./core/approval-overrides.js";
 import type { FabricSpeculationStreamTap } from "./speculation/stream-tap.js";
 import { MeshStore, type MeshIdentity } from "./mesh/store.js";
 import { DecisionStore } from "./decisions/store.js";
+import { DecisionChangeFeed } from "./decisions/changes.js";
 import { requestHeadlessApproval, routeChildQuestion } from "./decisions/host.js";
 import { LifecycleBroker } from "./lifecycle/broker.js";
 import type { FabricLifecycleEventType } from "./lifecycle/types.js";
@@ -141,6 +142,7 @@ import { SchemaController } from "./schema/controller.js";
 import { StateStore } from "./state/store.js";
 import {
   FABRIC_COMPONENT_DISCOVER_EVENT,
+  FABRIC_DECISIONS_CHANGED_EVENT,
   FABRIC_PROVIDER_DISCOVER_EVENT,
   type FabricActionDescriptor,
   type FabricComponentDiscovery,
@@ -262,6 +264,8 @@ export class FabricRuntimeState {
   #identity: MeshIdentity | undefined;
   /** Durable decisions for headless approvals and routed child dialogs; mesh-enabled sessions only. */
   #decisions: DecisionStore | undefined;
+  /** Emits FABRIC_DECISIONS_CHANGED_EVENT on pi.events for this session's mesh. */
+  #decisionFeed: DecisionChangeFeed | undefined;
   #mainAgent: MainAgentController | undefined;
   #participants: ParticipantDirectory | undefined;
   #providerParticipants = new ProviderParticipantRegistry();
@@ -1276,6 +1280,17 @@ export class FabricRuntimeState {
     const events = this.pi.events;
     if (events) this.#execution.setEventEmitter((channel, data) => events.emit(channel, data));
     const decisions = this.#decisions;
+    const decisionMesh = this.#mesh;
+    const meshConfig = this.#config?.mesh;
+    if (decisions && events && decisionMesh && meshConfig && !this.#managedHost) {
+      this.#decisionFeed?.close();
+      this.#decisionFeed = new DecisionChangeFeed(
+        decisionMesh,
+        { actorPollMs: meshConfig.actorPollMs, maxReadEvents: meshConfig.maxReadEvents },
+        (payload) => events.emit(FABRIC_DECISIONS_CHANGED_EVENT, payload),
+      );
+      this.#decisionFeed.start();
+    }
     if (decisions) {
       this.#execution.setHeadlessApproval((action, reason, signal) => requestHeadlessApproval(decisions, action, {
         ...(reason ? { reason } : {}),
@@ -1707,6 +1722,8 @@ export class FabricRuntimeState {
     this.#observations = undefined;
     this.#shellTiming?.close();
     this.#shellTiming = undefined;
+    this.#decisionFeed?.close();
+    this.#decisionFeed = undefined;
     this.#suppressResidentGuidanceSync = true;
     await this.#deactivateRepairs();
     clearActiveCompiledSurface();
@@ -1838,6 +1855,8 @@ export class FabricRuntimeState {
     this.#observations = undefined;
     this.#shellTiming?.close();
     this.#shellTiming = undefined;
+    this.#decisionFeed?.close();
+    this.#decisionFeed = undefined;
     await this.shellJobs.close();
     await this.#deactivateRepairs();
     if (!this.#registry) return;

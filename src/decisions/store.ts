@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import path from "node:path";
 import type { MeshIdentity, MeshStateEntry, MeshStore } from "../mesh/store.js";
 
 // Durable pending decisions (approvals, questions, escalations) kept in the
@@ -19,13 +20,59 @@ export interface DecisionOption {
   label: string;
 }
 
+/** Who gave an answer, as the answering surface reports it. Older records omit it. */
+export type DecisionAnswererKind = "person" | "agent";
+
 export interface DecisionAnswer {
   optionId?: string;
   text?: string;
   answeredBy: string;
   via: string;
+  answererKind?: DecisionAnswererKind;
   at: number;
 }
+
+/** A lifecycle change of a stored decision. */
+export type DecisionChange = "raised" | "answered" | "expired" | "cancelled" | "escalated";
+
+/**
+ * Receives each change a DecisionStore in this process writes, with the mesh
+ * version the write produced, right after the write commits.
+ */
+export type DecisionChangeListener = (change: DecisionChange, record: DecisionRecord, version: number) => void;
+
+// In-process listeners keyed by resolved mesh root. A store in this process
+// tells them about its own writes at once; writes by other processes arrive
+// as mesh wake hints instead (see changes.ts).
+const localListeners = new Map<string, Set<DecisionChangeListener>>();
+
+/** Listen to decision writes made by any DecisionStore in this process on the mesh at `root`. */
+export const onLocalDecisionChange = (root: string, listener: DecisionChangeListener): (() => void) => {
+  const key = path.resolve(root);
+  let listeners = localListeners.get(key);
+  if (!listeners) {
+    listeners = new Set();
+    localListeners.set(key, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    const current = localListeners.get(key);
+    if (!current) return;
+    current.delete(listener);
+    if (current.size === 0) localListeners.delete(key);
+  };
+};
+
+const tellLocalListeners = (root: string | undefined, change: DecisionChange, record: DecisionRecord, version: number): void => {
+  if (typeof root !== "string" || localListeners.size === 0) return;
+  for (const listener of [...(localListeners.get(path.resolve(root)) ?? [])]) {
+    try {
+      listener(change, record, version);
+    } catch {
+      // A listener's failure never affects the write it observed.
+    }
+  }
+};
 
 export type DecisionOnExpire = "cancel" | "default" | "escalate";
 
@@ -97,7 +144,7 @@ const MAX_STORED_DECISIONS = 500;
 const RESOLVED_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 const OPTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const DECISION_ID = /^dec_[A-Za-z0-9_-]{8,64}$/;
-const PARTICIPANT_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/;
+export const PARTICIPANT_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/;
 const KINDS = new Set(["approval", "question", "escalation"]);
 const INPUTS = new Set(["text", "confirm", "select", "editor"]);
 const STATUSES = new Set(["open", "answered", "expired", "cancelled"]);
@@ -273,7 +320,7 @@ export const buildDecisionRecord = (
   };
 };
 
-const isDecisionRecord = (value: unknown): value is DecisionRecord => {
+export const isDecisionRecord = (value: unknown): value is DecisionRecord => {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   return typeof record.id === "string" && typeof record.title === "string" &&
@@ -381,8 +428,8 @@ export class DecisionStore {
     }
     await this.#prune(entries);
     // ifVersion 0 only succeeds for a key that has never existed.
-    await this.mesh.put({ key: DECISION_PREFIX + record.id, value: record, identity: this.identity, ifVersion: 0 });
-    await this.#notify("decision.raised", record);
+    const written = await this.mesh.put({ key: DECISION_PREFIX + record.id, value: record, identity: this.identity, ifVersion: 0 });
+    await this.#notify("raised", record, written.version);
     return structuredClone(record);
   }
 
@@ -422,21 +469,21 @@ export class DecisionStore {
   async answer(
     id: string,
     input: DecisionAnswerInput,
-    by: { answeredBy: string; via: string },
+    by: DecisionAnsweredBy,
     authorize?: DecisionAuthorize,
   ): Promise<DecisionRecord> {
     return this.#transition(id, (record) => ({
       ...authorized(record, authorize),
       status: "answered",
-      answer: { ...validateDecisionAnswer(record, input), answeredBy: by.answeredBy, via: by.via, at: this.now() },
+      answer: { ...validateDecisionAnswer(record, input), ...answeredByFields(by), at: this.now() },
     }));
   }
 
-  async cancel(id: string, by: { answeredBy: string; via: string }, authorize?: DecisionAuthorize): Promise<DecisionRecord> {
+  async cancel(id: string, by: DecisionAnsweredBy, authorize?: DecisionAuthorize): Promise<DecisionRecord> {
     return this.#transition(id, (record) => ({
       ...authorized(record, authorize),
       status: "cancelled",
-      answer: { answeredBy: by.answeredBy, via: by.via, at: this.now() },
+      answer: { ...answeredByFields(by), at: this.now() },
     }));
   }
 
@@ -501,13 +548,14 @@ export class DecisionStore {
       const { record, version } = await this.#expire(entry);
       if (record.status !== "open") throw new Error(`Decision ${id} is ${record.status}, not open`);
       const updated = next(record);
+      let written: MeshStateEntry;
       try {
-        await this.mesh.put({ key, value: updated, identity: this.identity, ifVersion: version });
+        written = await this.mesh.put({ key, value: updated, identity: this.identity, ifVersion: version });
       } catch (error) {
         if (casConflict(error)) continue;
         throw error;
       }
-      await this.#notify(updated.status === "open" ? "decision.escalated" : `decision.${updated.status}`, updated);
+      await this.#notify(updated.status === "open" ? "escalated" : updated.status as DecisionChange, updated, written.version);
       return structuredClone(updated);
     }
     throw new Error(`Decision ${id} changed concurrently; read it again`);
@@ -521,7 +569,7 @@ export class DecisionStore {
       if (next === record) return { record: structuredClone(record), version: current.version };
       try {
         const written = await this.mesh.put({ key: current.key, value: next, identity: this.identity, ifVersion: current.version });
-        await this.#notify(next.status === "open" ? "decision.escalated" : "decision.expired", next);
+        await this.#notify(next.status === "open" ? "escalated" : "expired", next, written.version);
         return { record: structuredClone(next), version: written.version };
       } catch (error) {
         if (!casConflict(error)) throw error;
@@ -558,11 +606,12 @@ export class DecisionStore {
     }
   }
 
-  async #notify(kind: string, record: DecisionRecord): Promise<void> {
+  async #notify(change: DecisionChange, record: DecisionRecord, version: number): Promise<void> {
+    tellLocalListeners(this.mesh.root, change, record, version);
     try {
       await this.mesh.publish({
         topic: DECISIONS_TOPIC,
-        kind,
+        kind: `decision.${change}`,
         from: this.identity,
         data: {
           id: record.id,
@@ -578,6 +627,19 @@ export class DecisionStore {
     }
   }
 }
+
+/** Who answers or cancels: recorded on the decision's answer. */
+export interface DecisionAnsweredBy {
+  answeredBy: string;
+  via: string;
+  answererKind?: DecisionAnswererKind;
+}
+
+const answeredByFields = (by: DecisionAnsweredBy): Omit<DecisionAnswer, "at"> => ({
+  answeredBy: by.answeredBy,
+  via: by.via,
+  ...(by.answererKind !== undefined ? { answererKind: by.answererKind } : {}),
+});
 
 const authorized = (record: DecisionRecord, authorize?: DecisionAuthorize): DecisionRecord => {
   authorize?.(record);
