@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -473,6 +473,78 @@ describe("DurableAgent", () => {
     reopened.agent.setRequestId("later"); await reopened.agent.prompt("again");
     expect(JSON.stringify(reopened.agent.state.messages)).toContain(text);
     expect(reopened.faux.state.callCount).toBe(1);
+  });
+
+  it("keeps each prepare checkpoint to the last turn, however many images earlier turns returned", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "durable-agent-")); dirs.push(dir);
+    const turns = 8; let call = 0;
+    // Each turn returns a distinct ~48 KB image, as a screenshot read does.
+    const pixels = (index: number) => Buffer.alloc(36_000, index + 1).toString("base64");
+    const reader = tool(async () => {
+      const index = call++;
+      return { content: [{ type: "image", mimeType: "image/png", data: pixels(index) }], details: {} };
+    });
+    const { agent, faux } = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [reader]);
+    faux.setResponses([
+      ...Array.from({ length: turns }, (_, index) => fauxAssistantMessage(fauxToolCall("effect", {}, { id: `read-${index}` }), { stopReason: "toolUse" })),
+      fauxAssistantMessage("done"),
+    ]);
+    const prepared: number[] = []; const imagesPerCheckpoint: number[] = [];
+    // Read the run's task file while the run is live: pi-durable reclaims it once the task is terminal.
+    agent.prepareNextTurnWithContext = async ({ newMessages }) => {
+      prepared.push(newMessages.length);
+      const records = (await readdir(dir)).filter(name => /^task-\d+\.jsonl$/.test(name));
+      for (const name of records) {
+        for (const line of (await readFile(join(dir, name), "utf8")).split("\n")) {
+          if (!line.includes('"phase":"prepare"')) continue;
+          imagesPerCheckpoint.push(Array.from({ length: call }, (_, index) => pixels(index)).filter(data => line.includes(data)).length);
+        }
+      }
+      return undefined;
+    };
+    await agent.prompt("read every image");
+    expect(call).toBe(turns);
+    expect(imagesPerCheckpoint.length).toBeGreaterThanOrEqual(turns);
+    // A checkpoint may carry the result it continues from, never the turns before it.
+    expect(Math.max(...imagesPerCheckpoint)).toBeLessThanOrEqual(1);
+    // The hook still sees every message the run emitted so far: prompt, then an assistant and a result per turn.
+    expect(prepared).toEqual(Array.from({ length: turns }, (_, index) => 1 + 2 * (index + 1)));
+  });
+
+  it("rebuilds a recovered turn's newMessages from the run's committed messages", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "durable-agent-")); dirs.push(dir);
+    const effect = tool(async () => ({ content: [{ type: "text", text: "effect" }], details: {} }));
+    const responses = () => [
+      fauxAssistantMessage(fauxToolCall("effect", {}, { id: "one" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage(fauxToolCall("effect", {}, { id: "two" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage("done"),
+    ];
+    const shape = (messages: { role: string; toolCallId?: string }[]) => messages.map(m => m.role === "toolResult" ? `toolResult:${m.toolCallId}` : m.role);
+    // Uninterrupted reference run.
+    const reference = setup(new MemoryStorage(), [effect]); reference.faux.setResponses(responses());
+    const expected: string[][] = [];
+    reference.agent.prepareNextTurnWithContext = async ({ newMessages }) => { expected.push(shape(newMessages)); return undefined; };
+    await reference.agent.prompt("go");
+    expect(expected.at(-1)).toEqual(["user", "assistant", "toolResult:one", "assistant", "toolResult:two"]);
+    // Interrupt the second turn's prepare after its checkpoint is committed, then recover in a new process.
+    const entered = deferred(); const seen: string[][] = [];
+    const first = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect]); first.faux.setResponses(responses());
+    first.agent.prepareNextTurnWithContext = async ({ newMessages }, signal) => {
+      seen.push(shape(newMessages));
+      if (seen.length === 2) { entered.resolve(); await new Promise<void>(resolve => signal?.addEventListener("abort", () => resolve(), { once: true })); }
+      return undefined;
+    };
+    const run = first.agent.prompt("go").catch(() => {});
+    await entered.promise; await first.agent.close(); await run;
+    const second = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect]);
+    second.faux.setResponses(responses().slice(2));
+    const recovered: string[][] = [];
+    second.agent.prepareNextTurnWithContext = async ({ newMessages }) => { recovered.push(shape(newMessages)); return undefined; };
+    await second.agent.continue();
+    expect(seen).toEqual(expected);
+    expect(recovered).toEqual([expected[1]]);
+    expect(second.agent.state.messages.at(-1)).toMatchObject({ role: "assistant", content: [{ type: "text", text: "done" }] });
+    await second.agent.close();
   });
 
   it("aborts an executing tool and settles waitForIdle", async () => {
