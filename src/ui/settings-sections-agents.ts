@@ -322,6 +322,11 @@ export const buildAgentsSection = (
           description: "Allow agents to load registered extensions.",
           values: BOOLEANS,
         }),
+        setting("agents.recursive", "Recursive by default", config.agents.recursive ? "true" : "false", {
+          description:
+            "A Pi agent call that omits recursive gets fabric_exec and its own children, bounded by Max depth, Max per execution and the recursion budget. An explicit recursive or extensions: false wins.",
+          values: BOOLEANS,
+        }),
         defaultToolsItem,
         setting("agents.retainRuns", "Retain runs", config.agents.retainRuns ? "true" : "false", {
           description: "Keep completed agent run artifacts for later inspection.",

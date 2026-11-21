@@ -213,7 +213,10 @@ const runRequest = (
   modelsConfig: FabricModelsConfig,
   options: {allowCwd?: boolean} = {},
 ): AgentRunRequest => ({
-  ...normalizeAgentRunRequest(
+  // agents.recursive is resolved here, at the caller boundary, so a durable
+  // request forwarded to the resident host carries the caller's own depth and
+  // inherited tool authority, not the host's.
+  ...manager.applyRecursiveDefault(normalizeAgentRunRequest(
     {...args, timeoutMs: longerTimeoutOverride(args.timeoutMs, manager)},
     {
       ...manager.config,
@@ -221,7 +224,7 @@ const runRequest = (
       ...(context.extensionContext.model ? {inheritedModel: context.extensionContext.model} : {}),
     },
     options,
-  ),
+  )),
   // Host-only: lets a trace-context listener parent the child under this call.
   traceOrigin: {parentToolCallId: context.parentToolCallId, nestedToolCallId: context.nestedToolCallId},
 });
