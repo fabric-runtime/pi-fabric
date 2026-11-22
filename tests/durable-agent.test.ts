@@ -547,6 +547,72 @@ describe("DurableAgent", () => {
     await second.agent.close();
   });
 
+  it("recovers a prepare with the newMessages its first attempt saw, not the messages that attempt added", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "durable-agent-")); dirs.push(dir);
+    const effect = tool(async () => ({ content: [{ type: "text", text: "effect" }], details: {} }));
+    const responses = () => [
+      fauxAssistantMessage(fauxToolCall("effect", {}, { id: "one" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage("done"),
+    ];
+    const shape = (messages: { role: string; toolCallId?: string }[]) => messages.map(m => m.role === "toolResult" ? `toolResult:${m.toolCallId}` : m.role);
+    // The second turn's prepare hook adds a message, then the process stops inside prepareRequest.
+    const entered = deferred(); const seen: string[][] = []; let requests = 0;
+    const first = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect]); first.faux.setResponses(responses());
+    first.agent.prepareNextTurnWithContext = async ({ newMessages }) => {
+      seen.push(shape(newMessages));
+      return { messages: [{ role: "user", content: "added by prepare", timestamp: Date.now() }] };
+    };
+    first.agent.prepareRequest = async ({ context }, signal) => {
+      if (++requests === 2) { entered.resolve(); await new Promise<void>(resolve => signal?.addEventListener("abort", () => resolve(), { once: true })); }
+      return { context };
+    };
+    const run = first.agent.prompt("go").catch(() => {});
+    await entered.promise; await first.agent.close(); await run;
+    expect(seen).toEqual([["user", "assistant", "toolResult:one"]]);
+    const second = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect]);
+    second.faux.setResponses(responses().slice(1));
+    const recovered: string[][] = [];
+    second.agent.prepareNextTurnWithContext = async ({ newMessages }) => { recovered.push(shape(newMessages)); return undefined; };
+    await second.agent.continue();
+    expect(recovered).toEqual(seen);
+    expect(second.agent.state.messages.at(-1)).toMatchObject({ role: "assistant", content: [{ type: "text", text: "done" }] });
+    await second.agent.close();
+  });
+
+  it("keeps a recovered turn's newMessages when a queued control opened the run before continue()", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "durable-agent-")); dirs.push(dir);
+    const effect = tool(async () => ({ content: [{ type: "text", text: "effect" }], details: {} }));
+    const responses = () => [
+      fauxAssistantMessage(fauxToolCall("effect", {}, { id: "one" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage("done"),
+    ];
+    const shape = (messages: { role: string; toolCallId?: string }[]) => messages.map(m => m.role === "toolResult" ? `toolResult:${m.toolCallId}` : m.role);
+    // Interrupt the second turn's prepare after its checkpoint is committed.
+    const entered = deferred(); const seen: string[][] = [];
+    const first = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect]); first.faux.setResponses(responses());
+    first.agent.prepareNextTurnWithContext = async ({ newMessages }, signal) => {
+      seen.push(shape(newMessages)); entered.resolve();
+      await new Promise<void>(resolve => signal?.addEventListener("abort", () => resolve(), { once: true }));
+      return undefined;
+    };
+    const run = first.agent.prompt("go").catch(() => {});
+    await entered.promise; await first.agent.close(); await run;
+    // A steer opens the run first; continue() starts while open() is still recovering history.
+    const second = setup(await openNodeJsonlStorage(dir, BACKGROUND_CONTEXT), [effect]);
+    second.faux.setResponses(responses().slice(1));
+    const restoring = deferred(); const release = deferred();
+    second.agent.recoverHistory = async () => { restoring.resolve(); await release.promise; };
+    const recovered: string[][] = [];
+    second.agent.prepareNextTurnWithContext = async ({ newMessages }) => { recovered.push(shape(newMessages)); return undefined; };
+    second.agent.steer({ role: "user", content: "steer", timestamp: Date.now() });
+    await restoring.promise;
+    const resumed = second.agent.continue();
+    release.resolve(); await resumed;
+    expect(recovered).toEqual([["user", "assistant", "toolResult:one"]]);
+    expect(recovered).toEqual(seen);
+    await second.agent.close();
+  });
+
   it("aborts an executing tool and settles waitForIdle", async () => {
     const entered = deferred();
     const { agent, faux } = setup(new MemoryStorage(), [tool(async (_id, _args, signal) => {
