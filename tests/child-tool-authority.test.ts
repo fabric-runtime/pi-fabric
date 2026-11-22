@@ -21,8 +21,13 @@ let sequence = 0;
 // bundle. A Windows runner under full-suite load needs more than 15 s for that, so
 // keep the child budget inside a wider test ceiling: a slow child then fails
 // with its own error instead of an untimed kill, and close() has time to stop it.
-const CHILD_TIMEOUT_MS = 30_000;
-const TEST_TIMEOUT_MS = 45_000;
+// The ceiling is the sum of the parts below, so a slower launch cannot eat the
+// margin the child's own timed_out result needs.
+const CHILD_TIMEOUT_MS = 30_000; // the child's own deadline, passed to AgentManager as timeoutMs
+const LAUNCH_ALLOWANCE_MS = 10_000; // spawn and cold bundle load, before the manager starts the child's watch
+const TRANSPORT_EXIT_GRACE_MS = 1_000; // the watch waits this long past the deadline (same value as in src/agents/manager.ts)
+const STOP_EXIT_WAIT_MS = 7 * TRANSPORT_EXIT_GRACE_MS; // after the deadline, stop() waits up to this long for the child to exit
+const TEST_TIMEOUT_MS = LAUNCH_ALLOWANCE_MS + CHILD_TIMEOUT_MS + TRANSPORT_EXIT_GRACE_MS + STOP_EXIT_WAIT_MS;
 beforeAll(async () => {
   fs.symlinkSync(path.resolve("node_modules"), path.join(root, "node_modules"), "junction");
   fs.writeFileSync(path.join(root, "package.json"), '{"type":"module"}');
