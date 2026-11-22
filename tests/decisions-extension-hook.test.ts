@@ -10,7 +10,7 @@ import { normalizeFabricConfig } from "../src/config.js";
 import { FabricRuntimeState } from "../src/fabric-runtime-state.js";
 import { MeshStore, type MeshIdentity } from "../src/mesh/store.js";
 import { DECISION_PREFIX, DECISIONS_TOPIC, DecisionStore, type DecisionRecord } from "../src/decisions/store.js";
-import { DecisionChangeFeed } from "../src/decisions/changes.js";
+import { DecisionChangeFeed, type DecisionFeedMesh } from "../src/decisions/changes.js";
 import { DecisionsProvider } from "../src/providers/decisions-provider.js";
 import {
   FABRIC_DECISION_ANSWER_EVENT,
@@ -240,6 +240,48 @@ describe("pi-fabric:decisions:changed:v1", () => {
     const entry = meshAt(root).get(DECISION_PREFIX + raised.id);
     expect(entry?.version).toBe(1);
     expect((entry?.value as DecisionRecord).status).toBe("open");
+  });
+
+  it("reads a remote decision again on a later poll when the first read fails", async () => {
+    const root = meshRoot();
+    const remote = new DecisionStore(meshAt(root), { id: "session:other", name: "other", kind: "main" });
+    const raised = await remote.raise({ title: "Retry", options: SHIP });
+    const mesh = meshAt(root);
+    let failures = 1; let reads = 0;
+    const flaky: DecisionFeedMesh = {
+      root: mesh.root,
+      latestOffset: () => mesh.latestOffset(),
+      tail: (cursor, limit) => mesh.tail(cursor, limit),
+      get: (key) => {
+        reads += 1;
+        if (failures > 0) { failures -= 1; throw new Error("EBUSY: state file locked"); }
+        return mesh.get(key);
+      },
+    };
+    const seen: FabricDecisionsChangedV1[] = [];
+    const feed = new DecisionChangeFeed(flaky, { actorPollMs: 50, maxReadEvents: 500 }, (payload) => seen.push(payload));
+    feeds.push(feed);
+    feed.start();
+    const drain = async (): Promise<void> => { feed.refresh(); await flush(); };
+    // A wake hint for the record, as another process would publish it.
+    await meshAt(root).publish({
+      topic: DECISIONS_TOPIC,
+      kind: "decision.raised",
+      from: { id: "session:other", name: "other", kind: "main" },
+      data: { id: raised.id },
+    });
+    await until(() => reads >= 1, drain);
+    expect(seen).toEqual([]);
+    // No new hint arrives: the next poll must read the id again by itself.
+    await until(() => seen.length >= 1, drain);
+    expect(seen.map((payload) => payload.change)).toEqual(["raised"]);
+    expect(seen[0]!.decision.id).toBe(raised.id);
+    const settled = reads;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await drain();
+    // Once read, the id is no longer retried.
+    expect(reads).toBe(settled);
+    expect(seen).toHaveLength(1);
   });
 
   it("leaves records and mesh wake hints unchanged when nobody subscribes", async () => {

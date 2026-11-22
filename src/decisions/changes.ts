@@ -27,11 +27,15 @@ import {
 
 const DECISION_ID = /^dec_[A-Za-z0-9_-]{8,64}$/;
 const MAX_TRACKED_DECISIONS = 2_000;
+const MAX_RETRY_DECISIONS = 500;
 
 export type DecisionFeedMesh = Pick<MeshStore, "root" | "latestOffset" | "tail" | "get">;
 
 export class DecisionChangeFeed {
   #emitted = new Map<string, number>();
+  // Ids whose record read failed after the monitor cursor moved past their hint;
+  // each later poll reads them again until the read succeeds or finds no record.
+  #retry = new Set<string>();
   #monitor: ActorMeshMonitor | undefined;
   #unsubscribe: (() => void) | undefined;
   #closed = false;
@@ -52,7 +56,7 @@ export class DecisionChangeFeed {
     this.#monitor = new ActorMeshMonitor(
       { root: mesh.root, latestOffset: () => mesh.latestOffset(), tail: (cursor, limit) => mesh.tail(cursor, limit) },
       { enabled: true, actorPollMs: this.config.actorPollMs, maxReadEvents: this.config.maxReadEvents },
-      { beforePoll: () => !this.#closed, onEvent: (event) => this.#onEvent(event) },
+      { beforePoll: () => this.#beforePoll(), onEvent: (event) => this.#onEvent(event) },
     );
     this.#monitor.start();
   }
@@ -69,6 +73,13 @@ export class DecisionChangeFeed {
     this.#monitor?.close();
     this.#monitor = undefined;
     this.#emitted.clear();
+    this.#retry.clear();
+  }
+
+  #beforePoll(): boolean {
+    if (this.#closed) return false;
+    for (const id of [...this.#retry]) this.#read(id);
+    return !this.#closed;
   }
 
   #onEvent(event: MeshEvent): void {
@@ -76,12 +87,24 @@ export class DecisionChangeFeed {
     const data = event.data;
     const id = typeof data === "object" && data !== null ? (data as Record<string, unknown>).id : undefined;
     if (typeof id !== "string" || !DECISION_ID.test(id)) return;
+    this.#read(id);
+  }
+
+  #read(id: string): void {
     let entry: ReturnType<DecisionFeedMesh["get"]>;
     try {
       entry = this.mesh.get(DECISION_PREFIX + id);
     } catch {
+      // Keep the id; the hint that named it will not be read again.
+      this.#retry.delete(id);
+      this.#retry.add(id);
+      if (this.#retry.size > MAX_RETRY_DECISIONS) {
+        const oldest = this.#retry.values().next().value;
+        if (oldest !== undefined) this.#retry.delete(oldest);
+      }
       return;
     }
+    this.#retry.delete(id);
     if (!entry || !isDecisionRecord(entry.value)) return;
     this.#deliver(changeOf(entry.value), entry.value, entry.version);
   }
