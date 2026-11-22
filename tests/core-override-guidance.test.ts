@@ -267,6 +267,56 @@ it("replaces an anchor-aware read override's codemode-script lines with the prog
     expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("`structuredContent.anchors[].anchor` holds fresh anchors for the next edit");
   });
 
+  it("adds no anchor guidance for a read override that declares only an output schema", () => {
+    const catalog = new CapturedToolCatalog();
+    const plain = defineTool({
+      name: "read",
+      label: "read",
+      description: "plain read override",
+      promptSnippet: "plain reads",
+      parameters: Type.Object({ path: Type.String() }),
+      outputSchema: Type.String(),
+      async execute() {
+        return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+      },
+    });
+    catalog.replace(
+      [{ definition: plain, sourceInfo: createSyntheticSourceInfo("/extensions/plain-read/index.ts", { source: "test" }) }],
+      runner,
+      DEFAULT_FABRIC_CONFIG.capture,
+      "/extensions/pi-fabric/index.ts",
+    );
+    const guidance = coreOverridePromptGuidance(catalog);
+    expect(guidance).toContain("plain reads");
+    expect(guidance).not.toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(guidance).not.toContain("anchor│content");
+  });
+
+  it("adds the anchor guidance for a read override that declares the anchors parameter, with or without an output schema", () => {
+    const withAnchors = (outputSchema: boolean) => {
+      const catalog = new CapturedToolCatalog();
+      const definition = defineTool({
+        name: "read",
+        label: "read",
+        description: "anchored read override",
+        parameters: Type.Object({ path: Type.String(), anchors: Type.Optional(Type.Boolean()) }),
+        ...(outputSchema ? { outputSchema: Type.String() } : {}),
+        async execute() {
+          return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+        },
+      });
+      catalog.replace(
+        [{ definition, sourceInfo: createSyntheticSourceInfo("/extensions/anchored-read/index.ts", { source: "test" }) }],
+        runner,
+        DEFAULT_FABRIC_CONFIG.capture,
+        "/extensions/pi-fabric/index.ts",
+      );
+      return coreOverridePromptGuidance(catalog);
+    };
+    expect(withAnchors(true)).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(withAnchors(false)).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+  });
+
   it("adds no compatibility block for a read override without anchors or an output schema", () => {
     const catalog = new CapturedToolCatalog();
     catalog.replace(

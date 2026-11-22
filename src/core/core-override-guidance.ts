@@ -18,9 +18,11 @@ export const ANCHOR_READ_COMPATIBILITY_GUIDANCE = [
   "- `extensions.<edit tool>` resolves to `{ text, details, structuredContent }` and rejects on failure; `structuredContent.anchors[].anchor` holds fresh anchors for the next edit. `pi.write`/`pi.edit` reject too, e.g. a write refused for copied anchors.",
 ].join("\n");
 
-const anchorAwareRead = (definition: { parameters?: unknown; outputSchema?: unknown }): boolean => {
+// The hashline contract is the read tool's own `anchors` parameter. An output
+// schema alone says nothing about anchored rows or edit anchors.
+const anchorAwareRead = (definition: { parameters?: unknown }): boolean => {
   const properties = (definition.parameters as { properties?: Record<string, unknown> } | undefined)?.properties;
-  return definition.outputSchema !== undefined || (properties !== undefined && Object.hasOwn(properties, "anchors"));
+  return properties !== undefined && Object.hasOwn(properties, "anchors");
 };
 
 /**
