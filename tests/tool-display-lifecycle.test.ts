@@ -121,6 +121,17 @@ const fabricToolOf = (registeredTools: unknown[]): FabricExecTool => {
   return tool!;
 };
 
+// The display controller holds each card's renderer state weakly, as Pi's
+// transcript component owns it. Keep every rendered state reachable for the
+// whole file, like a live component would, so a garbage collection between
+// render and refresh cannot drop the card and make the refresh counts flaky.
+const liveCardStates: object[] = [];
+const liveCardState = (): object => {
+  const state = {};
+  liveCardStates.push(state);
+  return state;
+};
+
 const renderCard = (
   tool: FabricExecTool,
   toolCallId: string,
@@ -133,7 +144,7 @@ const renderCard = (
     toolCallId,
     invalidate,
     lastComponent: undefined,
-    state: {},
+    state: liveCardState(),
     cwd: process.cwd(),
     executionStarted: true,
     argsComplete: true,
