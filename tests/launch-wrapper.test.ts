@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AgentManager } from "../src/agents/manager.js";
 import { LocaltermTransport } from "../src/agents/transports/localterm-transport.js";
 import { TmuxTransport } from "../src/agents/transports/tmux-transport.js";
-import { resolveScriptRuntimeSync } from "../src/agents/transports/process-utils.js";
+import { launchWrapped, resolveScriptRuntimeSync } from "../src/agents/transports/process-utils.js";
 import type { AgentTransportLaunch } from "../src/agents/types.js";
 import { DEFAULT_FABRIC_CONFIG, normalizeFabricConfig, saveFabricConfig } from "../src/config.js";
 import { RESIDENT_HOST_FORMAT } from "../src/residency/protocol.js";
@@ -157,6 +157,20 @@ describe.skipIf(process.platform === "win32")("agents.launchWrapper process tran
     expect(result.status).toBe("failed");
     expect(result.error).toContain("sandbox profile refused");
     expect(result.error).toContain(`agents.launchWrapper ${wrapper}, which exited with code 7`);
+  });
+});
+
+describe("launchWrapped", () => {
+  it("returns a dead handle naming the wrapper and the error code when the spawn itself fails", async () => {
+    const root = directory("pi-fabric-wrapper-race-");
+    const { wrapper } = recordingWrapper(root);
+    const request = { ...shellLaunch(root, wrapper), cwd: root };
+    // The wrapper passed the executable check, then disappeared before spawn.
+    const failure = Object.assign(new Error(`spawn ${wrapper} ENOENT`), { code: "ENOENT" });
+    const handle = await launchWrapped("process", request, async () => { throw failure; });
+    expect(await handle.isAlive()).toBe(false);
+    expect(handle.readStderr?.()).toBe(`agents.launchWrapper ${wrapper} could not be started (ENOENT): spawn ${wrapper} ENOENT`);
+    await expect(handle.stop()).resolves.toBeUndefined();
   });
 });
 

@@ -280,15 +280,23 @@ export const launchWrapped = async (
 ): Promise<AgentTransportHandle> => {
   const wrapper = request.launchWrapper?.argv[0];
   if (wrapper === undefined) return launch();
-  if (!(await isExecutableFile(wrapper))) {
-    return {
-      kind,
-      readStderr: () => `agents.launchWrapper ${wrapper} is not an executable file`,
-      isAlive: async () => false,
-      stop: async () => {},
-    };
+  const dead = (reason: string): AgentTransportHandle => ({
+    kind,
+    readStderr: () => reason,
+    isAlive: async () => false,
+    stop: async () => {},
+  });
+  if (!(await isExecutableFile(wrapper))) return dead(`agents.launchWrapper ${wrapper} is not an executable file`);
+  let handle: AgentTransportHandle;
+  try {
+    handle = await launch();
+  } catch (error) {
+    // The wrapper can vanish or lose its execute bit after the check above;
+    // the spawn error then takes the same startup-failure path.
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    const message = error instanceof Error ? error.message : String(error);
+    return dead(`agents.launchWrapper ${wrapper} could not be started${code ? ` (${code})` : ""}: ${message}`);
   }
-  const handle = await launch();
   return handle.readStderr
     ? handle
     : { ...handle, readStderr: () => `no stderr captured; launched under agents.launchWrapper ${wrapper}` };
