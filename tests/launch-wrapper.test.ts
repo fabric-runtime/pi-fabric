@@ -126,6 +126,15 @@ describe.skipIf(process.platform === "win32")("agents.launchWrapper process tran
     });
   });
 
+  it("refuses a durable spawn on the manager itself before launching anything", async () => {
+    const root = directory("pi-fabric-wrapper-durable-");
+    const { wrapper, record } = recordingWrapper(root);
+    await expect(manager(root, [wrapper, "--"]).spawn({ task: "probe", transport: "process", residency: "durable" }))
+      .rejects.toThrow(/agents\.launchWrapper/);
+    expect(fs.existsSync(record)).toBe(false);
+    expect(fs.existsSync(path.join(root, "runs"))).toBe(false);
+  });
+
   it("leaves the write policy out for an unconfined run", async () => {
     const root = directory("pi-fabric-wrapper-unconfined-");
     const { wrapper, record } = recordingWrapper(root);

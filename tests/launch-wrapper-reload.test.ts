@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CapturedToolCatalog } from "../src/capture/catalog.js";
 import { normalizeFabricConfig } from "../src/config.js";
 import { FabricRuntimeState } from "../src/fabric-runtime-state.js";
+import { ResidencyClient } from "../src/residency/client.js";
 
 const roots: string[] = [];
 
@@ -102,6 +103,28 @@ describe("agents.launchWrapper added by a config reload", () => {
       expect((spawned as Error).message).toMatch(/agents\.launchWrapper/);
       expect(created).toBeInstanceOf(Error);
       expect((created as Error).message).toMatch(/agents\.launchWrapper/);
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("refreshes the residency client's own guard, so no other host start path runs unwrapped", async () => {
+    let client: ResidencyClient | undefined;
+    const start = ResidencyClient.prototype.start;
+    vi.spyOn(ResidencyClient.prototype, "start").mockImplementation(function (this: ResidencyClient) {
+      client = this;
+      start.call(this);
+    });
+    const { runtime, context, config, residencyRoot } = durableRuntime();
+    await runtime.initialize(context, config());
+    try {
+      expect(client).toBeDefined();
+      runtime.reloadConfig(context, config(["/opt/sandbox/wrap", "--"]));
+      await expect(client!.ensureHost()).rejects.toThrow(/agents\.launchWrapper/);
+      expect(filesUnder(residencyRoot)).toEqual([]);
+      // Removing the wrapper again lifts the client's refusal too.
+      runtime.reloadConfig(context, config());
+      expect(client!.options.config.agents.launchWrapper).toBeUndefined();
     } finally {
       await runtime.shutdown();
     }
