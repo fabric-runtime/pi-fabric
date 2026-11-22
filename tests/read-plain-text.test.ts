@@ -140,6 +140,46 @@ describe("pi.read plain text under an anchor-aware read override", () => {
     });
   });
 
+  it("returns a JSON file that quotes a truncation notice unchanged", async () => {
+    await withFile(async (cwd) => {
+      const notice = "[Showing lines 1-1 of 9. Use offset=a1 to continue.]";
+      fs.writeFileSync(path.join(cwd, "quote.json"), JSON.stringify({ notice }));
+      const calls: Array<Record<string, unknown>> = [];
+      const { catalog, run } = setup(cwd, [hashlineRead(calls, true, cwd)]);
+      try {
+        const value = await run('return JSON.parse(await pi.read("quote.json"));', "quoted-notice");
+        expect(value).toEqual({ notice });
+      } finally { catalog.clear(); }
+    });
+  });
+
+  it("leaves a plain output-schema read override's output unchanged and forwards no anchors flag", async () => {
+    await withFile(async (cwd) => {
+      const calls: Array<Record<string, unknown>> = [];
+      const text = "plain: a1│not a row\n\n[2 more lines in file. Use offset=2 to continue.]";
+      const plain: RegisteredTool = {
+        definition: defineTool({
+          name: "read",
+          label: "read",
+          description: "plain read",
+          parameters: Type.Object({ path: Type.String() }, { additionalProperties: false }) as TSchema,
+          outputSchema: Type.String() as TSchema,
+          async execute(_id, params) {
+            calls.push({ ...(params as Record<string, unknown>) });
+            return { content: [{ type: "text" as const, text }], details: {}, structuredContent: text };
+          },
+        }),
+        sourceInfo: createSyntheticSourceInfo("/extensions/plain-read/index.ts", { source: "test" }),
+      };
+      const { catalog, run } = setup(cwd, [plain]);
+      try {
+        const value = await run('return { plain: await pi.read("data.json"), anchored: await pi.read({ path: "data.json", anchors: true }) };', "plain-schema");
+        expect(value).toEqual({ plain: text, anchored: text });
+        expect(calls).toEqual([{ path: "data.json" }, { path: "data.json" }]);
+      } finally { catalog.clear(); }
+    });
+  });
+
   it("uses structured text when the override's anchors switch is absent, and drops anchors:true", async () => {
     await withFile(async (cwd) => {
       const calls: Array<Record<string, unknown>> = [];
@@ -199,6 +239,23 @@ describe("readPlainText", () => {
   it("marks a structured truncation the display did not describe", () => {
     expect(readPlainText("a1│x", { text: "x", truncated: true, nextOffset: 2 }))
       .toBe("x\n\n[Read truncated. Use offset=2 to continue.]");
+  });
+
+  it("does not read a notice out of a file row", () => {
+    const notice = "[Showing lines 1-1 of 9. Use offset=a1 to continue.]";
+    const text = JSON.stringify({ note: notice });
+    expect(readPlainText("a1│" + text, text)).toBe(text);
+    expect(JSON.parse(readPlainText("a1│" + text, text)!)).toEqual({ note: notice });
+    const more = "[3 more lines in file. Use offset=3 to continue.]";
+    expect(readPlainText("a1│" + notice + "\na2│" + more, notice + "\n" + more)).toBe(notice + "\n" + more);
+  });
+
+  it("still rewrites a real notice after rows that quote one", () => {
+    const quoted = "[Showing lines 7-7 of 99. Use offset=a7 to continue.]";
+    expect(readPlainText("a1│" + quoted + "\n\n[Showing lines 1-1 of 9. Use offset=a1 to continue.]", quoted))
+      .toBe(quoted + "\n\n[Showing lines 1-1 of 9. Use offset=2 to continue.]");
+    expect(readPlainText("a1│x\n\nwarning: long line\n[Showing lines 1-1 of 9. Use offset=a1 to continue.]\n\n[other notice]", "x"))
+      .toBe("x\n\n[Showing lines 1-1 of 9. Use offset=2 to continue.]");
   });
 
   it("leaves results without plain text to the caller", () => {

@@ -12,8 +12,10 @@
  * display text. Redaction stays authoritative because a content-only
  * tool_result patch clears structuredContent before this runs.
  */
-const SHOWING_HINT = /\[Showing lines (\d+)-(\d+) of (\d+)( \([^)\]]*\))?\. Use offset=[^\s\]]+ to continue\.\]/g;
-const MORE_LINES_HINT = /\[\d+ more lines in file\. Use offset=\d+ to continue\.\]/g;
+// Each notice is a whole line of its own: a file row that merely contains the
+// text (an anchored row starts with `anchor│`) never matches.
+const SHOWING_HINT = /^\[Showing lines (\d+)-(\d+) of (\d+)( \([^)\]]*\))?\. Use offset=[^\s\]]+ to continue\.\]$/gm;
+const MORE_LINES_HINT = /^\[\d+ more lines in file\. Use offset=\d+ to continue\.\]$/gm;
 const BEYOND_EOF = /^Offset \d+ is beyond end of file/;
 
 const lastMatch = (pattern: RegExp, text: string): RegExpExecArray | undefined => {
@@ -22,14 +24,26 @@ const lastMatch = (pattern: RegExp, text: string): RegExpExecArray | undefined =
   return last;
 };
 
+/**
+ * The blocks the tool appended after the file rows. File rows never contain a
+ * blank line (a blank file line is shown as `anchor│`), so the rows are the
+ * first block and every later block, split at a blank line, is tool-generated.
+ * A display that starts with no row (nothing was read) is all notice.
+ */
+const trailingNotices = (display: string): string => {
+  const [first = "", ...rest] = display.split("\n\n");
+  return first.split("\n", 1)[0]!.includes("│") ? rest.join("\n\n") : display;
+};
+
 /** The continuation notice in the display text, rewritten to a numeric offset. */
 export const readContinuationNotice = (display: string): string | undefined => {
-  const showing = lastMatch(SHOWING_HINT, display);
+  const notices = trailingNotices(display);
+  const showing = lastMatch(SHOWING_HINT, notices);
   if (showing) {
     const [, start, end, total, size = ""] = showing;
     return `[Showing lines ${start}-${end} of ${total}${size}. Use offset=${Number(end) + 1} to continue.]`;
   }
-  return lastMatch(MORE_LINES_HINT, display)?.[0];
+  return lastMatch(MORE_LINES_HINT, notices)?.[0];
 };
 
 const withNotice = (text: string, notice: string | undefined): string =>
