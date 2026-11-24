@@ -292,14 +292,25 @@ export const launchWrapped = async (
     handle = await launch();
   } catch (error) {
     // The wrapper can vanish or lose its execute bit after the check above;
-    // the spawn error then takes the same startup-failure path.
-    const code = (error as NodeJS.ErrnoException | undefined)?.code;
-    const message = error instanceof Error ? error.message : String(error);
-    return dead(`agents.launchWrapper ${wrapper} could not be started${code ? ` (${code})` : ""}: ${message}`);
+    // that spawn error takes the same startup-failure path. Any other launch
+    // error (a missing transport setting, a terminal that refused the
+    // command) is not the wrapper's and propagates unchanged.
+    if (!isWrapperSpawnError(error, wrapper)) throw error;
+    return dead(`agents.launchWrapper ${wrapper} could not be started (${error.code}): ${error.message}`);
   }
   return handle.readStderr
     ? handle
     : { ...handle, readStderr: () => `no stderr captured; launched under agents.launchWrapper ${wrapper}` };
+};
+
+const WRAPPER_SPAWN_CODES = new Set(["ENOENT", "EACCES", "EPERM", "ENOEXEC"]);
+
+/** True only for Node's spawn error for the wrapper executable itself. */
+const isWrapperSpawnError = (error: unknown, wrapper: string): error is NodeJS.ErrnoException & { code: string } => {
+  if (!(error instanceof Error)) return false;
+  const { code, path: failedPath, syscall } = error as NodeJS.ErrnoException;
+  if (code === undefined || !WRAPPER_SPAWN_CODES.has(code)) return false;
+  return failedPath === wrapper || syscall === `spawn ${wrapper}`;
 };
 
 /** Start one Fabric worker launch as a detached process. */

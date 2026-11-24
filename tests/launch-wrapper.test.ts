@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AgentManager } from "../src/agents/manager.js";
 import { LocaltermTransport } from "../src/agents/transports/localterm-transport.js";
 import { TmuxTransport } from "../src/agents/transports/tmux-transport.js";
-import { launchWrapped, resolveScriptRuntimeSync } from "../src/agents/transports/process-utils.js";
+import { launchWrapped, resolveScriptRuntimeSync, spawnLaunch } from "../src/agents/transports/process-utils.js";
 import type { AgentTransportLaunch } from "../src/agents/types.js";
 import { DEFAULT_FABRIC_CONFIG, normalizeFabricConfig, saveFabricConfig } from "../src/config.js";
 import { RESIDENT_HOST_FORMAT } from "../src/residency/protocol.js";
@@ -175,11 +175,34 @@ describe("launchWrapped", () => {
     const { wrapper } = recordingWrapper(root);
     const request = { ...shellLaunch(root, wrapper), cwd: root };
     // The wrapper passed the executable check, then disappeared before spawn.
-    const failure = Object.assign(new Error(`spawn ${wrapper} ENOENT`), { code: "ENOENT" });
+    const failure = Object.assign(new Error(`spawn ${wrapper} ENOENT`), { code: "ENOENT", syscall: `spawn ${wrapper}`, path: wrapper });
     const handle = await launchWrapped("process", request, async () => { throw failure; });
     expect(await handle.isAlive()).toBe(false);
     expect(handle.readStderr?.()).toBe(`agents.launchWrapper ${wrapper} could not be started (ENOENT): spawn ${wrapper} ENOENT`);
     await expect(handle.stop()).resolves.toBeUndefined();
+  });
+
+  it("lets a launch error that is not the wrapper's spawn failure propagate", async () => {
+    const root = directory("pi-fabric-wrapper-other-");
+    const { wrapper } = recordingWrapper(root);
+    const request = { ...shellLaunch(root, wrapper), cwd: root };
+    const setting = new Error("Herdr transport requires HERDR_WORKSPACE_ID");
+    await expect(launchWrapped("herdr", request, async () => { throw setting; })).rejects.toBe(setting);
+    // An ENOENT for another executable (for example a missing tmux) is not the wrapper's either.
+    const other = Object.assign(new Error("spawn tmux ENOENT"), { code: "ENOENT", syscall: "spawn tmux", path: "tmux" });
+    await expect(launchWrapped("tmux", request, async () => { throw other; })).rejects.toBe(other);
+  });
+
+  it.skipIf(process.platform === "win32")("turns a real spawn of a vanished wrapper into a dead handle", async () => {
+    const root = directory("pi-fabric-wrapper-vanish-");
+    const { wrapper } = recordingWrapper(root);
+    const request = { ...shellLaunch(root, wrapper), cwd: root };
+    const handle = await launchWrapped("process", request, async () => {
+      fs.rmSync(wrapper);
+      return { kind: "process", ...(await spawnLaunch(request)) };
+    });
+    expect(await handle.isAlive()).toBe(false);
+    expect(handle.readStderr?.()).toMatch(new RegExp(`^agents\\.launchWrapper .* could not be started \\(ENOENT\\)`));
   });
 });
 
