@@ -258,6 +258,16 @@ describe("readPlainText", () => {
       .toBe("x\n\n[Showing lines 1-1 of 9. Use offset=2 to continue.]");
   });
 
+  it("keeps the real notice when unanchored display text contains │", () => {
+    expect(readPlainText("left │ right\n[2 more lines in file. Use offset=2 to continue.]", "left │ right"))
+      .toBe("left │ right\n\n[2 more lines in file. Use offset=2 to continue.]");
+  });
+
+  it("keeps a blank-line-separated notice after unanchored text containing │", () => {
+    expect(readPlainText("left │ right\n\n[Showing lines 1-1 of 9. Use offset=a1 to continue.]", "left │ right"))
+      .toBe("left │ right\n\n[Showing lines 1-1 of 9. Use offset=2 to continue.]");
+  });
+
   it("leaves results without plain text to the caller", () => {
     expect(readPlainText("note", { type: "image", data: "", mimeType: "image/png", note: "note" })).toBeUndefined();
     expect(readPlainText("note", undefined)).toBeUndefined();

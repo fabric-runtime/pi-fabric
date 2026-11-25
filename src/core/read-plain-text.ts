@@ -16,6 +16,10 @@
 // text (an anchored row starts with `anchor│`) never matches.
 const SHOWING_HINT = /^\[Showing lines (\d+)-(\d+) of (\d+)( \([^)\]]*\))?\. Use offset=[^\s\]]+ to continue\.\]$/gm;
 const MORE_LINES_HINT = /^\[\d+ more lines in file\. Use offset=\d+ to continue\.\]$/gm;
+// A file row starts with its anchor, then `│`: `anchor│content` (hashline's row
+// shape; the tests' read override emits `a<n>│`). Text that merely contains `│`
+// after a space or other text is not a row.
+const ANCHORED_ROW = /^[A-Za-z0-9]+│/;
 const BEYOND_EOF = /^Offset \d+ is beyond end of file/;
 
 const lastMatch = (pattern: RegExp, text: string): RegExpExecArray | undefined => {
@@ -32,7 +36,7 @@ const lastMatch = (pattern: RegExp, text: string): RegExpExecArray | undefined =
  */
 const trailingNotices = (display: string): string => {
   const [first = "", ...rest] = display.split("\n\n");
-  return first.split("\n", 1)[0]!.includes("│") ? rest.join("\n\n") : display;
+  return ANCHORED_ROW.test(first.split("\n", 1)[0]!) ? rest.join("\n\n") : display;
 };
 
 /** The continuation notice in the display text, rewritten to a numeric offset. */
