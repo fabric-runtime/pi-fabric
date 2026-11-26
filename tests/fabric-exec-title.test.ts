@@ -68,7 +68,7 @@ const harness = (options: {
       getSessionName: () => "titles",
     },
   };
-  return { applied, appended, tool, context };
+  return { applied, appended, tool, context, terminalTitle };
 };
 
 const run = (
@@ -83,11 +83,13 @@ const run = (
 );
 
 describe("fabric_exec window title", () => {
-  it("shows only the declared display title and records it", async () => {
+  it("shows only the declared display title and records it once at shutdown", async () => {
     const probe = harness();
     await run(probe, { display: { name: "record release evidence" } });
 
     expect(probe.applied).toEqual(["record release evidence"]);
+    expect(probe.appended).toEqual([]);
+    probe.terminalTitle.flush();
     expect(probe.appended).toEqual([
       { customType: TERMINAL_TITLE_ENTRY_TYPE, data: { version: 1, title: "record release evidence" } },
     ]);

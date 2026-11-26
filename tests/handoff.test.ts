@@ -191,11 +191,13 @@ describe("trajectory handoff sessions", () => {
     const activeId = source.appendMessage(assistant([
       { type: "toolCall", id: "outer-title", name: "fabric_exec", arguments: { display: { name: "Implement guard" } } },
     ]));
-    // The real title path runs at execute() entry, before trajectory snapshotting.
+    // A recorded title (written at shutdown, or by an older release on every change) can sit
+    // after the active tool call when the trajectory is snapshotted.
     const title = new FabricTerminalTitle({
       appendEntry: (type, data) => { source.appendCustomEntry(type, data); },
     }, () => true);
     title.show({ mode: "tui", hasUI: true, ui: { setTitle: () => {} } } as unknown as ExtensionContext, "Implement guard");
+    title.flush();
     const leafId = source.getLeafId();
     expect(leafId).not.toBe(activeId);
     const result = outerResult("outer-title");
