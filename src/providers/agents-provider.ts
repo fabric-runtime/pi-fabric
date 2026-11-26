@@ -1418,9 +1418,17 @@ export class AgentsProvider implements FabricProvider {
 
   // The shared resident host cannot inherit this process's write confinement;
   // scope travels with the request (inheritedScope, principalScope) instead.
+  // It would also run outside agents.launchWrapper. The residency client checks
+  // the configuration it was created with; this checks the live one, so a
+  // reload that adds the wrapper is refused before anything reaches the host.
   #assertUnconfinedDurable(): void {
     if (process.env.PI_FABRIC_WRITE_POLICY) {
       throw new Error("A write-confined agent cannot start durable agents or actors");
+    }
+    if (this.manager.config.launchWrapper) {
+      throw new Error(
+        'Durable residency (residency: "durable" agents and actors) is unavailable while agents.launchWrapper is set: the resident host would run outside the launch wrapper',
+      );
     }
   }
 

@@ -1355,6 +1355,13 @@ export class FabricRuntimeState {
     next.schema.mode = this.#config.schema.mode;
     this.#speculation?.reset();
     deepAssign(this.#config as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>);
+    // The residency client keeps its own copy of the agents settings; its
+    // launchWrapper guard must see the wrapper a reload adds or removes.
+    const residencyAgents = this.#residency?.options.config.agents;
+    if (residencyAgents) {
+      if (this.#config.agents.launchWrapper) residencyAgents.launchWrapper = [...this.#config.agents.launchWrapper];
+      else delete residencyAgents.launchWrapper;
+    }
     this.#configureSpeculation();
     void this.#sessionLabel?.sync();
     this.#syncHerdrStatus();

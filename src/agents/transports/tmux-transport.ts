@@ -7,7 +7,8 @@ import { EXTERNAL_TRANSPORT_LIVENESS_POLL_INTERVAL_MS } from "../constants.js";
 import {
   commandAvailable,
   executeFile,
-  workerCommand,
+  launchCommand,
+  launchWrapped,
 } from "./process-utils.js";
 
 const sessionName = (id: string): string => `pi-fabric-${id.slice(0, 12)}`;
@@ -19,7 +20,11 @@ export class TmuxTransport implements AgentTransportAdapter {
     return commandAvailable("tmux");
   }
 
-  async launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+  launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
+    return launchWrapped(this.kind, request, () => this.#launch(request));
+  }
+
+  async #launch(request: AgentTransportLaunch): Promise<AgentTransportHandle> {
     const session = sessionName(request.id);
     await executeFile("tmux", [
       "new-session",
@@ -28,7 +33,7 @@ export class TmuxTransport implements AgentTransportAdapter {
       session,
       "-c",
       request.cwd,
-      await workerCommand(request.workerPath, request.workerArguments),
+      await launchCommand(request),
     ]);
     return {
       kind: this.kind,

@@ -1017,6 +1017,13 @@ export class AgentManager {
     if (residency !== "session" && residency !== "durable") {
       throw new Error(`Invalid Fabric agent residency: ${String(request.residency)}`);
     }
+    // A durable worker's recovery relaunch does not carry the wrapper, so a
+    // durable launch here would run outside it after a restart.
+    if (residency === "durable" && this.config.launchWrapper) {
+      throw new Error(
+        'Durable residency (residency: "durable" agents and actors) is unavailable while agents.launchWrapper is set: the resident host would run outside the launch wrapper',
+      );
+    }
     const runner = request.runner ?? this.config.runner;
     assertExactModelRequest({ modelMatch: request.modelMatch, runner, model: request.model });
     const runnerAdapter = requireAgentRunner(runner);
@@ -1471,6 +1478,16 @@ export class AgentManager {
         cwd: agentCwd,
         workerPath: runnerLaunch.workerPath,
         workerArguments: [...runnerLaunch.workerArguments],
+        ...(this.config.launchWrapper
+          ? {
+              launchWrapper: {
+                argv: [...this.config.launchWrapper],
+                runDirectory,
+                ...(writePolicy ? { writePolicy } : {}),
+                depth: this.#currentDepth + 1,
+              },
+            }
+          : {}),
       };
       admissionSignal.throwIfAborted();
       if (this.#closing) throw new Error("Fabric agent manager is closing");
