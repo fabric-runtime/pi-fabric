@@ -14,6 +14,8 @@ const managers: AgentManager[] = [];
 // Node child; on Windows the copy also pays for Defender scanning it. Keep the
 // child budget inside the test ceiling so a loaded runner fails with the child
 // output instead of an untimed kill that leaves handles behind.
+// afterEach gets the same allowance: close() waits for a child that is still
+// starting, which took longer than the default 10 s hook ceiling on Windows.
 const CHILD_TIMEOUT_MS = 20_000;
 const TEST_TIMEOUT_MS = 60_000;
 // Three installations boot one child each under a single test.
@@ -24,7 +26,7 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   // Windows can hold a handle on a just-killed child's files for a moment.
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-});
+}, 30_000);
 
 // Outside the checkout: ancestor node_modules and development peers must not
 // rescue imports. Pi managed installs deliberately omit host-provided peers.
@@ -133,7 +135,7 @@ describe("standalone worker without Pi host peers", () => {
     const quote = (text: string) => `'${text.replaceAll("'", "'\"'\"'")}'`;
     fs.writeFileSync(path.join(bin, "tmux"), `#!/bin/sh\nexec ${quote(binary)} -L ${quote(socket)} -f /dev/null "$@"\n`, { mode: 0o755 });
     vi.stubEnv("PATH", bin + path.delimiter + process.env.PATH);
-    const manager = new AgentManager(root, { ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi" as const, timeoutMs: 12000, sessionExport: false }, {
+    const manager = new AgentManager(root, { ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi" as const, timeoutMs: CHILD_TIMEOUT_MS, sessionExport: false }, {
       workerPath: worker, piBinary, runRoot: path.join(root, "runs"), fullCodeMode: false,
     });
     managers.push(manager);
@@ -153,7 +155,7 @@ describe("standalone worker without Pi host peers", () => {
   it("propagates bootstrap failure through the real process transport", async () => {
     const { root, worker, piBinary } = installation();
     fs.rmSync(path.join(root, "dist/worker/options.js"));
-    const manager = new AgentManager(root, { ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi" as const, timeoutMs: 12000, sessionExport: false }, {
+    const manager = new AgentManager(root, { ...DEFAULT_FABRIC_CONFIG.agents, runner: "pi" as const, timeoutMs: CHILD_TIMEOUT_MS, sessionExport: false }, {
       workerPath: worker, piBinary, runRoot: path.join(root, "runs"), fullCodeMode: false,
     });
     managers.push(manager);

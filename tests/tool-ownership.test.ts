@@ -72,6 +72,23 @@ describe("hidden-tool guidance", () => {
     expect(result?.descriptions?.fabric_exec).not.toContain("rule:withdrawn");
     expect(fabricToolLoadout(loadout, false)).toBeUndefined();
   });
+
+  it("labels codemode-script lines nativeTools-only in the additive profile and keeps them in native", () => {
+    const script = "`read` in a codemode script resolves to the file's text; pass `anchors: true` to receive `{ text, lines, notices }`.";
+    const other = "`read`: call again after an edit when you need anchors you lack.";
+    const registered = ["fabric_exec", "read"].map(name => ({ name, description: name }));
+    const loadout = {
+      registered, declared: registered, callable: registered.slice(1),
+      getPromptGuidelines: () => [script, other],
+    } as unknown as Parameters<typeof fabricToolLoadout>[0];
+    const additive = fabricToolLoadout(loadout, true)?.descriptions?.fabric_exec ?? "";
+    expect(additive.split("\n")).toContain(`- nativeTools only: ${script}`);
+    expect(additive.split("\n")).toContain(`- ${other}`);
+    expect(additive).not.toContain(`nativeTools only: ${other}`);
+    const native = fabricToolLoadout(loadout, true, [], { nativeProfile: true })?.descriptions?.fabric_exec ?? "";
+    expect(native.split("\n")).toContain(`- ${script}`);
+    expect(native).not.toContain("nativeTools only:");
+  });
 });
 
 describe("fabricModelContext", () => {

@@ -7,7 +7,7 @@ import {
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { CapturedToolCatalog } from "../src/capture/catalog.js";
-import { coreOverridePromptGuidance } from "../src/core/core-override-guidance.js";
+import { ANCHOR_READ_COMPATIBILITY_GUIDANCE, coreOverridePromptGuidance } from "../src/core/core-override-guidance.js";
 import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
 import { FabricState } from "../src/fabric-state.js";
 
@@ -216,6 +216,121 @@ describe("core override prompt guidance", () => {
     } finally {
       get.mockRestore();
     }
+  });
+
+it("replaces an anchor-aware read override's codemode-script lines with the program contract", () => {
+    const catalog = new CapturedToolCatalog();
+    const anchored = (name: string, guidelines: string[]) => defineTool({
+      name,
+      label: name,
+      description: `${name} override`,
+      promptGuidelines: guidelines,
+      parameters: Type.Object({ path: Type.String(), anchors: Type.Optional(Type.Boolean()) }),
+      outputSchema: Type.Union([Type.String(), Type.Object({ text: Type.String() })]),
+      async execute() {
+        return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+      },
+    });
+    catalog.replace(
+      [
+        {
+          definition: anchored("read", [
+            "Remember to use the hashline tools.",
+            "`read` in a codemode script resolves to the file's text; pass `anchors: true` to receive `{ text, lines, notices }`.",
+            "read/grep: when called from a codemode script, failures resolve to `{ ok: false }`; branch on `ok`.",
+          ]),
+          sourceInfo: createSyntheticSourceInfo("/extensions/pi-hashline-edit-pro/index.ts", { source: "test" }),
+        },
+        {
+          definition: anchored("grep", ["`grep`: a codemode script receives `{ text, results }`."]),
+          sourceInfo: createSyntheticSourceInfo("/extensions/pi-hashline-edit-pro/index.ts", { source: "test" }),
+        },
+      ],
+      runner,
+      DEFAULT_FABRIC_CONFIG.capture,
+      "/extensions/pi-fabric/index.ts",
+    );
+
+    const guidance = coreOverridePromptGuidance(catalog);
+    expect(guidance).toContain("Remember to use the hashline tools.");
+    expect(guidance).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(guidance).not.toContain("codemode script");
+    expect(guidance).not.toContain("{ text, lines, notices }");
+    expect(guidance).not.toContain("branch on `ok`");
+    expect(guidance).not.toContain("Guidelines for `pi.grep`");
+  });
+
+  it("keeps the compatibility block short and states the anchored read form", () => {
+    expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE.length).toBeLessThanOrEqual(700);
+    expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("pi.read({path, anchors: true})");
+    expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("plain file text");
+    expect(ANCHOR_READ_COMPATIBILITY_GUIDANCE).toContain("`structuredContent.anchors[].anchor` holds fresh anchors for the next edit");
+  });
+
+  it("adds no anchor guidance for a read override that declares only an output schema", () => {
+    const catalog = new CapturedToolCatalog();
+    const plain = defineTool({
+      name: "read",
+      label: "read",
+      description: "plain read override",
+      promptSnippet: "plain reads",
+      parameters: Type.Object({ path: Type.String() }),
+      outputSchema: Type.String(),
+      async execute() {
+        return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+      },
+    });
+    catalog.replace(
+      [{ definition: plain, sourceInfo: createSyntheticSourceInfo("/extensions/plain-read/index.ts", { source: "test" }) }],
+      runner,
+      DEFAULT_FABRIC_CONFIG.capture,
+      "/extensions/pi-fabric/index.ts",
+    );
+    const guidance = coreOverridePromptGuidance(catalog);
+    expect(guidance).toContain("plain reads");
+    expect(guidance).not.toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(guidance).not.toContain("anchor│content");
+  });
+
+  it("adds the anchor guidance for a read override that declares the anchors parameter, with or without an output schema", () => {
+    const withAnchors = (outputSchema: boolean) => {
+      const catalog = new CapturedToolCatalog();
+      const definition = defineTool({
+        name: "read",
+        label: "read",
+        description: "anchored read override",
+        parameters: Type.Object({ path: Type.String(), anchors: Type.Optional(Type.Boolean()) }),
+        ...(outputSchema ? { outputSchema: Type.String() } : {}),
+        async execute() {
+          return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+        },
+      });
+      catalog.replace(
+        [{ definition, sourceInfo: createSyntheticSourceInfo("/extensions/anchored-read/index.ts", { source: "test" }) }],
+        runner,
+        DEFAULT_FABRIC_CONFIG.capture,
+        "/extensions/pi-fabric/index.ts",
+      );
+      return coreOverridePromptGuidance(catalog);
+    };
+    expect(withAnchors(true)).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(withAnchors(false)).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+  });
+
+  it("adds no compatibility block for a read override without anchors or an output schema", () => {
+    const catalog = new CapturedToolCatalog();
+    catalog.replace(
+      [{
+        definition: captured("read", "structure-aware reads", ["Prefer symbol IDs when available."]),
+        sourceInfo: createSyntheticSourceInfo("/extensions/organon/index.ts", { source: "test" }),
+      }],
+      runner,
+      DEFAULT_FABRIC_CONFIG.capture,
+      "/extensions/pi-fabric/index.ts",
+    );
+    expect(coreOverridePromptGuidance(catalog)).toBe(
+      "\n\nEffective compatible core override guidance:\nAdditional guidance for `pi.read`: structure-aware reads\nGuidelines for `pi.read`:\n- Prefer symbol IDs when available.",
+    );
   });
 
   it("adds no prose when an override has no prompt metadata", () => {

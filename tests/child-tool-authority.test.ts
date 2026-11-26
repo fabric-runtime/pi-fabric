@@ -17,6 +17,17 @@ const workerPath = path.join(root, "build", "worker.js");
 const fixture = path.resolve("tests/fixtures/authority-pi-extension.ts");
 const managers: AgentManager[] = [];
 let sequence = 0;
+// Each case boots a real Pi child (durable cases also a resident host) from a cold
+// bundle. A Windows runner under full-suite load needs more than 15 s for that, so
+// keep the child budget inside a wider test ceiling: a slow child then fails
+// with its own error instead of an untimed kill, and close() has time to stop it.
+// The ceiling is the sum of the parts below, so a slower launch cannot eat the
+// margin the child's own timed_out result needs.
+const CHILD_TIMEOUT_MS = 30_000; // the child's own deadline, passed to AgentManager as timeoutMs
+const LAUNCH_ALLOWANCE_MS = 10_000; // spawn and cold bundle load, before the manager starts the child's watch
+const TRANSPORT_EXIT_GRACE_MS = 1_000; // the watch waits this long past the deadline (same value as in src/agents/manager.ts)
+const STOP_EXIT_WAIT_MS = 7 * TRANSPORT_EXIT_GRACE_MS; // after the deadline, stop() waits up to this long for the child to exit
+const TEST_TIMEOUT_MS = LAUNCH_ALLOWANCE_MS + CHILD_TIMEOUT_MS + TRANSPORT_EXIT_GRACE_MS + STOP_EXIT_WAIT_MS;
 beforeAll(async () => {
   fs.symlinkSync(path.resolve("node_modules"), path.join(root, "node_modules"), "junction");
   fs.writeFileSync(path.join(root, "package.json"), '{"type":"module"}');
@@ -27,7 +38,7 @@ beforeAll(async () => {
     platform: "node", format: "esm", splitting: true, target: "node24", logLevel: "silent",
   });
 }, 30000);
-afterEach(async () => { await Promise.all(managers.splice(0).map(manager => manager.close())); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+afterEach(async () => { await Promise.all(managers.splice(0).map(manager => manager.close())); vi.unstubAllEnvs(); vi.restoreAllMocks(); }, 30_000);
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 function setup() {
@@ -75,7 +86,7 @@ async function forward(cwd: string, request: AgentRunRequest): Promise<AgentRunR
 }
 
 async function active(cwd: string, runner: "pi" | "pi-durable", request: AgentRunRequest, fullCodeMode = false, routeQuestions = false) {
-  const manager = new AgentManager(cwd, { ...DEFAULT_FABRIC_CONFIG.agents, runner, transport: "process", timeoutMs: 15000, ...(routeQuestions ? { childQuestions: "route" as const } : {}) }, {
+  const manager = new AgentManager(cwd, { ...DEFAULT_FABRIC_CONFIG.agents, runner, transport: "process", timeoutMs: CHILD_TIMEOUT_MS, ...(routeQuestions ? { childQuestions: "route" as const } : {}) }, {
     workerPath, runRoot: path.join(cwd, `runs-${sequence++}`), fullCodeMode, fabricExtensionPath: fixture,
     piBinary: path.resolve("node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"),
   });
@@ -99,7 +110,7 @@ describe("origin authority through serialized resident dispatch", () => {
     expect(request.cwd).toBe(path.join(cwd, "other"));
     const tools = await active(cwd, "pi-durable", request);
     expect(tools.includes("fabric_exec")).toBe(permitted);
-  }, 20000);
+  }, TEST_TIMEOUT_MS);
 
   it("cannot self-grant authority in provider arguments or at the manager boundary", async () => {
     const cwd = setup();
@@ -111,7 +122,7 @@ describe("origin authority through serialized resident dispatch", () => {
     expect(request.recursiveToolAuthority).toBe("deny");
     vi.stubEnv("PI_FABRIC_TOOL_ALLOWLIST", undefined);
     expect(await active(cwd, "pi", request)).not.toContain("fabric_exec");
-  }, 20000);
+  }, TEST_TIMEOUT_MS);
 });
 
 describe("other authority entry points", () => {
@@ -130,7 +141,7 @@ describe("other authority entry points", () => {
     const tools = await active(cwd, runner, { ...request, recursiveToolAuthority: "allow" as "deny" }, true, true);
     expect(tools).toContain("read");
     expect(tools).not.toContain("fabric_exec");
-  }, 20000);
+  }, TEST_TIMEOUT_MS);
 });
 
 describe("effective native selection", () => {
@@ -140,19 +151,19 @@ describe("effective native selection", () => {
     const tools = await active(cwd, runner, { task: "report", tools: ["*"], recursive: true });
     expect(tools).toContain("read");
     expect(tools).not.toContain("fabric_exec");
-  }, 20000);
+  }, TEST_TIMEOUT_MS);
 
   it.each(["pi", "pi-durable"] as const)("%s constrains relative selectors instead of restoring target defaults", async runner => {
     const cwd = setup();
     vi.stubEnv("PI_FABRIC_TOOL_ALLOWLIST", '["read"]');
     const tools = await active(cwd, runner, { task: "report", tools: ["+read", "+fabric_exec"], recursive: true });
     expect(tools).toEqual(["read"]);
-  }, 20000);
+  }, TEST_TIMEOUT_MS);
 
   it.each(["pi", "pi-durable"] as const)("%s respects explicit exclusion under full-code inheritance", async runner => {
     const cwd = setup();
     const tools = await active(cwd, runner, { task: "report", tools: ["-fabric_exec", "+read"], extensions: true }, true);
     expect(tools).toContain("read");
     expect(tools).not.toContain("fabric_exec");
-  }, 20000);
+  }, TEST_TIMEOUT_MS);
 });
