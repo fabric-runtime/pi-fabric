@@ -222,6 +222,13 @@ Existing workers are not retroactively changed by rebuilding or reloading the pa
 
 Pi workers with extensions enabled also inherit the parent session's `pi-multiprovider` `/switch-account` pin, when that extension is installed. Fabric forwards the pin as `PI_MULTIPROVIDER_SESSION_PINS`; the child rebinds it to its own session id. This is host state, not a model argument. Claude and Veda runners, and `extensions: false` children, do not receive it.
 
+Managed `pi-durable` workers with the TypeScript Fabric kernel use a 4 MiB V8
+semi-space by default. This only tunes young-generation allocation in the
+worker's Node host: it does not cap old-generation memory or change the
+`fabric_exec` language, type checks, guest heap limit, tools, or extension
+hooks. A nonempty `NODE_OPTIONS` leaves Node tuning to the operator. Other
+runners and the parent Pi process are unchanged.
+
 ### Choose the child's language
 
 `agents.run`, `agents.spawn`, `agents.create`, and `agents.handoff` accept `kernel: "typescript" | "python" | "inherit"`. Omit it or use `"inherit"` to inherit the caller's `executor.kernel`; use a concrete value so a skill or model can choose its strongest language for the task. Workflow agents, `rlm.query`, and council members/synthesis forward the same option. This selects the **child's** Fabric language, not the language of the current `fabric_exec` program; that program still uses its configured kernel.

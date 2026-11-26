@@ -120,6 +120,8 @@ export interface FabricSandboxOptions {
   providerGlobals?: readonly string[];
   transpiledCode?: string;
   transpiledSourceMap?: string;
+  /** Static π.<key> references from the compiler AST for this exact source. */
+  payloadKeys?: readonly string[];
   /** Durable crash journal; QuickJS only. Absent means unchanged behavior. */
   journal?: FabricJournalDriver;
   /** On resume, asks a person whether a call that may have run should run

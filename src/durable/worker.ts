@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import module from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseDurableWorkerOptions } from "./worker-options.js";
+import { durableTypeScriptNodeArgs } from "./node-runtime-options.js";
 import { explainMissingInstall } from "../worker/missing-install.js";
 
 try {
@@ -11,7 +12,10 @@ try {
   if (process.versions.bun) {
     // Bun cannot install Node's peer-resolution hooks. Keep the pinned SDK in
     // the package's required Node 24+ runtime; never inject ambient NODE_PATH.
-    const child = spawn("node", [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: "inherit" });
+    const interpreterArgs = process.env.PI_FABRIC_PARENT_RUN && !options.noExtensions && options.extensions.length > 0
+      ? durableTypeScriptNodeArgs(process.env.PI_FABRIC_KERNEL)
+      : [];
+    const child = spawn("node", [...interpreterArgs, fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: "inherit" });
     const code = await new Promise<number>((resolve, reject) => {
       child.once("error", error => reject(new Error(`Bun-launched durable workers require Node.js 24+ on PATH: ${error.message}`, { cause: error })));
       child.once("exit", (code, signal) => resolve(code ?? (signal ? 1 : 0)));

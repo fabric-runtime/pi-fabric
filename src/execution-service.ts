@@ -961,6 +961,7 @@ export class FabricExecutionService {
           timeoutMs: codeUsesOrchestration(source) ? orchestrationTimeoutMs : this.config.executor.timeoutMs,
           ...(prepared.javascript ? { transpiledCode: prepared.javascript } : {}),
           ...(prepared.sourceMap ? { transpiledSourceMap: prepared.sourceMap } : {}),
+          ...(prepared.payloadKeys ? { payloadKeys: prepared.payloadKeys } : {}),
           signal: runSignal,
         });
         for (const line of result.logs) {
@@ -1460,6 +1461,7 @@ export class FabricExecutionService {
           timeoutMs: options.hardTimeoutMs === undefined ? effectiveTimeoutMs : Math.min(options.hardTimeoutMs, this.config.executor.maxTimeoutMs),
           ...(checked.javascript ? { transpiledCode: checked.javascript } : {}),
           ...(checked.sourceMap ? { transpiledSourceMap: checked.sourceMap } : {}),
+          ...(checked.payloadKeys ? { payloadKeys: checked.payloadKeys } : {}),
           ...(options.strings ? { strings: options.strings } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
           ...(journal ? { journal } : {}),

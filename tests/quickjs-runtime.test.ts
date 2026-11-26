@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { QuickJsRuntime } from "../src/runtime/quickjs-runtime.js";
+import { TypeScriptKernelRuntime } from "../src/runtime/typescript-kernel.js";
 import { classifyPiBashError } from "../src/core/pi-bash-error.js";
 import { transpileFabricCodeWithSourceMap } from "../src/runtime/type-checker.js";
 
@@ -724,6 +725,31 @@ await Promise.all([
       { ...options, strings: { body: "content" } },
     );
     expect(provided.terminationReason).toBe("completed");
+  });
+
+  it("reuses static payload keys from a type-checked program without weakening preflight", async () => {
+    const runtime = new TypeScriptKernelRuntime("quickjs");
+    const { code, checked } = runtime.prepare(String.raw`
+      // π.inComment is not an access.
+      const example: string = "π.inString";
+      return await pi.read({ path: \u03c0.file }) + π.file + example;
+    `, true, [], {}, [], true);
+    expect(checked.errors).toEqual([]);
+    expect(checked.payloadKeys).toEqual(["file"]);
+    const compiled = {
+      ...options,
+      ...(checked.javascript ? { transpiledCode: checked.javascript } : {}),
+      ...(checked.sourceMap ? { transpiledSourceMap: checked.sourceMap } : {}),
+      ...(checked.payloadKeys ? { payloadKeys: checked.payloadKeys } : {}),
+    };
+    const host = vi.fn(async () => "result");
+    const denied = await runtime.execute(code, host, compiled);
+    expect(denied.error).toContain("Pre-execution check: π.file is referenced");
+    expect(host).not.toHaveBeenCalled();
+    const accepted = await runtime.execute(code, host, { ...compiled, strings: { file: "sample" } });
+    expect(accepted.terminationReason).toBe("completed");
+    expect(accepted.value).toBe("resultsampleπ.inString");
+    expect(host.mock.calls).toHaveLength(1);
   });
 
   it("ignores π examples inside strings and comments during payload preflight", async () => {

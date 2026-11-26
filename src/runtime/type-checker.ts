@@ -1,5 +1,6 @@
 import path from "node:path";
 import ts from "typescript";
+import { collectGuestPayloadKeys, mayReferencePayloads } from "./guest-payload-refs.js";
 import { wrapFabricGuestCode } from "./transpile.js";
 
 // The Worker-safe half (no node:path) lives in transpile.ts; re-exported for existing importers.
@@ -15,6 +16,7 @@ export interface FabricTypeCheckResult {
   errors: FabricTypeError[];
   javascript?: string;
   sourceMap?: string;
+  payloadKeys?: readonly string[];
 }
 
 const compilerOptions: ts.CompilerOptions = {
@@ -170,6 +172,7 @@ class FabricTypeChecker {
       errors,
       ...(javascript ? { javascript } : {}),
       ...(sourceMap ? { sourceMap } : {}),
+      payloadKeys: mayReferencePayloads(code) ? collectGuestPayloadKeys(this.#sourceFile) : [],
     };
   }
 }

@@ -8,6 +8,7 @@ import { PI_ARGUMENT_NORMALIZATION_SOURCE } from "../core/pi-arguments.js";
 import { PI_CORE_TOOL_NAMES } from "../core/pi-tools.js";
 import { providerGlobalNames } from "../provider-globals.js";
 import { HumanWaitDeadlinePause } from "./deadline-pause.js";
+import { collectGuestPayloadKeys, mayReferencePayloads } from "./guest-payload-refs.js";
 import { createGuestStackMap, remapGuestErrorText } from "./guest-stack-map.js";
 import { transpileFabricCodeWithSourceMap } from "./transpile.js";
 
@@ -31,44 +32,17 @@ type QuickJsModule = Awaited<ReturnType<typeof newQuickJSWASMModuleFromVariant>>
 
 let quickJsModulePromise: Promise<QuickJsModule> | undefined;
 
-// Static π.<identifier> references (bracket access like π[k] is not provable).
-// Parse instead of scanning text so examples inside strings and comments do not
-// become false missing-payload failures.
-const referencedPiKeys = (code: string): string[] => {
-  const source = ts.createSourceFile(
-    "fabric-exec.ts",
-    `async function __fabricProgram() {\n${code}\n}`,
-    ts.ScriptTarget.Latest,
-    false,
-    ts.ScriptKind.TS,
-  );
-  const keys: string[] = [];
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isPropertyAccessExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "π" &&
-      !keys.includes(node.name.text)
-    ) {
-      keys.push(node.name.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return keys;
-};
-
-// Models routinely reference π.<key> without providing the payloads parameter,
-// and the runtime error only lands after a full execution round trip (#68).
-// Reject up front when a referenced key is statically provable missing, before
-// QuickJS is even loaded.
-const missingStringsKeys = (
-  code: string,
-  strings: Record<string, string> | undefined,
-): string[] => {
-  const provided = strings ?? {};
-  return referencedPiKeys(code).filter((key) => !(key in provided));
-};
+// Direct runtime callers (native scripts and journal replay) may not have a
+// compiler AST. Parse only when a literal or an escape can spell π.
+const referencedPiKeys = (code: string): readonly string[] => mayReferencePayloads(code)
+  ? collectGuestPayloadKeys(ts.createSourceFile(
+      "fabric-exec.ts",
+      `async function __fabricProgram() {\n${code}\n}`,
+      ts.ScriptTarget.Latest,
+      false,
+      ts.ScriptKind.TS,
+    ))
+  : [];
 
 const precompiledModules = new WeakMap<WebAssembly.Module, Promise<QuickJsModule>>();
 // The bundled variant compiles its inlined wasm bytes; hosts that forbid that
@@ -895,7 +869,8 @@ export class QuickJsRuntime {
         error: "Execution cancelled",
       };
     }
-    const missingKeys = missingStringsKeys(code, options.strings);
+    const providedStrings = options.strings ?? {};
+    const missingKeys = (options.payloadKeys ?? referencedPiKeys(code)).filter((key) => !(key in providedStrings));
     if (missingKeys.length > 0) {
       const provided = Object.keys(options.strings ?? {});
       return {

@@ -8,6 +8,7 @@ import { assertWorkerRuntime, writeWorkerStartupFailure } from "./worker/startup
 import { MODEL_PIN_ENV, MODEL_PIN_EXIT_CODE, modelPinFailure, parseModelPinViolation } from "./agents/model-pin.js";
 import { createDurableSessionFile } from "./durable/worker-role-seed.js";
 import { hasWorkerRecovery } from "./agents/worker-recovery.js";
+import { durableTypeScriptNodeArgs } from "./durable/node-runtime-options.js";
 import { explainMissingInstall } from "./worker/missing-install.js";
 import { normalizeRunDisplay } from "./run-display.js";
 import { nativeFabricExecExclusions } from "./core/child-tool-allowlist.js";
@@ -30,8 +31,9 @@ const spawnCli = (
   command: string,
   args: readonly string[],
   options: SpawnOptions,
+  interpreterArgs: readonly string[] = [],
 ): ChildProcess => NODE_SCRIPT_EXTENSIONS.has(path.extname(command).toLowerCase())
-  ? crossSpawn(process.execPath, [command, ...args], options)
+  ? crossSpawn(process.execPath, [...interpreterArgs, command, ...args], options)
   : crossSpawn(command, [...args], options);
 
 type ClaudeCliModule = typeof import("./agents/claude-cli.js");
@@ -455,6 +457,9 @@ const main = async (): Promise<void> => {
             ))
           : options.piBinary;
 
+  const interpreterArgs = options.runner === "pi-durable" && options.extensions && options.fabricExtensionPath && !process.versions.bun
+    ? durableTypeScriptNodeArgs(options.kernel)
+    : [];
   const child = spawnCli(childBinary, childArguments, {
     cwd: options.cwd,
     detached: process.platform !== "win32",
@@ -515,7 +520,7 @@ const main = async (): Promise<void> => {
       PI_FABRIC_EXTENSION_MODEL: providerBridge ? options.model : undefined,
     },
     stdio: ["pipe", "pipe", "pipe"],
-  });
+  }, interpreterArgs);
   let stderr = "";
   let outputBuffer = "";
   // Veda emits a single JSON document on stdout (progress goes to stderr, and
