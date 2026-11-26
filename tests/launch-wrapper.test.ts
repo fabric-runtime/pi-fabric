@@ -137,7 +137,7 @@ describe("agents.launchWrapper configuration", () => {
       prepare: () => ({}),
       start: () => {},
       attach: () => {},
-      liveness: () => "exited",
+      liveness: () => "settled",
       stop: () => ({ confirmed: true }),
     });
     try {

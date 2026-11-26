@@ -150,7 +150,7 @@ describe("agents.recursive default", () => {
   });
 
   it("does not override defaultTools containing -fabric_exec or explicit empty tools: []", async () => {
-    const fromDefault = await make({ recursive: true, defaultTools: ["read", "-fabric_exec"] }).run({
+    const fromDefault = await make({ recursive: true, defaultTools: ["-fabric_exec"] }).run({
       task: "probe", transport: "process",
     }) as Surface;
     expect(fromDefault.grantedRisks).toEqual([]);
