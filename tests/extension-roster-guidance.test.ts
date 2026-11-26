@@ -80,6 +80,29 @@ describe("extensionToolRosterGuidance", () => {
     }
   });
 
+  it("labels Pi's built-in and inline tools by source, not by the cwd's package.json", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "fabric-roster-"));
+    const previousCwd = process.cwd();
+    try {
+      writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "cwd-project" }));
+      process.chdir(root);
+      const roster = extensionToolRosterGuidance(
+        [
+          entry("codemode", { source: "builtin", path: "builtin:codemode" }),
+          entry("tool_search", { source: "builtin", path: "builtin:tool_search" }),
+          entry("inline_tool", { source: "inline", path: "<inline:demo>" }),
+        ],
+        new Set(),
+      );
+      expect(roster).toContain("- builtin: codemode, tool_search");
+      expect(roster).toContain("- inline: inline_tool");
+      expect(roster).not.toContain("cwd-project");
+    } finally {
+      process.chdir(previousCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("strips npm: prefixes without touching the filesystem", () => {
     const roster = extensionToolRosterGuidance(
       [entry("tool_two", { source: "npm:@scope/pi-npm-ext", path: "/nonexistent/nowhere/index.js" })],
