@@ -68,6 +68,7 @@ export const CORE_RISK_TOOLS = ["read", "grep", "find", "edit", "write", "bash",
 export const CORE_DEFAULT_TOOL_CANDIDATES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
 export const BUDGET_VALUES = [0, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10];
 export const TOKEN_VALUES = [0, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000];
+export const TURN_VALUES = [0, 50, 100, 200, 300, 500, 1_000];
 export const PREWALK_MODEL_UNSET_LABEL = "Ask each time";
 export const PREWALK_THINKING_INHERIT_LABEL = "Agents default";
 export const PREWALK_MODES = ["in-place", "trajectory"] as const;
@@ -117,6 +118,9 @@ export const formatTokens = (value: number): string =>
       : value >= 1_000
         ? `${value / 1_000}k`
         : String(value);
+
+export const formatTurns = (value: number): string =>
+  value <= 0 ? "Off" : String(value);
 
 export const formatToolCount = (count: number): string =>
   `${count} ${count === 1 ? "tool" : "tools"}`;

@@ -746,6 +746,22 @@ const main = async (): Promise<void> => {
     killChild();
   };
 
+  // Per-child turn guard (agents.maxTurnsPerChild). A child that keeps calling
+  // tools never ends on its own; one re-read the same images for 991 turns.
+  // Checked at turn_end, after the turn's tools ran and before the next model
+  // call; a turn that ends with an answer completes even at the limit. The
+  // count includes turns carried over from resumed attempts.
+  const enforceTurnLimit = (): void => {
+    if (terminalStatus || !options.maxTurns || options.maxTurns <= 0) return;
+    if (record.turns < options.maxTurns || !endedOnToolCall) return;
+    terminalStatus = "timed_out";
+    terminalError =
+      `Fabric turn limit reached: ${record.turns} turns (limit ${options.maxTurns} set by agents.maxTurnsPerChild); terminating child before another model call. ` +
+      `The last turn still called a tool (${endedOnToolCall}), so the run was not finishing; ` +
+      `raise or disable agents.maxTurnsPerChild in /fabric settings (0 disables), or split the task into smaller agent runs.`;
+    killChild();
+  };
+
   type ClaudeInputKind = "initial" | "steer" | "follow_up";
   const claudeTools = new Map<string, string>();
   const claudeCompletedUsage = emptyUsage();
@@ -1190,6 +1206,7 @@ const main = async (): Promise<void> => {
         ...(typeof event.turnIndex === "number" ? { turnIndex: event.turnIndex } : {}),
       });
       record.turns++;
+      enforceTurnLimit();
       update();
       return;
     }
