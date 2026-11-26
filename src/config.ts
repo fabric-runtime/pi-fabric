@@ -251,9 +251,9 @@ export interface FabricAgentConfig {
    * When true, a Pi child request that omits `recursive` is launched as
    * `recursive: true` (fabric_exec, the delegated "agent" risk, its own
    * children), bounded by maxDepth, maxPerExecution and budgetUsd. An explicit
-   * `recursive`/`extensions: false` on the request wins. Absent means false.
+   * `recursive`/`extensions: false` on the request wins. Defaults to false.
    */
-  recursive?: boolean;
+  recursive: boolean;
   defaultTools: string[];
   retainRuns: boolean;
   /**
@@ -1851,15 +1851,26 @@ const resolveFabricConfig = (
   applyEnvironmentOverrides: boolean,
 ): FabricConfig => {
   let merged = structuredClone(DEFAULT_FABRIC_CONFIG) as unknown as Record<string, unknown>;
-  const plans = [
-    planConfigFile(path.join(options.agentDir, "fabric.json")),
-    ...(includeProject
-      ? [planConfigFile(path.join(options.cwd, ".pi", "fabric.json"))]
-      : []),
-  ].filter((plan): plan is FabricConfigFilePlan => plan !== undefined);
+  const globalPlan = planConfigFile(path.join(options.agentDir, "fabric.json"));
+  const projectPlan = includeProject
+    ? planConfigFile(path.join(options.cwd, ".pi", "fabric.json"))
+    : undefined;
+  const plans = [globalPlan, projectPlan].filter((plan): plan is FabricConfigFilePlan => plan !== undefined);
   for (const plan of plans) {
     if (plan.changed) writeJsonAtomic(plan.path, plan.document, plan.source);
-    merged = mergeObjects(merged, plan.document);
+    let document = plan.document;
+    // agents.launchWrapper executes an arbitrary binary prefix on every worker
+    // launch and enforces the operator's OS sandbox boundary. Keep it global-only
+    // so a repository's .pi/fabric.json can neither inject a command nor disarm
+    // or override the global sandbox wrapper.
+    if (plan === projectPlan) {
+      const agents = objectValue(document.agents);
+      if (Object.hasOwn(agents, "launchWrapper")) {
+        const { launchWrapper: _ignored, ...restAgents } = agents;
+        document = { ...document, agents: restAgents };
+      }
+    }
+    merged = mergeObjects(merged, document);
   }
   const inheritedKernel = process.env.PI_FABRIC_KERNEL;
   if (applyEnvironmentOverrides && inheritedKernel !== undefined) {
@@ -1935,6 +1946,9 @@ export const saveFabricConfig = (
   if (scope === "project" && !options.projectTrusted) {
     throw new Error("Cannot save project Fabric configuration for an untrusted project");
   }
+  if (scope === "project" && Object.hasOwn(objectValue(partial.agents), "launchWrapper")) {
+    throw new Error("agents.launchWrapper can only be set in global Fabric configuration");
+  }
   const targetPath = scope === "project"
     ? path.join(options.cwd, ".pi", "fabric.json")
     : path.join(options.agentDir, "fabric.json");
@@ -1949,7 +1963,7 @@ export const saveFabricConfig = (
   nativeMcpServersValue(objectValue(merged.mcp).nativeServers);
   approvalActionOverridesValue(objectValue(merged.approvals).actions);
   foregroundConfigValue(merged.foreground);
-  launchWrapperValue(objectValue(merged.agents).launchWrapper);
+  if (scope === "global") launchWrapperValue(objectValue(merged.agents).launchWrapper);
   // Never stamp down: preserve version markers written by newer builds.
   merged.configVersion = Math.max(
     typeof merged.configVersion === "number" ? merged.configVersion : 0,

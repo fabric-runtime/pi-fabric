@@ -1,5 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { PEER_COORDINATION_GUIDANCE } from "../core/system-guidance.js";
 import type { FabricPeerInfo } from "./types.js";
+
+export { PEER_COORDINATION_GUIDANCE };
 
 export const PEER_PRESENCE_MESSAGE_TYPE = "pi-fabric-peer-presence";
 
@@ -90,6 +93,10 @@ export class PeerPresenceLedger {
     this.#missingSince.clear();
   }
 
+  get hasKnown(): boolean {
+    return this.#known.size > 0;
+  }
+
   restoreFromEntries(entries: readonly unknown[]): void {
     this.reset();
     for (const entry of entries) {
@@ -146,18 +153,6 @@ export class PeerPresenceLedger {
     };
   }
 }
-
-/**
- * How the model should treat the peers a notice names. Stated once in the
- * system prompt, so each notice carries only the change.
- */
-export const PEER_COORDINATION_GUIDANCE =
-  "Peer sessions: a <fabric-peers> notice names, by label, other Pi sessions that joined or left this project and share its files with you. " +
-  "File or git changes you did not make may be theirs: do not revert or overwrite them. " +
-  "Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and their ids, " +
-  "and `agents.steer` to message one by id. " +
-  "Coordinate only with relevant peers that are running or have pending messages, not every connected session. " +
-  "Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.";
 
 const listLabels = (records: readonly PeerPresenceRecord[], ownCwd: string | undefined): string => {
   const listed = records.slice(0, MAX_LISTED_PEERS).map((record) =>
@@ -237,7 +232,7 @@ export class PeerPresenceNotifier {
     });
     // A departure seen mid-run starts its grace window now, so it is ripe by
     // the next prompt. Nothing is added to the run.
-    subscribe("turn_end", () => { this.#observe(); return undefined; });
+    subscribe("turn_end", (_event, ctx) => { this.#observe(ctx); return undefined; });
     subscribe("session_tree", (_event, ctx) => this.#restore(ctx));
     subscribe("session_compact", () => this.#ledger.reset());
   }
@@ -255,9 +250,12 @@ export class PeerPresenceNotifier {
     }
   }
 
-  #observe(): void {
+  #observe(context: ExtensionContext | undefined): void {
     try {
-      if (this.options.enabled()) this.#ledger.observe(this.options.peers().map(peerPresenceRecord), this.#now());
+      // Skip scanning the mesh when headless or when the model knows no peers
+      // yet (observe only tracks departures of already-known peers).
+      if (context?.hasUI === false || !this.#ledger.hasKnown || !this.options.enabled()) return;
+      this.#ledger.observe(this.options.peers().map(peerPresenceRecord), this.#now());
     } catch {
       // Presence is advisory: a damaged mesh read must never fail a turn.
     }

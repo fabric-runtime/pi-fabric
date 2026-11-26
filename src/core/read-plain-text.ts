@@ -29,19 +29,28 @@ const lastMatch = (pattern: RegExp, text: string): RegExpExecArray | undefined =
 };
 
 /**
- * The blocks the tool appended after the file rows. File rows never contain a
- * blank line (a blank file line is shown as `anchor│`), so the rows are the
- * first block and every later block, split at a blank line, is tool-generated.
- * A display that starts with no row (nothing was read) is all notice.
+ * The blocks the tool appended after the file rows. When display begins with
+ * the plain file text itself, only the suffix after that text can hold tool
+ * notices (so quoted notice lines inside an untruncated file never match).
+ * Otherwise, anchored file rows never contain a blank line (a blank file line
+ * is shown as `anchor│`), so the rows are the first block and every later
+ * block, split at a blank line, is tool-generated.
  */
-const trailingNotices = (display: string): string => {
-  const [first = "", ...rest] = display.split("\n\n");
-  return ANCHORED_ROW.test(first.split("\n", 1)[0]!) ? rest.join("\n\n") : display;
+const trailingNotices = (display: string, plainText?: string): string => {
+  const normalizedDisplay = display.replace(/\r\n/g, "\n");
+  if (plainText !== undefined && plainText.length > 0) {
+    const normalizedPlain = plainText.replace(/\r\n/g, "\n");
+    if (normalizedDisplay.startsWith(normalizedPlain)) {
+      return normalizedDisplay.slice(normalizedPlain.length);
+    }
+  }
+  const [first = "", ...rest] = normalizedDisplay.split("\n\n");
+  return ANCHORED_ROW.test(first.split("\n", 1)[0]!) ? rest.join("\n\n") : normalizedDisplay;
 };
 
 /** The continuation notice in the display text, rewritten to a numeric offset. */
-export const readContinuationNotice = (display: string): string | undefined => {
-  const notices = trailingNotices(display);
+export const readContinuationNotice = (display: string, plainText?: string): string | undefined => {
+  const notices = trailingNotices(display, plainText);
   const showing = lastMatch(SHOWING_HINT, notices);
   if (showing) {
     const [, start, end, total, size = ""] = showing;
@@ -63,14 +72,15 @@ export const readPlainText = (display: string, structured: unknown): string | un
     && typeof (structured as { text?: unknown }).text === "string") {
     const record = structured as { text: string; truncated?: unknown; nextOffset?: unknown };
     text = record.text;
-    cut = record.truncated === true || typeof record.nextOffset === "number";
-    if (typeof record.nextOffset === "number") nextOffset = record.nextOffset;
+    const validNextOffset = typeof record.nextOffset === "number" && Number.isFinite(record.nextOffset);
+    cut = record.truncated === true || validNextOffset;
+    if (validNextOffset) nextOffset = record.nextOffset as number;
   } else {
     return undefined;
   }
   // An out-of-range offset has no file text; keep the tool's explanation.
   if (text === "" && BEYOND_EOF.test(display)) return display;
-  const notice = readContinuationNotice(display);
+  const notice = readContinuationNotice(display, text);
   if (notice) return withNotice(text, notice);
   if (cut) {
     return withNotice(text, nextOffset !== undefined

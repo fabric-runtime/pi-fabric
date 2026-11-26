@@ -430,6 +430,11 @@ export class PiToolsProvider implements FabricProvider {
     // is a built-in alias. Both kernels use this same preparation before validation.
     args = normalizePiArguments(actionName, args, Object.keys(properties)) as Record<string, unknown>;
     if (this.#catalog?.get(actionName) && !middleware) {
+      if (actionName === "read" && !this.#readDeclaresAnchors() && Object.hasOwn(args, "anchors")) {
+        const { anchors, ...forwarded } = args;
+        const prepared = this.#capturedTools!.prepareArguments(actionName, forwarded);
+        return { ...prepared, anchors };
+      }
       return this.#capturedTools!.prepareArguments(actionName, args);
     }
     const tool = this.#tools[actionName as PiCoreToolName];

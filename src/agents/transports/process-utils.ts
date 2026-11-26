@@ -56,8 +56,10 @@ const isExecutableFile = async (candidate: string): Promise<boolean> => {
   try {
     const stats = await fs.promises.stat(candidate);
     if (!stats.isFile()) return false;
-    // Windows has no execute bit; PATHEXT already narrowed the candidate name.
-    return process.platform === "win32" || (stats.mode & 0o111) !== 0;
+    // Windows has no POSIX execute bit; PATHEXT already narrowed the candidate name.
+    if (process.platform === "win32") return true;
+    await fs.promises.access(candidate, fs.constants.X_OK);
+    return true;
   } catch {
     return false;
   }
@@ -303,7 +305,13 @@ export const launchWrapped = async (
     : { ...handle, readStderr: () => `no stderr captured; launched under agents.launchWrapper ${wrapper}` };
 };
 
-const WRAPPER_SPAWN_CODES = new Set(["ENOENT", "EACCES", "EPERM", "ENOEXEC"]);
+const WRAPPER_SPAWN_CODES = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "ENOEXEC",
+  ...(process.platform === "win32" ? ["EINVAL"] : []),
+]);
 
 /** True only for Node's spawn error for the wrapper executable itself. */
 const isWrapperSpawnError = (error: unknown, wrapper: string): error is NodeJS.ErrnoException & { code: string } => {
@@ -320,9 +328,12 @@ export const spawnLaunch = async (
 ): Promise<DetachedProcess> => {
   const [command, ...args] = await launchArgv(request);
   if (!request.launchWrapper) return spawnArgv(command!, args, request.cwd, options);
+  const env: NodeJS.ProcessEnv = { ...process.env, ...launchWrapperEnvironment(request) };
+  // Never leak an ancestor wrapper's write policy into an unconfined launch.
+  if (!request.launchWrapper.writePolicy) delete env.PI_FABRIC_LAUNCH_WRITE_POLICY;
   return spawnArgv(command!, args, request.cwd, {
     ...options,
-    env: { ...process.env, ...launchWrapperEnvironment(request) },
+    env,
     exitNote: `launched under agents.launchWrapper ${request.launchWrapper.argv[0]}`,
   });
 };

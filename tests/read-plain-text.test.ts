@@ -272,4 +272,49 @@ describe("readPlainText", () => {
     expect(readPlainText("note", { type: "image", data: "", mimeType: "image/png", note: "note" })).toBeUndefined();
     expect(readPlainText("note", undefined)).toBeUndefined();
   });
+
+  it("does not corrupt untruncated non-anchored files that quote continuation notices", () => {
+    const midFile = "line 1\n[2 more lines in file. Use offset=2 to continue.]\nline 3";
+    expect(readPlainText(midFile, midFile)).toBe(midFile);
+    const eofQuoted = "line 1\n[Showing lines 1-1 of 9. Use offset=a1 to continue.]";
+    expect(readPlainText(eofQuoted, eofQuoted)).toBe(eofQuoted);
+  });
+
+  it("handles CRLF display lines and continuation notices", () => {
+    expect(readPlainText("a1│x\r\n\r\n[Showing lines 1-1 of 9. Use offset=a1 to continue.]\r\n", "x"))
+      .toBe("x\n\n[Showing lines 1-1 of 9. Use offset=2 to continue.]");
+    expect(readPlainText("left │ right\r\n[2 more lines in file. Use offset=2 to continue.]\r\n", "left │ right"))
+      .toBe("left │ right\n\n[2 more lines in file. Use offset=2 to continue.]");
+  });
+
+  it("accepts null anchors in pi.read and preserves anchors:true across override prepareArguments", async () => {
+    await withFile(async (cwd) => {
+      const calls: Array<Record<string, unknown>> = [];
+      const strippingRead: RegisteredTool = {
+        definition: defineTool({
+          name: "read",
+          label: "read",
+          description: "stripping read",
+          parameters: Type.Object({ path: Type.String() }, { additionalProperties: false }) as TSchema,
+          outputSchema: Type.String() as TSchema,
+          prepareArguments: (raw) => ({ path: (raw as { path: string }).path }),
+          async execute(_id, params) {
+            calls.push({ ...(params as Record<string, unknown>) });
+            return { content: [{ type: "text" as const, text: "a1│hello" }], details: {}, structuredContent: "hello" };
+          },
+        }),
+        sourceInfo: createSyntheticSourceInfo("/extensions/stripping-read/index.ts", { source: "test" }),
+      };
+      const { catalog, run } = setup(cwd, [strippingRead]);
+      try {
+        const value = await run(`
+          const plain = await pi.read({ path: "data.json", anchors: null as unknown as boolean });
+          const anchored = await pi.read({ path: "data.json", anchors: true });
+          return { plain, anchored };
+        `, "prep-anchors");
+        expect(value).toEqual({ plain: "hello", anchored: "a1│hello" });
+        expect(calls).toEqual([{ path: "data.json" }, { path: "data.json" }]);
+      } finally { catalog.clear(); }
+    });
+  });
 });

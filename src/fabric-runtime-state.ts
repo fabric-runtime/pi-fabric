@@ -1284,12 +1284,19 @@ export class FabricRuntimeState {
     const meshConfig = this.#config?.mesh;
     if (decisions && events && decisionMesh && meshConfig && !this.#managedHost) {
       this.#decisionFeed?.close();
-      this.#decisionFeed = new DecisionChangeFeed(
+      const feed = new DecisionChangeFeed(
         decisionMesh,
         { actorPollMs: meshConfig.actorPollMs, maxReadEvents: meshConfig.maxReadEvents },
         (payload) => events.emit(FABRIC_DECISIONS_CHANGED_EVENT, payload),
       );
-      this.#decisionFeed.start();
+      try {
+        feed.start();
+        this.#decisionFeed = feed;
+      } catch (error) {
+        feed.close();
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn(`[pi-fabric] Decision change feed failed to start (${detail}); continuing without live decision updates.`);
+      }
     }
     if (decisions) {
       this.#execution.setHeadlessApproval((action, reason, signal) => requestHeadlessApproval(decisions, action, {
@@ -1353,6 +1360,7 @@ export class FabricRuntimeState {
     if (this.#managedHost) next = this.#managedHost.config();
     if (!this.#config || !this.#cwd) return;
     next.schema.mode = this.#config.schema.mode;
+    const hadLaunchWrapper = Boolean(this.#config.agents.launchWrapper);
     this.#speculation?.reset();
     deepAssign(this.#config as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>);
     // The residency client keeps its own copy of the agents settings; its
@@ -1361,6 +1369,11 @@ export class FabricRuntimeState {
     if (residencyAgents) {
       if (this.#config.agents.launchWrapper) residencyAgents.launchWrapper = [...this.#config.agents.launchWrapper];
       else delete residencyAgents.launchWrapper;
+    }
+    if (!hadLaunchWrapper && this.#config.agents.launchWrapper && this.#residency?.hasLiveHost()) {
+      const warning = "agents.launchWrapper is now enabled; new durable launches are refused, but already-running durable actors on the live resident host remain unwrapped until stopped or restarted.";
+      console.warn(`[pi-fabric] ${warning}`);
+      if (context.hasUI) context.ui.notify(warning, "warning");
     }
     this.#configureSpeculation();
     void this.#sessionLabel?.sync();
@@ -1853,6 +1866,8 @@ export class FabricRuntimeState {
   async #closeInternal(): Promise<void> {
     this.#completionInbox?.close();
     this.#completionInbox = undefined;
+    this.#peerPresence?.close();
+    this.#peerPresence = undefined;
     this.#labelUseStop?.();
     this.#labelUseStop = undefined;
     await this.#closeHerdr();

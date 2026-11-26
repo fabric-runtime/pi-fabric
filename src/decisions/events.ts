@@ -8,6 +8,7 @@ import type {
 } from "../protocol.js";
 import { raiseAndWait } from "./host.js";
 import {
+  assertDecisionId,
   MAX_DECISION_BODY_CHARS,
   MAX_DECISION_DEADLINE_MS,
   MAX_DECISION_OPTIONS,
@@ -189,6 +190,7 @@ export const answerFabricDecisionAnswerRequest = async (
   try {
     if (!SOURCE_PATTERN.test(request.source)) throw new Error("Decision source must match [A-Za-z0-9@][A-Za-z0-9@._/-]{0,63}");
     if (!PARTICIPANT_ID.test(request.answeredBy)) throw new Error("answeredBy must match [A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}");
+    assertDecisionId(id);
     const target = await resolve(request.context);
     if ("reason" in target) throw new Error(target.reason);
     const source = `extension:${request.source}`;

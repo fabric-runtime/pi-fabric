@@ -169,7 +169,7 @@ Two more host-local events let an extension in the same Pi process follow the de
 
 The answer goes through the same compare-and-swap as every other answer, so the first answer wins against a dialog, the CLI, a program or a deadline, and the loser gets `Decision <id> is answered, not open`. Fabric records `via: "extension:<source>"`, `answeredBy` and `answererKind` on the answer and copies only `optionId` and `text`. It refuses an unknown option and a closed decision like any other answer, an agent answering or cancelling a decision held by `"user"`, and an extension answering a decision it raised itself (`raisedBy.participantId` is `"extension:<source>"`); it may cancel one. `source` follows the pattern in [Extension questions](#extension-questions).
 
-Both events carry functions or a live context, so only code in the Pi process can use them: bash, the CLI and a program's tool calls cannot. Without a subscriber or a caller, decisions behave exactly as before.
+Both events travel on Pi's in-process `pi.events` bus (and `answer:v1` carries callbacks and a live context), so only extensions inside the Pi process can use them: bash, the CLI and a program's tool calls cannot. Because Fabric initializes its mesh runtime lazily (on the first `fabric_exec`, `/fabric` command, or `capability:v1`/`request:v1`/`answer:v1` event unless eager activation runs), an extension that wants remote `changed:v1` updates before the first `fabric_exec` should probe `pi-fabric:decisions:capability:v1` on `session_start`. Without a subscriber or a caller, decisions behave exactly as before.
 
 ## Question renderers
 

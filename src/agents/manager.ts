@@ -914,12 +914,14 @@ export class AgentManager {
     if (this.config.recursive !== true || request.recursive !== undefined) return request;
     const adapter = getAgentRunner(request.runner ?? this.config.runner);
     const allowlist = this.#inheritedToolAllowlist;
+    const requestedTools = request.tools ?? this.config.defaultTools;
     const recursive =
       adapter?.capabilities.recursiveFabric === true &&
       (request.extensions ?? this.config.extensions) &&
       this.#currentDepth + 1 < this.config.maxDepth &&
       request.recursiveToolAuthority === undefined &&
-      !request.tools?.includes("-fabric_exec") &&
+      requestedTools.length > 0 &&
+      !requestedTools.includes("-fabric_exec") &&
       (allowlist === undefined || allowlist.fabricExec);
     return { ...request, recursive };
   }
@@ -1029,6 +1031,11 @@ export class AgentManager {
     const runnerAdapter = requireAgentRunner(runner);
     const capabilities = runnerAdapter.capabilities;
     const hostedAdapter = runnerAdapter.kind === "hosted" ? runnerAdapter : undefined;
+    if (hostedAdapter && this.config.launchWrapper) {
+      throw new Error(
+        `${runnerAdapter.label} is a hosted runner and cannot run while agents.launchWrapper is set: it would run in-process outside the launch wrapper`,
+      );
+    }
     if (request.persona && runner !== "veda") {
       throw new Error(`The persona option is only supported by the Veda runner, not ${runner}`);
     }

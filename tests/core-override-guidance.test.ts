@@ -218,7 +218,7 @@ describe("core override prompt guidance", () => {
     }
   });
 
-it("replaces an anchor-aware read override's codemode-script lines with the program contract", () => {
+  it("replaces an anchor-aware read override's codemode-script lines with the program contract", () => {
     const catalog = new CapturedToolCatalog();
     const anchored = (name: string, guidelines: string[]) => defineTool({
       name,
@@ -293,7 +293,7 @@ it("replaces an anchor-aware read override's codemode-script lines with the prog
   });
 
   it("adds the anchor guidance for a read override that declares the anchors parameter, with or without an output schema", () => {
-    const withAnchors = (outputSchema: boolean) => {
+    const withAnchors = (outputSchema: boolean, options?: { kernel?: "typescript" | "python"; includeGrep?: boolean }) => {
       const catalog = new CapturedToolCatalog();
       const definition = defineTool({
         name: "read",
@@ -305,16 +305,38 @@ it("replaces an anchor-aware read override's codemode-script lines with the prog
           return { content: [{ type: "text" as const, text: "ok" }], details: {} };
         },
       });
+      const entries = [
+        { definition, sourceInfo: createSyntheticSourceInfo("/extensions/anchored-read/index.ts", { source: "test" }) },
+        ...(options?.includeGrep
+          ? [{
+              definition: defineTool({
+                name: "grep", label: "grep", description: "anchored grep",
+                parameters: Type.Object({ pattern: Type.String() }),
+                async execute() { return { content: [{ type: "text" as const, text: "ok" }], details: {} }; },
+              }),
+              sourceInfo: createSyntheticSourceInfo("/extensions/anchored-read/index.ts", { source: "test" }),
+            }]
+          : []),
+      ];
       catalog.replace(
-        [{ definition, sourceInfo: createSyntheticSourceInfo("/extensions/anchored-read/index.ts", { source: "test" }) }],
+        entries,
         runner,
         DEFAULT_FABRIC_CONFIG.capture,
         "/extensions/pi-fabric/index.ts",
       );
-      return coreOverridePromptGuidance(catalog);
+      return coreOverridePromptGuidance(catalog, undefined, options?.kernel ? { kernel: options.kernel } : undefined);
     };
-    expect(withAnchors(true)).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
-    expect(withAnchors(false)).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(withAnchors(true, { includeGrep: true })).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    expect(withAnchors(false, { includeGrep: true })).toContain(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    // Without a grep override, guidance omits pi.grep / nativeTools.grep claims.
+    const readOnly = withAnchors(true);
+    expect(readOnly).toContain("pi.read({path, anchors: true})");
+    expect(readOnly).not.toContain("pi.grep");
+    // Under Python, guidance uses Python syntax and omits nativeTools.
+    const python = withAnchors(true, { kernel: "python", includeGrep: true });
+    expect(python).toContain("pi.read(path=path, anchors=True)");
+    expect(python).toContain("pi.grep");
+    expect(python).not.toContain("nativeTools.");
   });
 
   it("adds no compatibility block for a read override without anchors or an output schema", () => {

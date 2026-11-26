@@ -46,9 +46,14 @@ export type DecisionChangeListener = (change: DecisionChange, record: DecisionRe
 // as mesh wake hints instead (see changes.ts).
 const localListeners = new Map<string, Set<DecisionChangeListener>>();
 
+const listenerKey = (root: string): string => {
+  const resolved = path.resolve(root);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+};
+
 /** Listen to decision writes made by any DecisionStore in this process on the mesh at `root`. */
 export const onLocalDecisionChange = (root: string, listener: DecisionChangeListener): (() => void) => {
-  const key = path.resolve(root);
+  const key = listenerKey(root);
   let listeners = localListeners.get(key);
   if (!listeners) {
     listeners = new Set();
@@ -65,7 +70,7 @@ export const onLocalDecisionChange = (root: string, listener: DecisionChangeList
 
 const tellLocalListeners = (root: string | undefined, change: DecisionChange, record: DecisionRecord, version: number): void => {
   if (typeof root !== "string" || localListeners.size === 0) return;
-  for (const listener of [...(localListeners.get(path.resolve(root)) ?? [])]) {
+  for (const listener of [...(localListeners.get(listenerKey(root)) ?? [])]) {
     try {
       listener(change, record, version);
     } catch {

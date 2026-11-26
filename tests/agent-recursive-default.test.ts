@@ -149,6 +149,20 @@ describe("agents.recursive default", () => {
     expect(result.tools).not.toContain("fabric_exec");
   });
 
+  it("does not override defaultTools containing -fabric_exec or explicit empty tools: []", async () => {
+    const fromDefault = await make({ recursive: true, defaultTools: ["read", "-fabric_exec"] }).run({
+      task: "probe", transport: "process",
+    }) as Surface;
+    expect(fromDefault.grantedRisks).toEqual([]);
+    expect(fromDefault.tools).not.toContain("fabric_exec");
+
+    const emptyTools = await make({ recursive: true }).run({
+      task: "probe", transport: "process", tools: [],
+    }) as Surface;
+    expect(emptyTools.grantedRisks).toEqual([]);
+    expect(emptyTools.tools).not.toContain("fabric_exec");
+  });
+
   it("applyRecursiveDefault leaves explicit values and the off state untouched", () => {
     expect(make().applyRecursiveDefault({ task: "x" })).toEqual({ task: "x" });
     const on = make({ recursive: true });

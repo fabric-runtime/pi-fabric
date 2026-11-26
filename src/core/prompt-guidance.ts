@@ -9,4 +9,5 @@ export {
   extensionToolRosterGuidance,
   fabricExecutionKernelGuidance,
   fabricSchemaGuidance,
+  PEER_COORDINATION_GUIDANCE,
 } from "./system-guidance.js";

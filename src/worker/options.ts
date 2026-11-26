@@ -259,7 +259,7 @@ export const parseWorkerOptions = (
     ...(lineage ? { lineage } : {}),
     ...(traceContext ? { traceContext } : {}),
     ...(maxTokens ? { maxTokens: Number(maxTokens) } : {}),
-    ...(maxTurns ? { maxTurns: Number(maxTurns) } : {}),
+    ...(maxTurns && Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0 ? { maxTurns: Math.floor(Number(maxTurns)) } : {}),
     ...(carryOver ? { carryOver } : {}),
     ...(inheritedSessionPins && inheritedSessionPins.length > 0 ? { inheritedSessionPins } : {}),
   };

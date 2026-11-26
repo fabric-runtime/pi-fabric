@@ -8,6 +8,18 @@ const SHELL_COMPOSITION_GUIDANCE =
   " tasks.read (byte offset/next, waitMs long-poll) and tasks.watch with {id, match} read or filter any background task without a monitor." +
   (process.platform === "win32" ? "" : " With jev-fabric (see tasks/sessions via tools.describe): pi.bash durable:true outlives Pi and reattaches on resume; sessions.open/write/read/stop drive interactive children (a Jev program's end with it).");
 
+/**
+ * How the model should treat the peers a `<fabric-peers>` notice names.
+ * Stated once in the system prompt, so each notice carries only the change.
+ */
+export const PEER_COORDINATION_GUIDANCE =
+  "Peer sessions: a <fabric-peers> notice names, by label, other Pi sessions that joined or left this project and share its files with you. " +
+  "File or git changes you did not make may be theirs: do not revert or overwrite them. " +
+  "Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and their ids, " +
+  "and `agents.steer` to message one by id. " +
+  "Coordinate only with relevant peers that are running or have pending messages, not every connected session. " +
+  "Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.";
+
 export const fabricExecutionKernelGuidance = (fullCodeMode: boolean, kernel: FabricKernel = "typescript", pythonRuntime: "cpython" | "monty" = "monty", profile: "additive" | "native" = "additive"): string =>
   [
     kernel === "python"

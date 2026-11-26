@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import piFabric from "../src/index.js";
 
 // Heavyweight runtime activations observed through the stub below: activation
@@ -131,6 +131,10 @@ const liveCardState = (): object => {
   liveCardStates.push(state);
   return state;
 };
+
+afterEach(() => {
+  liveCardStates.length = 0;
+});
 
 const renderCard = (
   tool: FabricExecTool,

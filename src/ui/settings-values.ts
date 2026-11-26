@@ -227,7 +227,7 @@ export const coerceValue = (id: string, value: string, config: FabricConfig): un
   // prewalk.enabled is enabled by default and omitted from normalized
   // configs unless false, and ui.sessionLabel stays raw until first use, so
   // their controls still need an explicit boolean type.
-  if (typeof current === "boolean" || id === "prewalk.enabled" || id === "ui.sessionLabel.footer") {
+  if (typeof current === "boolean" || id === "prewalk.enabled" || id === "ui.sessionLabel.footer" || id === "agents.recursive") {
     return value === "true";
   }
   if (typeof current === "number") return parseFormattedNumericValue(value);

@@ -625,9 +625,9 @@ The wrapper receives these environment variables, so it can choose grants withou
 
 The terminal transports set them through `/usr/bin/env`, with each value passed as one argument, so on Windows only the `process` transport supports a wrapper.
 
-The wrapper composes with write confinement: the policy still applies inside the child, and the wrapper can mirror it at the OS level from `PI_FABRIC_LAUNCH_WRITE_POLICY`. A child that starts its own children re-runs the wrapper for each when it reads the same setting: a wrapper in the global `fabric.json` reaches every child, but one set only in a project's `.pi/fabric.json` does not reach a child whose cwd is outside that project, so set it globally to cover nested launches. A wrapper should detect that it already runs inside its sandbox and exec the rest of its argv directly.
+The wrapper composes with write confinement: the policy still applies inside the child, and the wrapper can mirror it at the OS level from `PI_FABRIC_LAUNCH_WRITE_POLICY`. `agents.launchWrapper` is **global-only** (read only from `~/.pi/agent/fabric.json`; project `.pi/fabric.json` entries are ignored and project-scope saves refuse it), so a repository cannot inject a wrapper command or disarm the operator's sandbox, and nested children whose cwd leaves the project still see the same wrapper. A wrapper should detect that it already runs inside its sandbox and exec the rest of its argv directly.
 
-A wrapper that is not an executable file, or that exits before the worker writes a record, fails the run with an error that names the wrapper, after the usual bounded startup retries. The `process` transport also reports the wrapper's exit code and stderr. Durable residency (`residency: "durable"` agents and actors) is refused while the setting is on, because the shared resident host would run outside the wrapper. The refusal follows the live configuration, so a `/fabric reload` that adds the setting refuses the next durable spawn or actor without a restart.
+A wrapper that is not an executable file, or that exits before the worker writes a record, fails the run with an error that names the wrapper, after the usual bounded startup retries. The `process` transport also reports the wrapper's exit code and stderr. Durable residency (`residency: "durable"` agents and actors) and in-process hosted runners (`kind: "hosted"`) are refused while the setting is on, because they would run outside the wrapper. The refusal follows the live configuration, so a `/fabric reload` that adds the setting refuses the next durable spawn or actor without a restart (if a resident host was already live before reload, Fabric warns that existing durable actors on it stay unwrapped until restarted).
 
 ### Scope narrowing
 
@@ -1049,7 +1049,7 @@ return rlm.query({
 
 The default is resolved once, where the request enters the manager, and it resolves to `false`, and the request still launches, when recursion would be refused or unusable:
 
-- An explicit `recursive: true` or `false` wins. An explicit `extensions: false`, `agents.extensions: false`, or a `tools` list with `-fabric_exec` also wins.
+- An explicit `recursive: true` or `false` wins. An explicit `extensions: false`, `agents.extensions: false`, an explicit empty `tools: []`, or a `tools` / `agents.defaultTools` list with `-fabric_exec` also wins.
 - Runners without the `recursiveFabric` capability (`claude`, `veda`, custom runners, the hosted `pi-durable-leaf` factory) keep their native surface. Only an explicit `recursive: true` on them is an error.
 - A child that would sit at `maxDepth` is launched without recursion, since it could not spawn. With `maxDepth: 2`, a root session's children are recursive and their children are leaves.
 - A caller launched without `fabric_exec`, or with an inherited tool allowlist that does not name it exactly, never hands it on. The default does not widen inherited authority.

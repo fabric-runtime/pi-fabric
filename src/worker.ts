@@ -166,6 +166,21 @@ const toolUseStop = (message: Record<string, unknown>): string | undefined => {
   return names.length > 0 ? [...new Set(names)].slice(0, 8).join(", ") : "unknown";
 };
 
+// A truncated assistant turn (stopReason: "length") can still synthesize error
+// tool results and continue the loop; treat non-empty turn_end.toolResults as
+// continuing tool work for maxTurnsPerChild as well.
+const toolResultNames = (toolResults: unknown): string | undefined => {
+  if (!Array.isArray(toolResults) || toolResults.length === 0) return undefined;
+  const names = toolResults.flatMap((part) => {
+    if (typeof part !== "object" || part === null || Array.isArray(part)) return [];
+    const entry = part as Record<string, unknown>;
+    return typeof entry.toolName === "string" && entry.toolName.trim()
+      ? [entry.toolName.trim().slice(0, 100)]
+      : [];
+  });
+  return names.length > 0 ? [...new Set(names)].slice(0, 8).join(", ") : "tool_result";
+};
+
 const readImages = (filePath: string | undefined): ImageContent[] => {
   if (!filePath) return [];
   const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -1210,6 +1225,9 @@ const main = async (): Promise<void> => {
       emitLifecycle("pi.turn_end", {
         ...(typeof event.turnIndex === "number" ? { turnIndex: event.turnIndex } : {}),
       });
+      if (!endedOnToolCall) {
+        endedOnToolCall = toolResultNames(event.toolResults);
+      }
       record.turns++;
       enforceTurnLimit();
       update();

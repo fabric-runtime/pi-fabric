@@ -8,7 +8,8 @@ import { LocaltermTransport } from "../src/agents/transports/localterm-transport
 import { TmuxTransport } from "../src/agents/transports/tmux-transport.js";
 import { launchWrapped, resolveScriptRuntimeSync, spawnLaunch } from "../src/agents/transports/process-utils.js";
 import type { AgentTransportLaunch } from "../src/agents/types.js";
-import { DEFAULT_FABRIC_CONFIG, normalizeFabricConfig, saveFabricConfig } from "../src/config.js";
+import { DEFAULT_FABRIC_CONFIG, loadFabricConfig, normalizeFabricConfig, saveFabricConfig } from "../src/config.js";
+import { registerAgentRunner, type FabricRunnerCapabilities } from "../src/runners.js";
 import { RESIDENT_HOST_FORMAT } from "../src/residency/protocol.js";
 import { ResidencyClient } from "../src/residency/client.js";
 
@@ -97,6 +98,52 @@ describe("agents.launchWrapper configuration", () => {
     expect(() => saveFabricConfig(location, { agents: { launchWrapper: ["wrap"] } })).toThrow("agents.launchWrapper");
     expect(fs.readFileSync(saved.path, "utf8")).toBe(before);
   });
+
+  it("treats agents.launchWrapper as global-only so project .pi/fabric.json cannot set or disarm it", () => {
+    const root = directory("pi-fabric-wrapper-scope-");
+    const agentDir = path.join(root, "agent");
+    const cwd = path.join(root, "project");
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(path.join(cwd, ".pi"), { recursive: true });
+
+    // Project config alone cannot inject launchWrapper, even when trusted.
+    fs.writeFileSync(path.join(cwd, ".pi", "fabric.json"), JSON.stringify({
+      agents: { launchWrapper: ["/bin/sh", "-c", "evil"] },
+    }));
+    expect(loadFabricConfig({ cwd, agentDir, projectTrusted: true }).agents.launchWrapper).toBeUndefined();
+
+    // Project config cannot override or disarm a global launchWrapper either.
+    fs.writeFileSync(path.join(agentDir, "fabric.json"), JSON.stringify({
+      agents: { launchWrapper: ["/opt/sandbox/wrap", "--"] },
+    }));
+    expect(loadFabricConfig({ cwd, agentDir, projectTrusted: true }).agents.launchWrapper)
+      .toEqual(["/opt/sandbox/wrap", "--"]);
+
+    // Saving launchWrapper to project scope is refused.
+    expect(() => saveFabricConfig(
+      { cwd, agentDir, projectTrusted: true, scope: "project" },
+      { agents: { launchWrapper: ["/bin/wrap"] } },
+    )).toThrow(/global/);
+  });
+
+  it("refuses hosted runners while agents.launchWrapper is set", async () => {
+    const root = directory("pi-fabric-wrapper-hosted-");
+    const capabilities: FabricRunnerCapabilities = {
+      recursiveFabric: false, steer: false, followUp: false, persistentSessions: false, kernels: false, handoff: false,
+      modelDiscovery: false, imageInput: false, compaction: false, questions: false, sleep: false, writePolicy: false,
+    };
+    const unregister = registerAgentRunner({
+      kind: "hosted", id: "hosted-probe", label: "Hosted Probe", capabilities,
+      run: async () => ({ status: "completed", text: "ok" }),
+    });
+    try {
+      await expect(
+        manager(root, ["/bin/wrap"]).run({ task: "probe", runner: "hosted-probe", transport: "process" }),
+      ).rejects.toThrow(/hosted runner.*agents\.launchWrapper/);
+    } finally {
+      unregister();
+    }
+  });
 });
 
 describe.skipIf(process.platform === "win32")("agents.launchWrapper process transport", () => {
@@ -124,6 +171,19 @@ describe.skipIf(process.platform === "win32")("agents.launchWrapper process tran
       PI_FABRIC_LAUNCH_WRITE_POLICY: JSON.stringify({ readOnly: true, writableRoots: [], shell: "deny" }),
       PI_FABRIC_LAUNCH_DEPTH: "1",
     });
+
+    // Unconfined launches clear any inherited PI_FABRIC_LAUNCH_WRITE_POLICY.
+    const prevPolicy = process.env.PI_FABRIC_LAUNCH_WRITE_POLICY;
+    process.env.PI_FABRIC_LAUNCH_WRITE_POLICY = JSON.stringify({ readOnly: true, writableRoots: [], shell: "deny" });
+    try {
+      const unconfined = await manager(root, [wrapper, "--"]).run({ task: "probe", transport: "process", extensions: false, cwd });
+      expect(unconfined.status).toBe("completed");
+      const seenUnconfined = JSON.parse(fs.readFileSync(record, "utf8")) as { env: Record<string, string> };
+      expect(seenUnconfined.env.PI_FABRIC_LAUNCH_WRITE_POLICY).toBeUndefined();
+    } finally {
+      if (prevPolicy === undefined) delete process.env.PI_FABRIC_LAUNCH_WRITE_POLICY;
+      else process.env.PI_FABRIC_LAUNCH_WRITE_POLICY = prevPolicy;
+    }
   });
 
   it("refuses a durable spawn on the manager itself before launching anything", async () => {

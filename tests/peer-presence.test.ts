@@ -257,6 +257,29 @@ describe("PeerPresenceNotifier", () => {
     expect(h.start()).toBeUndefined();
   });
 
+  it("skips scanning peers on turn_end when solo or headless", () => {
+    const peersSpy = vi.fn(() => [peer("FAB-2")]);
+    const handlers = new Map<string, Handler>();
+    const context = { hasUI: true, ui: { notify: vi.fn() }, sessionManager: { getBranch: () => [] } } as unknown as ExtensionContext;
+    const pi = {
+      on: (name: string, handler: Handler) => {
+        handlers.set(name, handler);
+        return () => handlers.delete(name);
+      },
+    } as unknown as ExtensionAPI;
+    new PeerPresenceNotifier(pi, context, { peers: peersSpy, enabled: () => true, cwd: "/repo", now: () => 0 });
+    // Before any peer is known, turn_end does not scan the mesh.
+    handlers.get("turn_end")?.({}, context);
+    expect(peersSpy).not.toHaveBeenCalled();
+    // Learn FAB-2 on a user-started run, then headless turn_end still skips.
+    handlers.get("before_agent_start")?.({ messageType: "user" }, context);
+    expect(peersSpy).toHaveBeenCalledTimes(1);
+    handlers.get("turn_end")?.({}, { ...context, hasUI: false } as ExtensionContext);
+    expect(peersSpy).toHaveBeenCalledTimes(1);
+    handlers.get("turn_end")?.({}, context);
+    expect(peersSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("coalesces several changes made between prompts into one notice", () => {
     const h = harness([peer("FAB-2")]);
     h.start();

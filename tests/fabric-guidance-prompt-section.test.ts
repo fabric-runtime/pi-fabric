@@ -46,10 +46,13 @@ const loadFabric = async (): Promise<Map<string, Handler[]>> => {
 };
 
 // Runs Pi's own before_agent_start pipeline over the given extensions.
-const startRun = async (extensions: ReturnType<typeof extension>[]) => {
+const startRun = async (extensions: ReturnType<typeof extension>[], options: { hasUI?: boolean } = {}) => {
   const runner = new ExtensionRunner(extensions as never, createExtensionRuntime(), process.cwd(), {} as never, {} as never);
   const errors: string[] = [];
   runner.onError((error) => { errors.push(error.error); });
+  if (options.hasUI !== false) {
+    (runner as unknown as { uiContext: unknown }).uiContext = {};
+  }
   (runner as unknown as { getModel: () => undefined }).getModel = () => undefined;
   (runner as unknown as { getSignalFn: () => undefined }).getSignalFn = () => undefined;
   let rendered = "";
@@ -105,8 +108,12 @@ describe("Fabric guidance as a Pi prompt section", () => {
     expect(rendered.split(PEER_COORDINATION_GUIDANCE).length - 1).toBe(1);
   });
 
-  it("leaves the peer advice out when peer notices are off", async () => {
+  it("leaves the peer advice out when peer notices are off or the session is headless", async () => {
     const fabric = extension("pi-fabric", await loadFabric());
+    const headless = await startRun([fabric], { hasUI: false });
+    expect(headless.errors).toEqual([]);
+    expect(headless.options.sections.fabric).not.toContain("Peer sessions:");
+
     vi.spyOn(FabricState.prototype, "config", "get").mockReturnValue(normalizeFabricConfig({ mesh: { peerNotices: false } }));
     const { options, errors } = await startRun([fabric]);
     expect(errors).toEqual([]);

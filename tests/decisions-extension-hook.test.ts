@@ -247,14 +247,14 @@ describe("pi-fabric:decisions:changed:v1", () => {
     const remote = new DecisionStore(meshAt(root), { id: "session:other", name: "other", kind: "main" });
     const raised = await remote.raise({ title: "Retry", options: SHIP });
     const mesh = meshAt(root);
-    let failures = 1; let reads = 0;
+    let failing = true; let reads = 0;
     const flaky: DecisionFeedMesh = {
       root: mesh.root,
       latestOffset: () => mesh.latestOffset(),
       tail: (cursor, limit) => mesh.tail(cursor, limit),
       get: (key) => {
         reads += 1;
-        if (failures > 0) { failures -= 1; throw new Error("EBUSY: state file locked"); }
+        if (failing) throw new Error("EBUSY: state file locked");
         return mesh.get(key);
       },
     };
@@ -272,7 +272,8 @@ describe("pi-fabric:decisions:changed:v1", () => {
     });
     await until(() => reads >= 1, drain);
     expect(seen).toEqual([]);
-    // No new hint arrives: the next poll must read the id again by itself.
+    // No new hint arrives: once reads recover, the next poll reads the id again by itself.
+    failing = false;
     await until(() => seen.length >= 1, drain);
     expect(seen.map((payload) => payload.change)).toEqual(["raised"]);
     expect(seen[0]!.decision.id).toBe(raised.id);
@@ -282,6 +283,42 @@ describe("pi-fabric:decisions:changed:v1", () => {
     // Once read, the id is no longer retried.
     expect(reads).toBe(settled);
     expect(seen).toHaveLength(1);
+  });
+
+  it("stops reading remaining batch hints when closed inside an emit callback", async () => {
+    const root = meshRoot();
+    const remote = new DecisionStore(meshAt(root), { id: "session:other", name: "other", kind: "main" });
+    const first = await remote.raise({ title: "First", options: SHIP });
+    const second = await remote.raise({ title: "Second", options: SHIP });
+    const mesh = meshAt(root);
+    let reads = 0;
+    const observed: DecisionFeedMesh = {
+      root: mesh.root,
+      latestOffset: () => mesh.latestOffset(),
+      tail: (cursor, limit) => mesh.tail(cursor, limit),
+      get: (key) => {
+        reads += 1;
+        return mesh.get(key);
+      },
+    };
+    const seen: string[] = [];
+    const feed = new DecisionChangeFeed(observed, { actorPollMs: 50, maxReadEvents: 500 }, (payload) => {
+      seen.push(payload.decision.id);
+      feed.close();
+    });
+    feeds.push(feed);
+    feed.start();
+    await meshAt(root).publish({
+      topic: DECISIONS_TOPIC, kind: "decision.raised",
+      from: { id: "session:other", name: "other", kind: "main" }, data: { id: first.id },
+    });
+    await meshAt(root).publish({
+      topic: DECISIONS_TOPIC, kind: "decision.raised",
+      from: { id: "session:other", name: "other", kind: "main" }, data: { id: second.id },
+    });
+    await until(() => seen.length >= 1, async () => { feed.refresh(); await flush(); });
+    expect(seen).toEqual([first.id]);
+    expect(reads).toBe(1);
   });
 
   it("leaves records and mesh wake hints unchanged when nobody subscribes", async () => {

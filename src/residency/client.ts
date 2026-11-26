@@ -195,6 +195,10 @@ export class ResidencyClient {
     }
   }
 
+  hasLiveHost(): boolean {
+    return this.#liveOwner() !== undefined;
+  }
+
   async ensureHost(): Promise<ResidentHostOwner> {
     if (this.#closed) throw new Error("Fabric residency client is closed");
     // The resident host and the workers it starts would run outside the

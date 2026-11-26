@@ -623,6 +623,7 @@ export class AgentsProvider implements FabricProvider {
     delete handoffArgs.kernel;
     if (kernel) handoffArgs.kernel = kernel;
     handoffArgs.extensions = request.extensions ?? this.manager.config.extensions;
+    if (request.recursive !== undefined) handoffArgs.recursive = request.recursive;
     if (kernel) handoffArgs.pythonRuntime = this.manager.resolvePythonRuntime();
     return context.deferHandoff(handoffArgs);
   }

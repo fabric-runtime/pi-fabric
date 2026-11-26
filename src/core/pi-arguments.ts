@@ -70,7 +70,7 @@ function createPiArgumentNormalizer() {
     powershell: ["timeout"],
   };
   const __piOptionalFields: Record<string, string[]> = {
-    read: ["offset", "limit"],
+    read: ["offset", "limit", "anchors"],
     grep: ["path", "glob", "ignoreCase", "literal", "context", "limit"],
     find: ["path", "limit"],
     ls: ["path", "limit"],

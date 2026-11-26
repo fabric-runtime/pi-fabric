@@ -78,12 +78,15 @@ export class DecisionChangeFeed {
 
   #beforePoll(): boolean {
     if (this.#closed) return false;
-    for (const id of [...this.#retry]) this.#read(id);
+    for (const id of [...this.#retry]) {
+      if (this.#closed) break;
+      this.#read(id);
+    }
     return !this.#closed;
   }
 
   #onEvent(event: MeshEvent): void {
-    if (event.topic !== DECISIONS_TOPIC) return;
+    if (this.#closed || event.topic !== DECISIONS_TOPIC) return;
     const data = event.data;
     const id = typeof data === "object" && data !== null ? (data as Record<string, unknown>).id : undefined;
     if (typeof id !== "string" || !DECISION_ID.test(id)) return;
@@ -91,10 +94,12 @@ export class DecisionChangeFeed {
   }
 
   #read(id: string): void {
+    if (this.#closed) return;
     let entry: ReturnType<DecisionFeedMesh["get"]>;
     try {
       entry = this.mesh.get(DECISION_PREFIX + id);
     } catch {
+      if (this.#closed) return;
       // Keep the id; the hint that named it will not be read again.
       this.#retry.delete(id);
       this.#retry.add(id);
@@ -105,7 +110,7 @@ export class DecisionChangeFeed {
       return;
     }
     this.#retry.delete(id);
-    if (!entry || !isDecisionRecord(entry.value)) return;
+    if (this.#closed || !entry || !isDecisionRecord(entry.value)) return;
     this.#deliver(changeOf(entry.value), entry.value, entry.version);
   }
 
@@ -113,6 +118,7 @@ export class DecisionChangeFeed {
     if (this.#closed) return;
     const last = this.#emitted.get(record.id);
     if (last !== undefined && version <= last) return;
+    this.#retry.delete(record.id);
     this.#emitted.delete(record.id);
     this.#emitted.set(record.id, version);
     if (this.#emitted.size > MAX_TRACKED_DECISIONS) {

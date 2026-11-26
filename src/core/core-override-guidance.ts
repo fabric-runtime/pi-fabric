@@ -1,4 +1,5 @@
 import type { CapturedToolCatalog } from "../capture/catalog.js";
+import type { FabricKernel } from "../runtime/kernel.js";
 import { isCodemodeScriptGuideline, PI_CORE_TOOL_NAMES } from "./pi-tools.js";
 
 /**
@@ -18,6 +19,24 @@ export const ANCHOR_READ_COMPATIBILITY_GUIDANCE = [
   "- `extensions.<edit tool>` resolves to `{ text, details, structuredContent }` and rejects on failure; `structuredContent.anchors[].anchor` holds fresh anchors for the next edit. `pi.write`/`pi.edit` reject too, e.g. a write refused for copied anchors.",
 ].join("\n");
 
+const anchorReadCompatibilityGuidance = (kernel: FabricKernel, hasGrepOverride: boolean): string => {
+  if (kernel === "typescript" && hasGrepOverride) return ANCHOR_READ_COMPATIBILITY_GUIDANCE;
+  if (kernel === "python") {
+    return [
+      "Program results with this read override:",
+      "- `pi.read(path)` returns plain file text; `pi.read(path=path, anchors=True)` returns `anchor│content` rows (a string) for `extensions.replace`/`replace_match`/`insert`.",
+      ...(hasGrepOverride ? ["- `pi.grep` returns anchored rows as a string."] : []),
+      "- `extensions.<edit tool>` returns a dict with `text`, `details`, and `structuredContent` and raises on failure; `structuredContent[\"anchors\"]` holds fresh anchors for the next edit. `pi.write`/`pi.edit` raise on failure too, e.g. a write refused for copied anchors.",
+    ].join("\n");
+  }
+  return [
+    "Program results with this read override:",
+    "- `pi.read(path)` returns plain file text; `pi.read({path, anchors: true})` returns `anchor│content` rows (a string) for `extensions.replace`/`replace_match`/`insert`.",
+    "- `nativeTools.read({path, anchors: true})` returns `{ text, lines[].anchor }`.",
+    "- `extensions.<edit tool>` resolves to `{ text, details, structuredContent }` and rejects on failure; `structuredContent.anchors[].anchor` holds fresh anchors for the next edit. `pi.write`/`pi.edit` reject too, e.g. a write refused for copied anchors.",
+  ].join("\n");
+};
+
 // The hashline contract is the read tool's own `anchors` parameter. An output
 // schema alone says nothing about anchored rows or edit anchors.
 const anchorAwareRead = (definition: { parameters?: unknown }): boolean => {
@@ -32,7 +51,10 @@ const anchorAwareRead = (definition: { parameters?: unknown }): boolean => {
 export const coreOverridePromptGuidance = (
   catalog: CapturedToolCatalog,
   allowlist?: { has(name: string): boolean },
+  options?: { kernel?: FabricKernel },
 ): string => {
+  const kernel = options?.kernel ?? "typescript";
+  const hasGrepOverride = Boolean(catalog.get("grep") && (!allowlist || allowlist.has("grep")));
   const sections: string[] = [];
   for (const name of PI_CORE_TOOL_NAMES) {
     if (allowlist && !allowlist.has(name)) continue;
@@ -47,7 +69,9 @@ export const coreOverridePromptGuidance = (
       lines.push(`Guidelines for \`pi.${name}\`:`);
       lines.push(...guidelines.map((guideline) => `- ${guideline}`));
     }
-    if (name === "read" && anchorAwareRead(entry.definition)) lines.push(ANCHOR_READ_COMPATIBILITY_GUIDANCE);
+    if (name === "read" && anchorAwareRead(entry.definition)) {
+      lines.push(anchorReadCompatibilityGuidance(kernel, hasGrepOverride));
+    }
     if (lines.length > 0) sections.push(lines.join("\n"));
   }
   return sections.length > 0
