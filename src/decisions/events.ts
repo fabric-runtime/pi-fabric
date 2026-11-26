@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type {
+  FabricDecisionAnswerRequestV1,
   FabricDecisionQuestionV1,
   FabricDecisionRequestV1,
   FabricDecisionResultV1,
@@ -13,6 +14,7 @@ import {
   MAX_DECISION_TEXT_CHARS,
   MAX_DECISION_TITLE_CHARS,
   MIN_DECISION_TIMEOUT_MS,
+  PARTICIPANT_ID,
   type DecisionRaiseInput,
   type DecisionRecord,
   type DecisionStore,
@@ -68,7 +70,7 @@ const decisionInputFromQuestion = (question: FabricDecisionQuestionV1): Decision
 /** Only an answered record carries an answer; nothing else becomes one. */
 const decisionResult = (record: DecisionRecord): FabricDecisionResultV1 => {
   if (record.status === "answered" && record.answer) {
-    const { optionId, text, answeredBy, via, at } = record.answer;
+    const { optionId, text, answeredBy, via, answererKind, at } = record.answer;
     return {
       ok: true,
       id: record.id,
@@ -78,6 +80,7 @@ const decisionResult = (record: DecisionRecord): FabricDecisionResultV1 => {
         ...(text !== undefined ? { text } : {}),
         answeredBy,
         via,
+        ...(answererKind !== undefined ? { answererKind } : {}),
         at,
       },
     };
@@ -168,5 +171,45 @@ export const answerFabricDecisionRequest = async (
           : message(error),
       ...(raised ? { id: raised } : {}),
     });
+  }
+};
+
+/**
+ * Answer or cancel a stored decision for an extension in this Pi process. Every
+ * check that depends on the record runs inside the store's compare-and-swap,
+ * on the exact record it replaces, so the first answer wins and a refused
+ * request changes nothing.
+ */
+export const answerFabricDecisionAnswerRequest = async (
+  request: FabricDecisionAnswerRequestV1,
+  resolve: ResolveFabricDecisions,
+): Promise<void> => {
+  const respond = once(request.respond);
+  const id = request.id;
+  try {
+    if (!SOURCE_PATTERN.test(request.source)) throw new Error("Decision source must match [A-Za-z0-9@][A-Za-z0-9@._/-]{0,63}");
+    if (!PARTICIPANT_ID.test(request.answeredBy)) throw new Error("answeredBy must match [A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}");
+    const target = await resolve(request.context);
+    if ("reason" in target) throw new Error(target.reason);
+    const source = `extension:${request.source}`;
+    const action = request.action;
+    const answerer = request.answerer;
+    const by = { answeredBy: request.answeredBy, via: source, answererKind: answerer };
+    const authorize = (record: DecisionRecord): void => {
+      if (answerer === "agent" && record.holder === "user") {
+        throw new Error(`Decision ${record.id} is held by the user; an agent cannot ${action} it`);
+      }
+      if (action === "answer" && record.raisedBy.participantId === source) {
+        throw new Error(`Decision ${record.id} was raised by ${source}; it cannot answer it itself`);
+      }
+    };
+    // Copy only the named answer fields; the store validates their values.
+    const fields = (request.answer ?? {}) as Record<string, unknown>;
+    const record = action === "answer"
+      ? await target.store.answer(id, { optionId: fields.optionId, text: fields.text }, by, authorize)
+      : await target.store.cancel(id, by, authorize);
+    respond({ ok: true, decision: record });
+  } catch (error) {
+    respond({ ok: false, id, error: message(error) });
   }
 };

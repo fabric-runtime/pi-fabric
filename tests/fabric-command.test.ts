@@ -493,9 +493,9 @@ describe("/fabric command", () => {
     });
     expect(sendMessage).toHaveBeenCalled();
     shutdownHandler?.();
-    // The mock keeps only the last session_shutdown handler: the peer
-    // protocol block that unsubscribes the cards and await listeners.
-    expect(unsubscribe).toHaveBeenCalledTimes(2);
+    // The mock keeps only the last session_shutdown handler: the decisions
+    // block that unsubscribes the capability, request and answer listeners.
+    expect(unsubscribe).toHaveBeenCalledTimes(3);
   });
 
   it("skips the armed prompt when the identical one already persists", async () => {
