@@ -4,11 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import {
   createBashToolDefinition,
+  createSyntheticSourceInfo,
+  defineTool,
   type BashOperations,
   type ExtensionContext,
   type ExtensionRunner,
   type RegisteredTool,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FabricExecutionTraceRecorder } from "../src/audit/trace.js";
 import { CapturedToolCatalog } from "../src/capture/catalog.js";
@@ -540,6 +543,40 @@ describe("PiToolsProvider lifecycle", () => {
     expect(media![0]?.data!.length).toBeGreaterThan(0);
     expect(audits[0]?.mediaNote).toBe("Read image file [image/png]");
   }, 15_000);
+
+  it("attaches a captured read override's image once", async () => {
+    // An extension that replaces read (e.g. a hashline read) runs through
+    // CapturedToolsProvider, which already attaches the result's images to the
+    // call audit. The provider must not attach them a second time, or
+    // fabric_exec shows and sends every image twice.
+    const image = { type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" };
+    const definition = defineTool({
+      name: "read", label: "Read", description: "Read override fixture",
+      parameters: Type.Object({ path: Type.String() }),
+      async execute() {
+        return { content: [{ type: "text" as const, text: "Read image file [image/png]" }, image], details: undefined };
+      },
+    });
+    const runner = makeRunner({ getActiveTools: () => ["read"] });
+    const catalog = new CapturedToolCatalog();
+    catalog.replace(
+      [{ definition, sourceInfo: createSyntheticSourceInfo("/extensions/read-override.ts", { source: "test" }) } as RegisteredTool],
+      runner,
+      DEFAULT_FABRIC_CONFIG.capture,
+      "/extensions/pi-fabric/index.ts",
+    );
+    const registry = new ActionRegistry();
+    registry.register(new PiToolsProvider(process.cwd(), catalog, new CapturedToolsProvider(catalog)));
+    const audits: FabricCallAudit[] = [];
+    try {
+      await registry.invoke("pi.read", { path: "shot.png" }, { ...baseContext, audits });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]?.media).toEqual([image]);
+      expect(audits[0]?.mediaNote).toBe("Read image file [image/png]");
+    } finally {
+      await registry.close();
+    }
+  });
 });
 
 describe("extension hijack contract for nested core tools", () => {

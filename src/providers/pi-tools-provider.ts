@@ -762,7 +762,8 @@ export class PiToolsProvider implements FabricProvider {
       const value = await this.#capturedTools!.invoke(name, overrideArgs, context);
       if (context.nativeToolResult) return value;
       const result = value as import("./captured-tools-provider.js").CapturedToolInvocationResult;
-      this.#attachReadMedia(name, result, context);
+      // CapturedToolsProvider already attached this result's images to the
+      // call audit; attaching them here again would show and send each twice.
       this.#attachReadNote(name, result, context);
       this.#attachPreview(name, result, args, context);
       return this.#normalizeResult(name, result, args, context);
