@@ -107,6 +107,7 @@ import { FabricToolDisplayController } from "./ui/tool-display.js";
 import { configureHighlighting } from "./ui/highlight.js";
 import { registerHandoffCompletionRenderer } from "./ui/handoff-completion.js";
 import { FabricTerminalTitle, installTerminalTitle } from "./ui/terminal-title.js";
+import { PEER_COORDINATION_GUIDANCE } from "./topology/peer-presence.js";
 import { formatFabricValue } from "./ui/structured.js";
 import { truncateMiddle } from "./util.js";
 import path from "node:path";
@@ -1321,6 +1322,11 @@ return async function piFabric(pi: ExtensionAPI, options: { managedHost?: Fabric
       extensionRoster,
       resolvedGuidance.appendText,
       managedHost?.guidance,
+      // Stated once here so each peer notice carries only the change. Only a
+      // root session is told about peers; a child is coordinated by its parent.
+      config.mesh.enabled && config.mesh.peerNotices && !process.env.PI_FABRIC_PARENT_RUN
+        ? PEER_COORDINATION_GUIDANCE
+        : undefined,
     ].filter((section): section is string => Boolean(section)).join("\n\n");
     // Turn-varying content (skill reference guidance) is delivered here as a
     // persistent message, not appended to the system prompt. Keeping the

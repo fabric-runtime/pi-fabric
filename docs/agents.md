@@ -710,21 +710,21 @@ Two host-local, versioned events on `pi.events` let queue extensions coordinate 
 
 ### Peer presence notices
 
-A root session's model learns that other root Pi sessions are working in the same project without calling `agents.peers()` first. When the set of peers changes, Fabric adds one `pi-fabric-peer-presence` message to the transcript:
+A root session's model learns that other root Pi sessions are working in the same project without calling `agents.peers()` first. When the set of peers changes, Fabric adds one `pi-fabric-peer-presence` message to the transcript that lists only the change, by label:
 
 ```text
 <fabric-peers>
-Other Pi sessions are connected to this project and share its files with you:
-- FAB-2 (id session:6f1c…)
-- FAB-3 (id session:a09e…), just joined
-No longer present: FAB-1.
-File or git changes you did not make may be theirs: do not revert or overwrite them. Before a wide edit, a branch switch, a reset, or a dependency install, use `agents.peers` inside `fabric_exec` to see who is running and `agents.steer` to message one by id. Coordinate only with relevant peers that are running or have pending messages, not every connected session. Routine peer messages are passive; use triggerTurn: true only when a peer must act. Do not acknowledge informational updates unless action is needed.
+joined: FAB-3
+left: FAB-1
+connected: 2
 </fabric-peers>
 ```
 
+What to do about peers is stated once, in Fabric's system prompt section: changes you did not make may be theirs, call `agents.peers` before a wide edit, a branch switch, a reset, or a dependency install to see who is running and their ids, and message one with `agents.steer`.
+
 - **Display.** The full notice stays in the model context as a hidden transcript entry. The human sees a compact Pi notification, such as `Fabric peers: joined FAB-2; 1 connected`. The transcript card is hidden. Notification failures do not discard the model advice.
-- **When.** At the start of a prompt, and at the end of any turn that continues into another model call, so a peer that joins during a long run is noticed before the next request. A final turn adds nothing; the next prompt folds every change made while idle into one notice.
-- **Cache safety.** The notice is a persistent transcript message appended at a turn boundary. The system prompt, tool declarations, and every earlier message stay byte-identical, so the provider's cached prefix remains valid and only the notice itself is new input. The mid-run notice is a native `turn_end` boundary entry: it rides the request the run was about to make and never triggers an extra one. The text is deterministic for a given change. It carries labels, participant ids, and a working directory when that differs from the caller's, and no clock, run status, or model.
+- **When.** Only at the start of a run the person started. A run started by a custom message (a completion or a peer message) and a turn that continues after a tool call add nothing; the next prompt folds every change since the last notice into one, so a peer that joins and leaves between prompts is never mentioned.
+- **Cache safety.** The notice is a persistent transcript message added with the prompt. The system prompt (whose peer advice does not change with peers), tool declarations, and every earlier message stay byte-identical, so the provider's cached prefix remains valid and only the notice itself is new input. The text is deterministic for a given change. It carries labels, a working directory when that differs from the caller's, and the connected count; no participant id, clock, run status, or model.
 - **Once per change.** Fabric rebuilds what the model was told from the notices on the active branch, so resuming or navigating a session does not repeat one. A compaction may drop earlier notices from the context, so the current peers are stated again at the next boundary.
 - **Departures are debounced.** A peer is reported gone only after it has been absent for 20 seconds, longer than the 15-second host lease, so a missed heartbeat or a wake from sleep is not reported as a departure and a rejoin. Arrivals are reported at once.
 - **Scope.** Only root sessions with a UI receive notices. A run without a UI, such as `pi -p`, gets none: nobody reads the notice there, and the model's reply to it would replace the answer in the output. Child agents and actors are coordinated by their parent. A notice shares what the participant directory already shares: prompts, results, and errors stay local.
