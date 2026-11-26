@@ -904,6 +904,27 @@ export class AgentManager {
   }
 
   /**
+   * agents.recursive: resolve an omitted `recursive` once, at the caller
+   * boundary. Only an omitted value is defaulted; an explicit value, an
+   * extensions opt-out, a runner without recursiveFabric, a child that would sit
+   * at maxDepth, and a caller launched without fabric_exec all resolve to false,
+   * so the default never fails a request and never widens inherited authority.
+   */
+  applyRecursiveDefault(request: AgentRunRequest): AgentRunRequest {
+    if (this.config.recursive !== true || request.recursive !== undefined) return request;
+    const adapter = getAgentRunner(request.runner ?? this.config.runner);
+    const allowlist = this.#inheritedToolAllowlist;
+    const recursive =
+      adapter?.capabilities.recursiveFabric === true &&
+      (request.extensions ?? this.config.extensions) &&
+      this.#currentDepth + 1 < this.config.maxDepth &&
+      request.recursiveToolAuthority === undefined &&
+      !request.tools?.includes("-fabric_exec") &&
+      (allowlist === undefined || allowlist.fabricExec);
+    return { ...request, recursive };
+  }
+
+  /**
    * Validate now, return a queued handle, and launch when a slot frees. The
    * caller's signal is not used: a queued run outlives the program that
    * spawned it, like a detached running one. agents.stop cancels it.
@@ -982,6 +1003,7 @@ export class AgentManager {
     if (this.#currentDepth >= this.config.maxDepth) {
       throw new Error(`Fabric agent depth limit reached (${this.config.maxDepth})`);
     }
+    request = this.applyRecursiveDefault(request);
     assertAgentTask(request);
     const kernel = this.resolveKernel({
       ...request,

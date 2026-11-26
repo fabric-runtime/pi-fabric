@@ -222,6 +222,13 @@ export interface FabricAgentConfig {
   maxDepth: number;
   timeoutMs: number;
   extensions: boolean;
+  /**
+   * When true, a Pi child request that omits `recursive` is launched as
+   * `recursive: true` (fabric_exec, the delegated "agent" risk, its own
+   * children), bounded by maxDepth, maxPerExecution and budgetUsd. An explicit
+   * `recursive`/`extensions: false` on the request wins. Absent means false.
+   */
+  recursive?: boolean;
   defaultTools: string[];
   retainRuns: boolean;
   /**
@@ -576,6 +583,7 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     maxDepth: 2,
     timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
     extensions: true,
+    recursive: false,
     defaultTools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
     retainRuns: false,
     durableWorkerRecovery: false,
@@ -1294,6 +1302,7 @@ export const normalizeFabricConfig = (input: Record<string, unknown>): FabricCon
         MAX_AGENT_TIMEOUT_MS,
       ),
       extensions: booleanValue(agents.extensions, DEFAULT_FABRIC_CONFIG.agents.extensions),
+      recursive: booleanValue(agents.recursive, DEFAULT_FABRIC_CONFIG.agents.recursive ?? false),
       defaultTools: configuredTools,
       retainRuns: booleanValue(agents.retainRuns, DEFAULT_FABRIC_CONFIG.agents.retainRuns),
       durableWorkerRecovery: booleanValue(

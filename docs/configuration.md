@@ -174,6 +174,7 @@ where absent values do not participate, and time spent inside a `humanWaitRefs` 
     "maxDepth": 2,
     "timeoutMs": 86400000,
     "extensions": true,
+    "recursive": false,
     "defaultTools": ["read", "bash", "edit", "write", "grep", "find", "ls"],
     "retainRuns": false,
     "durableWorkerRecovery": false,
@@ -693,6 +694,7 @@ Other agent settings:
 - `maxDepth`: nesting bound for child agent calls, including `rlm.query()`. It accepts any non-negative safe integer. A value of `0` disables child spawning. `/fabric settings` provides free-form numeric entry.
 - `timeoutMs`: default wall-clock budget per child and the floor for per-call overrides (24 hours by default, which is also the policy ceiling). Fabric ignores lower per-call values. The default matches the ceiling on purpose: an orchestration program inherits this value as its own whole-program deadline floor, so a lower default would cut a long participant short well inside the allowed maximum. Lower it to bound a class of runs, and raise a single run with a per-call value.
 - `extensions`: whether children load the user's normal extensions (Pi) or Claude Code customizations (Claude). Pi children with `false` keep extension-registered model providers; see [third-party model providers](#third-party-model-providers).
+- `recursive` (default `false`): when `true`, a Pi child request that omits `recursive` is launched as `recursive: true`: it gets `fabric_exec`, `agents.*` with the delegated `agent` risk, and its own children, bounded by `maxDepth`, `maxPerExecution` and `budgetUsd`. An explicit `recursive` on the request, `extensions: false` (per call or `agents.extensions`), or `tools` containing `-fabric_exec` wins. The default resolves to `false`, and never fails the request, for a runner without the `recursiveFabric` capability (`claude`, `veda`, custom runners and the hosted `pi-durable-leaf` factory), for a child that would launch at `maxDepth` (it could not spawn), and when the caller itself was launched without `fabric_exec`. See [agents.md](agents.md#recursive-by-default).
 - `defaultTools`: the default tool allowlist for children.
 - `budgetUsd`: shared append-only cost ledger across a recursion tree (0 disables).
 - `maxTokensPerChild`: cumulative token bound per child (0 disables).
