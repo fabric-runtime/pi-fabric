@@ -134,7 +134,11 @@ describe("agents.launchWrapper configuration", () => {
     };
     const unregister = registerAgentRunner({
       kind: "hosted", id: "hosted-probe", label: "Hosted Probe", capabilities,
-      run: async () => ({ status: "completed", text: "ok" }),
+      prepare: () => ({}),
+      start: () => {},
+      attach: () => {},
+      liveness: () => "exited",
+      stop: () => ({ confirmed: true }),
     });
     try {
       await expect(
