@@ -114,7 +114,7 @@ describe("spilled shell cache warming with the real Pi SDK", () => {
   });
 
   it.each([
-    { label: "the default streaming policy", options: {} },
+    { label: "the streaming policy", options: { mode: "streaming" } },
     { label: "warming disabled", options: { mode: "off" } },
     { label: "UI-only monitors", options: { mode: "idle", delivery: "ui" } },
   ] satisfies Array<{ label: string; options: Options }>)("does not send paid refreshes for $label", async ({ options }) => {
