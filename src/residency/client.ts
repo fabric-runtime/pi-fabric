@@ -542,7 +542,9 @@ export class ResidencyClient {
     if (metadata.handle.worktree) {
       const gitRoot = metadata.worktreeGitRoot ?? this.options.config.projectRoot;
       const worktree = await registeredWorktree(gitRoot, metadata.handle.worktree);
-      assertWorktreePathSafe(gitRoot, worktree);
+      // Git lists worktrees by real path, so check containment against the root's real path too:
+      // a root recorded through a symlink (macOS /var, /tmp) still owns its worktrees.
+      assertWorktreePathSafe(fs.realpathSync.native(gitRoot), worktree);
       if (deleteBranch && metadata.handle.branch) {
         const actualBranch = (await executeFile("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: worktree, timeoutMs: 30_000 })).stdout.trim();
         if (actualBranch !== metadata.handle.branch) throw new Error("Refusing cleanup: worktree branch ownership changed");
