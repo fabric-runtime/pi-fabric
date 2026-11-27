@@ -137,6 +137,11 @@ return [...names];`;
     expect(eligible(result.value as string[])).toEqual([]);
   });
 
+  // The two tests above only see the names of the Python they run on; pin the newest ones.
+  it("reserves the names Python 3.15 adds", () => {
+    expect(eligible(["lazy", "frozendict", "sentinel"])).toEqual([]);
+  });
+
   it("reserves every built-in Fabric provider", () => {
     const builtins = new Set<string>(["fabric", "components", ...FABRIC_COMPONENT_PROVIDER_NAMES]);
     for (const file of sourceFiles(path.join(repoRoot, "src"))) {

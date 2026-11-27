@@ -57,16 +57,18 @@ const PYTHON_KEYWORDS = [
   "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in",
   "is", "lambda", "match", "nonlocal", "not", "or", "pass", "raise", "return", "try",
   "type", "while", "with", "yield",
+  // Soft keyword added in Python 3.15 (PEP 810, explicit lazy imports).
+  "lazy",
 ] as const;
 
 const PYTHON_BUILTINS = [
   "abs", "aiter", "all", "anext", "any", "ascii", "bin", "bool", "breakpoint", "bytearray",
   "bytes", "callable", "chr", "classmethod", "compile", "complex", "copyright", "credits",
   "delattr", "dict", "dir", "divmod", "enumerate", "eval", "exec", "exit", "filter",
-  "float", "format", "frozenset", "getattr", "globals", "hasattr", "hash", "help", "hex",
+  "float", "format", "frozendict", "frozenset", "getattr", "globals", "hasattr", "hash", "help", "hex",
   "id", "input", "int", "isinstance", "issubclass", "iter", "len", "license", "list",
   "locals", "map", "max", "memoryview", "min", "next", "object", "oct", "open", "ord", "pow",
-  "print", "property", "quit", "range", "repr", "reversed", "round", "set", "setattr",
+  "print", "property", "quit", "range", "repr", "reversed", "round", "sentinel", "set", "setattr",
   "slice", "sorted", "staticmethod", "str", "sum", "super", "tuple", "type", "vars", "zip",
 ] as const;
 
