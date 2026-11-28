@@ -955,12 +955,19 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
     await reconnect.close();
   });
 
-  it.each([false, true])("rejects tampered durable worktree metadata before destructive cleanup (custom root: %s)", { timeout: 45_000 }, async (custom) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+  ])("rejects tampered durable worktree metadata before destructive cleanup (custom root: %s, linked root: %s)", { timeout: 45_000 }, async (custom, linked) => {
     const state = await rootHarness("resident-worktree-tamper");
     const source = path.join(state.root, "source");
     const unrelated = path.join(state.root, "unrelated");
     initRepository(source);
     initRepository(unrelated);
+    // Git reports worktrees by their real path; a root recorded through a symlink must still own them.
+    const recordedRoot = linked ? path.join(state.root, "linked-source") : source;
+    if (linked) fs.symlinkSync(source, recordedRoot, "dir");
     const id = randomId().padEnd(32, "0").slice(0, 32);
     const branch = custom ? `issue/tampered-${id}` : `pi-fabric/tampered-${id.slice(0, 8)}`;
     const worktreeRoot = custom ? ".worktrees" : ".pi/fabric/worktrees";
@@ -1023,7 +1030,7 @@ describe.skipIf(!hasResidentHost || process.platform === "win32")("durable parti
       expect(git(source, "branch", "--list", branch)).toContain(branch);
       expect(fs.existsSync(runDirectory)).toBe(true);
 
-      fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, worktreeGitRoot: source }));
+      fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, worktreeGitRoot: recordedRoot }));
       await expect(client.cleanupAgent(id, true)).resolves.toEqual({ cleaned: true });
       expect(worktreeBranches(source)).not.toContain(branch);
       expect(git(source, "branch", "--list", branch)).toBe("");
